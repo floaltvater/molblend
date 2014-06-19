@@ -101,7 +101,8 @@ class mb_molecule(PropertyGroup):
                                 items=mb_utils.enums.bond_material, default='ATOMS',
                                 update=mb_utils.update_bond_material)
     bond_color = FloatVectorProperty(name='Bond color', default=(0.8, 0.8, 0.8),
-                                     subtype='COLOR')
+                                     min=0.0, max=1.0, subtype='COLOR',
+                                     update=mb_utils.update_all_meshes)
     # dito
     meshes = CollectionProperty(name="Molecule meshes", type=mb_mesh_pointer)
     draw_style = EnumProperty(name="Display style", items=mb_utils.enums.molecule_styles,

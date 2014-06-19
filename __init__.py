@@ -62,30 +62,32 @@ from bpy.props import (StringProperty,
                        CollectionProperty)
 
 # -----------------------------------------------------------------------------
-#                                                                           GUI
+#                               GUI
+### FIXES
+# TODO fix use of refine value
 # TODO When Blender is closed while operator is running, then the MolBlend keyconfig will be active on reload, even if addon is not running
+# TODO when switching draw styles, check that all molecule parts are on the same layer!
+# TODO Cycles material nodesocketcolor is not updated when diffuse_color is changed (driver issue). Call update_all_meshes before rendering!
+
+### FEATURES
 # TODO add frames operator (also for import)
 # TODO allow to use NURBS or META for atoms and bonds
 # TODO add operator that can "unify" and separate molecules
 # TODO add alt+select operator to select all connected atoms
 # TODO rethink groups and molecules
 # TODO replace refine with global variable, that could even update current meshes after confirmation
-# TODO fix use of refine value
-# TODO when switching draw styles, check that all molecule parts are on the same layer!
-# TODO maybe create a different mesh for refine value (maybe), allowing different molecule to have different refines
+# TODO add bond length tool set
 # TODO need to make a different mesh for each molecule, element, refine and bond_radius value (maybe)
 # TODO streamline deleting atoms, so that unlinking from scene and deleting from molecule is one single function
 # TODO change delete shortcut (x and entf) from keymap to include deleting atoms from molecules, splitting molecules etc.
-# TODO maybe allow atom scale/radius atomistic property, not molecular
-# TODO make atom radii a global setting. Add covalent/vdW switch to atom prop, and add custom scale prop per atom to drivers
-# TODO currently one atom can be part of many molecules => add driver that checks for all bond radii
+
+### MAYBES
 # TODO maybe add driver to vertex group that scales their radius, so that one bond can transition between two "molecules"
 # TODO maybe add shift modifier to command add_atom to connect to active atom as an alternative to hovering.
-# TODO Cycles material is not updated when diffuse_color is changed (driver issue). Call update_all_meshes before rendering!
-# TODO include actual bond lengths list
-# TODO find out how to make import for big files faster (like only linking objects to scene after all have been created, or creating objects differently)
-# TODO add bond length tool set
+# TODO include actual bond lengths in list (to allow ctrl to use that length)
+# TODO maybe allow atom scale/radius atomistic property, not molecular
 # TODO maybe implement change of units within Blender
+# TODO maybe create a different mesh for refine value (maybe), allowing different molecule to have different refines
 
 class MB_PT_tools(Panel):
     bl_space_type = "VIEW_3D"

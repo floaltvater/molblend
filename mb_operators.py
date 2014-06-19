@@ -113,7 +113,7 @@ class MB_OT_modal(Operator):
     
     
     def __del__(self):
-        
+        pass
     
     def modal(self, context, event):
         #print("modal")
@@ -277,7 +277,11 @@ class MB_OT_add_atom(Operator):
         mouse_2d = event.mouse_region_x, event.mouse_region_y
         self.coord_3d = mb_utils.mouse_2d_to_location_3d(context, mouse_2d, depth=self.depth_location)
         if event.type == 'MOUSEMOVE':
-            new_atom = context.object
+            new_atom = context.scene.objects.get(self.new_atom_name)
+            context.scene.objects.active = new_atom
+            new_atom.select = True
+            #if not new_atom:
+                #return {'RUNNING_MODAL'}
             new_bond = context.scene.objects.get(self.new_bond_name)
             first_atom = context.scene.objects.get(self.first_atom_name)
             hover_ob = mb_utils.return_cursor_object(context, event, exclude=[new_atom], mb_type='ATOM')
@@ -294,14 +298,13 @@ class MB_OT_add_atom(Operator):
             if event.ctrl and new_bond:
                 # lock into certain angles
                 self.coord_3d = mb_utils.get_fixed_geometry(context, first_atom, self.coord_3d, self.geometry)
-                
             if event.alt and new_bond:
                 # constrain length
                 length = 1.0
                 self.coord_3d = mb_utils.get_fixed_length(context, first_atom, self.coord_3d, length)
+                
             
             new_atom.location = self.coord_3d
-            
             # sometimes, when bond is exactly along axis, the dimension goes to zero due to the stretch constraint
             # check for this occurence and fix it
             if new_bond:
@@ -381,13 +384,13 @@ class MB_OT_add_atom(Operator):
             new_bond = mb_utils.add_bond(context, first_atom, new_atom)
             self.new_bond_name = new_bond.name
             # add bond to atoms mb props
-            b = first_atom.mb.bonds.add()
-            b.name = new_bond.name
-            b = new_atom.mb.bonds.add()
-            b.name = new_bond.name
-            # add it to molecule collection
-            molecule.add_bond(new_bond)
-            new_bond.hide = (molecule.draw_style == 'BALLS')
+            #b = first_atom.mb.bonds.add()
+            #b.name = new_bond.name
+            #b = new_atom.mb.bonds.add()
+            #b.name = new_bond.name
+            ## add it to molecule collection
+            #molecule.add_bond(new_bond)
+            #new_bond.hide = (molecule.draw_style == 'BALLS')
         
         context.scene.objects.active = new_atom
         new_atom.select = True
@@ -929,6 +932,8 @@ class MB_OT_import_molecule(Operator, ImportHelper):
         return {'RUNNING_MODAL'}
                 
     def execute(self, context):
+        import time
+        start = time.time()
         paths = [os.path.join(self.directory, f.name) for f in self.files]
         if not paths:
             paths.append(bpy.path.abspath(self.filepath))
@@ -1004,7 +1009,7 @@ class MB_OT_import_molecule(Operator, ImportHelper):
                 
                 #import_molecule.build_frames(self.images_per_key, self.skip_frames,
                                         #frame_list, self.interpolation)
-            
+        print("Imported in {} s".format(time.time()-start))
         return {'FINISHED'}
 
 class ExportPDB(Operator, ExportHelper):

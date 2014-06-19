@@ -45,6 +45,8 @@ from .elements_default import ELEMENTS as ELEMENTS_DEFAULT
 
 from .helper import debug_print
 
+import time
+
 class enums():
     object_types = [('NONE', "None", "None"),
                     ('ATOM', "Atom", "Atom"),
@@ -147,7 +149,7 @@ def get_atom_data(element, molecule, type='MESH', refine=8):
             debug_print("Create {}.".format(mesh_name), 3)
             
             # create uv sphere and get mesh data
-            bpy.ops.mesh.primitive_uv_sphere_add(segments=refine*2, ring_count=refine)
+            bpy.ops.mesh.primitive_uv_sphere_add(location=(0,0,0), segments=refine*2, ring_count=refine)
             new_atom = bpy.context.object
             bpy.ops.object.shade_smooth()
             me = new_atom.data
@@ -167,29 +169,27 @@ def get_atom_data(element, molecule, type='MESH', refine=8):
 
 def get_bond_data(type='MESH', refine=8):
     # TODO maybe have one bond mesh per molecule. Problem: Update meshes when joining molecules?
+    new_bond = None
     if type == 'MESH':
-        mesh_name = "bond_mesh"
-        me = bpy.context.blend_data.meshes.get(mesh_name)
-        if not me:
+        data_name = "bond_mesh"
+        data = bpy.context.blend_data.meshes.get(data_name)
+        if not data:
             # save last selection to restore later
             selected = bpy.context.selected_objects
             last_active = bpy.context.object
             
-            debug_print("Create {}.".format(mesh_name), 3)
+            debug_print("Create {}.".format(data_name), 3)
             
-            bpy.ops.mesh.primitive_cylinder_add(vertices=refine*2, depth=1, radius=1.0,
+            bpy.ops.mesh.primitive_cylinder_add(location=(0,0,0), vertices=refine*2, depth=1, radius=1.0,
                         end_fill_type="NOTHING")
             new_bond = bpy.context.object
-            
-            bpy.ops.object.shade_smooth()
-            
             for i in range(2):
                 new_bond.data.materials.append(None)
             
-            me = new_bond.data
-            me.name = mesh_name
+            data = new_bond.data
+            data.name = data_name
             bm = bmesh.new()
-            bm.from_mesh(me)
+            bm.from_mesh(data)
             
             # rotate and shrink first, then add another row of vertices
             for vert in bm.verts:
@@ -227,6 +227,7 @@ def get_bond_data(type='MESH', refine=8):
                 v4 = verts_sorted[i + n_verts]
                 f = bm.faces.new((v1, v2, v3, v4))
                 f.material_index = i//n_verts # gives 0 or 1
+                f.smooth = True
             
             # again, sort by center.y first, than angle
             key = lambda f: f.calc_center_median().y * 15 + math.atan2(f.normal.x, f.normal.z)
@@ -234,16 +235,48 @@ def get_bond_data(type='MESH', refine=8):
             for i, f in enumerate(sorted((f for f in bm.faces), key=key)):
                 f.index = i
             
-            bm.to_mesh(me)
+            bm.to_mesh(data)
             bm.free()
+            bpy.ops.object.shade_smooth()
+
             
-            # finally delete object and return mesh data
-            bpy.context.scene.objects.unlink(new_bond)
+    if type == 'CURVE':
+        # save last selection to restore later
+        selected = bpy.context.selected_objects
+        last_active = bpy.context.object
+        
+        # get bevel object
+        bond_bevel = bpy.context.blend_data.objects.get('bond_bevel')
+        if not bond_bevel:
+            debug_print("Create bond_bevel.", 3)
+            bpy.ops.curve.primitive_bezier_circle_add(radius=0.15, location=(0,0,0))
+            bond_bevel = bpy.context.object
+            bond_bevel.name = 'bond_bevel'
             
-            for o in selected:
-                o.select = True
-            bpy.context.scene.objects.active = last_active
-        return me
+        bpy.ops.curve.primitive_bezier_curve_add(location=(0,0,0))
+        new_bond = bpy.context.object
+        
+        data = new_bond.data
+        data.show_handles = False
+        
+        bp = data.splines[0].bezier_points
+        for i in range(2):
+            bp[i].handle_left_type = 'VECTOR'
+            bp[i].handle_right_type = 'VECTOR'
+        
+        data.bevel_object = bond_bevel
+        #bp[0].co = (0,0,0)
+        #bp[1].co = (0,1,0)
+    
+    if new_bond:
+        # finally delete object and reselect old selection
+        bpy.context.scene.objects.unlink(new_bond)
+        
+        for o in selected:
+            o.select = True
+        bpy.context.scene.objects.active = last_active
+    
+    return data
 
 def set_atom_drivers(context, atom, molecule):
     fc_list = atom.driver_add('scale', -1) # add new driver
@@ -288,22 +321,93 @@ def set_atom_drivers(context, atom, molecule):
             drv.expression = "bond_radius"
             
 
-def set_bond_drivers(context, bond, molecule):
-    fc_x = bond.driver_add('scale', 0)
-    fc_z = bond.driver_add('scale', 2)
-    for fcurve in (fc_x, fc_z):
-        drv = fcurve.driver
-        drv.type = 'AVERAGE'
-        drv.show_debug_info = True
+def set_bond_drivers(context, bond, molecule, type='MESH'):
+    if type == 'MESH':
+        fc_x = bond.driver_add('scale', 0)
+        fc_z = bond.driver_add('scale', 2)
+        for fcurve in (fc_x, fc_z):
+            drv = fcurve.driver
+            drv.type = 'AVERAGE'
+            drv.show_debug_info = True
+            
+            var = drv.variables.get('bond_radius')
+            if not var:
+                var = drv.variables.new()
+                var.name = 'bond_radius' # name to use in scripting
+                var.type = 'SINGLE_PROP'
+            targ = var.targets[0]
+            targ.id_type = 'SCENE'
+            targ.id = context.scene
+            targ.data_path = 'mb.molecules["{}"].bond_radius'.format(molecule.name)
+
+    elif type == 'CURVE':
+        bp = bond.data.splines[0].bezier_points
+        for i in range(2):
+            fc_list = bp[i].driver_add('co', -1)
+            for dim, fcurve in zip(('X', 'Y', 'Z'), fc_list):
+                drv = fcurve.driver
+                drv.type = 'AVERAGE'
+                drv.show_debug_info = True
+            
+                var = drv.variables.get('atom_location')
+                if not var:
+                    var = drv.variables.new()
+                    var.name = 'atom_location' # name to use in scripting
+                    var.type = 'TRANSFORMS'
+                targ = var.targets[0]
+                #targ.id_type = 'OBJECT'
+                targ.id = bond.mb.bonded_atoms[i].get_object()
+                #targ.data_path = 'location'
+                targ.transform_type = 'LOC_{}'.format(dim)
+                targ.transform_space = 'TRANSFORM_SPACE'
+
+def new_material(name, color=(0.8, 0.8, 0.8), molecule=None):
+    '''
+    creates new material. If molecule is given, the molecule.mb.bond_color property will be added as driver.
+    '''
+    material = bpy.data.materials.new(name)
+    #scn_elements = bpy.context.scene.mb.elements
+    #color = scn_elements.get(element, scn_elements["Default"]).color
+    if molecule == None:
+        material.diffuse_color = color
+    else:
+        for i in range(3):
+            fcurve =  material.driver_add('diffuse_color', i) # add new driver
+            drv = fcurve.driver
+            drv.type = 'AVERAGE'
+            drv.show_debug_info = True
+            
+            var = drv.variables.new()
+            var.name = 'diffuse_color' # name to use in scripting
+            var.type = 'SINGLE_PROP'
+            targ = var.targets[0]
+            targ.id_type = 'SCENE'
+            targ.id = bpy.context.scene
+            targ.data_path = 'mb.molecules["{}"].bond_color[{}]'.format(molecule.name, i)
+    
+    if bpy.context.scene.render.engine == 'CYCLES':
+        material.use_nodes = True
+        # add alpha value to atom.color
+        #color_alpha = list(color) + [1.0]
+        #material.node_tree.nodes['Diffuse BSDF'].inputs[0].default_value = color_alpha
         
-        var = drv.variables.new()
-        var.name = 'bond_radius' # name to use in scripting
-        var.type = 'SINGLE_PROP'
-        targ = var.targets[0]
-        targ.id_type = 'SCENE'
-        targ.id = context.scene
-        targ.data_path = 'mb.molecules["{}"].bond_radius'.format(molecule.name)
-        
+        # add driver to rendered color to be the same as display color
+        nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
+        for i in range(3): # not for alpha channel
+            fcurve =  nodesocketcolor.driver_add('default_value', i) # add new driver
+            drv = fcurve.driver
+            drv.type = 'AVERAGE'
+            drv.show_debug_info = True
+            
+            var = drv.variables.new()
+            var.name = 'diffuse_color' # name to use in scripting
+            var.type = 'SINGLE_PROP'
+            targ = var.targets[0]
+            targ.id_type = 'MATERIAL'
+            targ.id = material
+            targ.data_path = 'diffuse_color[{}]'.format(i)
+    return material
+
 def assign_atom_material(ob, molecule):
     # make sure there is at least one material slot
     if len(ob.material_slots) < 1:
@@ -316,95 +420,127 @@ def assign_atom_material(ob, molecule):
     # get or create element material per molecule
     material = bpy.data.materials.get(material_name)
     if not material:
-        # get material color from elements list, and Default if not an element
-        material = bpy.data.materials.new(material_name)
         scn_elements = bpy.context.scene.mb.elements
         color = scn_elements.get(element, scn_elements["Default"]).color
-        material.diffuse_color = color
-        if bpy.context.scene.render.engine == 'CYCLES':
-            material.use_nodes = True
-            # add alpha value to atom.color
-            #color_alpha = list(color) + [1.0]
-            #material.node_tree.nodes['Diffuse BSDF'].inputs[0].default_value = color_alpha
-            
-            # add driver to rendered color to be the same as display color
-            nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
-            for i in range(3): # not for alpha channel
-                fcurve =  nodesocketcolor.driver_add('default_value', i) # add new driver
-                drv = fcurve.driver
-                drv.type = 'AVERAGE'
-                drv.show_debug_info = True
-                
-                var = drv.variables.new()
-                var.name = 'diffuse_color' # name to use in scripting
-                var.type = 'SINGLE_PROP'
-                targ = var.targets[0]
-                targ.id_type = 'MATERIAL'
-                targ.id = material
-                targ.data_path = 'diffuse_color[{}]'.format(i)
-            
+        # get material color from elements list, and Default if not an element
+        material = new_material(material_name, color=color)
+    
     # finally, assign material to first slot.
     ob.material_slots[0].link = 'DATA'
     ob.material_slots[0].material = material
 
 def assign_bond_material(ob):
-    # make sure to have at least two material slots
-    for i in range(2 - len(ob.material_slots)):
-        ob.data.materials.append(None)
     
-    molecule = ob.mb.get_molecule()
+    #bond_type = 'CURVE'
+    bond_type = 'MESH'
+    
+    bond_mol = ob.mb.get_molecule()
     
     first_atom = ob.mb.bonded_atoms[0].get_object()
     second_atom = ob.mb.bonded_atoms[1].get_object()
     
-    if molecule.bond_material == 'ATOMS':
-        first_mat = first_atom.material_slots[0].material
-        second_mat = second_atom.material_slots[0].material
-    else:
-        first_mat_name = "mat_bond_{}".format(first_atom.mb.get_molecule().index)
-        first_mat = bpy.data.materials.get(first_mat_name)
-        if not first_mat:
-            first_mat = bpy.data.materials.new(first_mat_name)
-            color = first_atom.mb.get_molecule().bond_color
-            first_mat.diffuse_color = color
-            if bpy.context.scene.render.engine == 'CYCLES':
-                first_mat.use_nodes = True
-                # add alpha value to atom.color
-                #color_alpha = list(color) + [1.0]
-                #first_mat.node_tree.nodes['Diffuse BSDF'].inputs[0].default_value = color_alpha
-                
-                # add driver to rendered color to be the same as display color
-                nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
-                for i in range(3): # not for alpha channel
-                    fcurve =  nodesocketcolor.driver_add('default_value', i) # add new driver
-                    drv = fcurve.driver
-                    drv.type = 'AVERAGE'
-                    drv.show_debug_info = True
-                    
-                    var = drv.variables.new()
-                    var.name = 'diffuse_color' # name to use in scripting
-                    var.type = 'SINGLE_PROP'
-                    targ = var.targets[0]
-                    targ.id_type = 'MATERIAL'
-                    targ.id = material
-                    targ.data_path = 'diffuse_color[{}]'.format(i)
-        
-        second_mat_name = "mat_bond_{}".format(second_atom.mb.get_molecule().index)
-        second_mat = bpy.data.materials.get(second_mat_name)
-        if not second_mat:
-            second_mat = bpy.data.materials.new(second_mat_name)
-            color = second_atom.mb.get_molecule().bond_color
-            second_mat.diffuse_color = color
-            if bpy.context.scene.render.engine == 'CYCLES':
-                second_mat.use_nodes = True
-                # add alpha value to atom.color
-                color_alpha = list(color) + [1.0]
-                second_mat.node_tree.nodes['Diffuse BSDF'].inputs[0].default_value = color_alpha
+    first_mol = first_atom.mb.get_molecule()
+    second_mol = second_atom.mb.get_molecule()
     
-    ob.material_slots[0].link = 'OBJECT'
-    ob.material_slots[1].link = 'OBJECT'
-    ob.material_slots[0].material = first_mat
-    ob.material_slots[1].material = second_mat
+    first_mat = None
+    second_mat = None
+    
+    if bond_type != 'CURVE':
+        # the molecule properties of the two bonded atoms are used.
+        # to use the bond_mol properties change accordingly
+        if first_mol.bond_material == 'ATOMS':
+            first_mat = first_atom.material_slots[0].material
+        elif first_mol.bond_material == 'GENERIC':
+            first_mat_name = "mat_bond_{}".format(first_mol.index)
+            first_mat = bpy.data.materials.get(first_mat_name)
+            if not first_mat:
+                first_mat = new_material(first_mat_name, molecule=first_mol)
+        
+        if second_mol.bond_material == 'ATOMS':
+            second_mat = second_atom.material_slots[0].material
+        elif second_mol.bond_material == 'GENERIC':
+            second_mat_name = "mat_bond_{}".format(second_mol.index)
+            second_mat = bpy.data.materials.get(second_mat_name)
+            if not second_mat:
+                second_mat = new_material(second_mat_name, molecule=second_mol)
+                
+        # make sure to have at least two material slots
+        for i in range(2 - len(ob.material_slots)):
+            ob.data.materials.append(None)
+        
+        ob.material_slots[0].link = 'OBJECT'
+        ob.material_slots[1].link = 'OBJECT'
+        ob.material_slots[0].material = first_mat
+        ob.material_slots[1].material = second_mat
+
+    elif bond_type == 'CURVE':
+        # the bond_mol properties are used
+        if bond_mol.bond_material == 'ATOMS':
+            debug_print("Atom colored bonds are not yet supported with Curve bonds.", level=2)
+            bond_mol.bond_material == 'GENERIC'
+            # changing bond_material will call this function again
+            return
+        elif bond_mol.bond_material == 'GENERIC':
+            mat_name = "mat_bond_{}".format(bond_mol.index)
+            mat = bpy.data.materials.get(mat_name)
+            if not mat:
+                mat = new_material(mat_name, molecule=bond_mol)
+        
+        # make sure to have at least one material slot
+        if len(ob.material_slots) == 0:
+            ob.data.materials.append(None)
+        ob.material_slots[0].link = 'OBJECT'
+        ob.material_slots[0].material = mat
+        
+        
+        ### The following is the beginning of an attempt to create a cycles material that features both atom colors (or generic)
+            #material = bpy.data.materials.new(ob.name)
+            
+            #if molecule.bond_material == 'GENERIC':
+                #color = first_atom.mb.get_molecule().bond_color
+                #material.diffuse_color = color
+                #if bpy.context.scene.render.engine == 'CYCLES':
+                    #material.use_nodes = True
+                    ## add driver to rendered color to be the same as display color
+                    #nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
+                    #for i in range(3): # not for alpha channel
+                        #fcurve =  nodesocketcolor.driver_add('default_value', i) # add new driver
+                        #drv = fcurve.driver
+                        #drv.type = 'AVERAGE'
+                        #drv.show_debug_info = True
+                        
+                        #var = drv.variables.new()
+                        #var.name = 'diffuse_color' # name to use in scripting
+                        #var.type = 'SINGLE_PROP'
+                        #targ = var.targets[0]
+                        #targ.id_type = 'MATERIAL'
+                        #targ.id = material
+                        #targ.data_path = 'diffuse_color[{}]'.format(i)
+            #else:
+                #material.use_nodes = True
+                #tree = material.node_tree
+                #links = tree.links
+                #for n in tree.nodes:
+                    #tree.nodes.remove(n)
+                #coords = tree.nodes.new('ShaderNodeTexCoord')
+                #coords.location = 0, 200
+                #mapping = tree.nodes.new('ShaderNodeMapping')
+                #mapping.location = 200, 200
+                #script = tree.nodes.new('ShaderNodeScript')
+                #script.location = 600, 200
+                #script.mode = 'EXTERNAL'
+                #script.filepath = "//bond_shader.osl"
+                #script.shader_script_update()
+                #output = tree.nodes.new('ShaderNodeOutputMaterial')
+                #output.location = 800, 200
+                
+                #links.new(coords.outputs[3], mapping.inputs[0])
+                #links.new(mapping.outputs[0], script.inputs[0])
+                #links.new(script.outputs[0], output.inputs[0])
+                
+                ## add driver to mapping node to rotate texture coordinates
+                
+                ## add driver to colors 1 and 2
 
 def update_atom_element(self, context):
     '''
@@ -464,16 +600,17 @@ def update_bond_material(self, context):
     
     
 def add_atom(context, location, element, atom_name, molecule):
-    #mesh_data = get_atom_data(element, type='MESH', refine=8)
-    #new_atom = bpy.data.objects.new(name, mesh_data)
-    
-    bpy.ops.object.add(type='MESH')
-    new_atom = context.object
-    new_atom.location = location
-    
     # get new unique name for object
     name = "atom_{}.{}".format(molecule.index, molecule.atom_index)
-    new_atom.name = name
+    
+    mesh_data = get_atom_data(element, molecule, type='MESH', refine=8)
+    new_atom = bpy.data.objects.new(name, mesh_data)
+    context.scene.objects.link(new_atom)
+    #bpy.ops.object.add(type='MESH')
+    #new_atom = context.object
+    new_atom.location = location
+    
+    #new_atom.name = name
     # set mb properties
     new_atom.mb.name = new_atom.name
     new_atom.mb.id_molecule = molecule.name
@@ -493,16 +630,21 @@ def add_atom(context, location, element, atom_name, molecule):
     return new_atom
 
 def add_bond(context, first_atom, second_atom, refine=8):
-    if first_atom.mb.id_molecule != second_atom.mb.id_molecule:
-        # TODO join molecule properties if connecting different molecules
-        pass
+    #if first_atom.mb.id_molecule != second_atom.mb.id_molecule:
+        ## TODO join molecule properties if connecting different molecules
+        #pass
     # get new unique name for bond
     first_mol = first_atom.mb.get_molecule()
     second_mol = second_atom.mb.get_molecule()
     name = "bond_{}.{}-{}.{}".format(first_mol.index, first_atom.mb.index, second_mol.index, second_atom.mb.index)
     
     bond_mesh = get_bond_data(type='MESH', refine=8)
+    #bond_mesh = get_bond_data(type='CURVE')
+    #if True:
+        #bond_mesh.name = name
     new_bond = bpy.data.objects.new(name, bond_mesh)
+    context.scene.objects.link(new_bond)
+    new_bond.hide = (first_mol.draw_style == 'BALLS')
     
     # set mb properties
     new_bond.mb.type = 'BOND'
@@ -513,24 +655,21 @@ def add_bond(context, first_atom, second_atom, refine=8):
     second = new_bond.mb.bonded_atoms.add()
     second.name = second_atom.name
     
+    # add bond to atoms mb props
+    b = first_atom.mb.bonds.add()
+    b.name = new_bond.name
+    b = second_atom.mb.bonds.add()
+    b.name = new_bond.name
+    
+    # add it to first molecule collection
     first_mol.add_bond(new_bond)
-    second_mol.add_bond(new_bond)
-    assign_bond_material(new_bond)
     
-    context.scene.objects.link(new_bond)
-    context.scene.objects.active = new_bond
-    
-    #parenting doesn't work as it affects the scale of the bond as well == bad
-    #new_bond.parent = first_atom
-    # use constraint instead
-    
-    bpy.ops.object.constraint_add(type='COPY_LOCATION')
-    c = new_bond.constraints[-1]
+    # don't parent, as parenting also affects the scale
+    c = new_bond.constraints.new('COPY_LOCATION')
     c.name = "parent"
     c.target = first_atom
     
-    bpy.ops.object.constraint_add(type='STRETCH_TO')
-    c = new_bond.constraints[-1]
+    c = new_bond.constraints.new('STRETCH_TO')
     c.name = "stretch"
     c.rest_length = 1.0
     c.volume = 'NO_VOLUME'
@@ -539,8 +678,8 @@ def add_bond(context, first_atom, second_atom, refine=8):
     assign_bond_material(new_bond)
     set_bond_drivers(context, new_bond, new_bond.mb.get_molecule())
     new_bond.parent = first_mol.parent.get_object()
+    
     return new_bond
-            
     
 def return_cursor_object(context, event, ray_max=10000.0, exclude=[], mb_type=''):
     """ This is a function that can be run from a modal operator
@@ -704,6 +843,7 @@ def get_fixed_geometry(context, first_atom, coord_3d, geometry):
         bond_ob = bond.get_object()
         for atom in bond_ob.mb.bonded_atoms:
             if not atom.name == first_atom.name:
+                
                 bond_vecs.append((atom.get_object().location - first_atom.location).normalized())
                 break
     
@@ -1018,7 +1158,7 @@ def read_qe_unit_cell(filepath, draw_type='ARROWS'):
                 break
     
     #if 'CUBE' in draw_type:
-    bpy.ops.mesh.primitive_cube_add()
+    bpy.ops.mesh.primitive_cube_add(location=(0,0,0))
     uc_cube = bpy.context.object
     uc_cube.name = "unit_cell"
     bm = bmesh.new()
@@ -1050,28 +1190,10 @@ def read_qe_unit_cell(filepath, draw_type='ARROWS'):
         # get material
         material = bpy.data.materials.get('axes')
         if not material:
-            material = bpy.data.materials.new('axes')
-            material.diffuse_color = (1,0,0)
-            if bpy.context.scene.render.engine == 'CYCLES':
-                material.use_nodes = True
-                # add driver to rendered color to be the same as display color
-                nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
-                for i in range(3): # not for alpha channel
-                    fcurve =  nodesocketcolor.driver_add('default_value', i) # add new driver
-                    drv = fcurve.driver
-                    drv.type = 'AVERAGE'
-                    drv.show_debug_info = True
-                    
-                    var = drv.variables.new()
-                    var.name = 'diffuse_color' # name to use in scripting
-                    var.type = 'SINGLE_PROP'
-                    targ = var.targets[0]
-                    targ.id_type = 'MATERIAL'
-                    targ.id = material
-                    targ.data_path = 'diffuse_color[{}]'.format(i)
+            material = new_material('axes', color=(1,0,0))
         
         # add sphere at origin
-        bpy.ops.mesh.primitive_uv_sphere_add(size=radius, segments=8, ring_count=8)
+        bpy.ops.mesh.primitive_uv_sphere_add(location=(0,0,0), size=radius, segments=8, ring_count=8)
         ob = bpy.context.object
         ob.name = "unit_cell_origin"
         ob.parent = uc_cube
@@ -1079,7 +1201,7 @@ def read_qe_unit_cell(filepath, draw_type='ARROWS'):
         ob.data.materials.append(None)
         ob.material_slots[0].material = material
         
-        bpy.ops.mesh.primitive_cylinder_add(radius=radius, vertices=8, 
+        bpy.ops.mesh.primitive_cylinder_add(location=(0,0,0), radius=radius, vertices=8, 
                 depth=1, end_fill_type="TRIFAN")
         ob = bpy.context.object
         ob.data.materials.append(None)
@@ -1205,7 +1327,7 @@ def import_molecule(filepath,
                     mask_flip,
                     supercell,
                     ):
-    import time
+    
     start = time.time()
     
     all_frames = []
@@ -1280,11 +1402,11 @@ def import_molecule(filepath,
     
     # add bonds to scene
     debug_print("", 4)
+    
     for index1, other in bonds.items():
         for index2 in other:
             debug_print("\rbond {}-{}".format(index1, index2), level=4, end='')
             new_bond = add_bond(bpy.context, atom_obs[index1], atom_obs[index2])
-            new_bond.hide = (molecule.draw_style == 'BALLS')
     debug_print("", 4)
     
     debug_print("bonds", 4)
@@ -1404,3 +1526,27 @@ def export_pdb(filepath, selection_only, scale_distances):
 #verts[6].co = unit_vectors[0] + unit_vectors[1] + unit_vectors[2]
 #bm.to_mesh(uc.data)
 #bm.free()
+
+#--------------------------------------------------------------
+#import bpy
+#import time
+
+#bpy.ops.mesh.primitive_uv_sphere_add()
+#mesh = bpy.context.object.data
+
+#start = time.time()
+#with open('test_blender', 'w') as fin:
+    #for i in range(1000):
+        #last = time.time()
+        #print('\r{}'.format(i), end='')
+        
+        ##bpy.ops.object.add(type='MESH')
+        ##new_atom = bpy.context.object
+        ##new_atom.name = 'test{}'.format(i)
+        ##new_atom.data = mesh
+        
+        #new_atom = bpy.data.objects.new('test{}'.format(i), mesh)
+        #bpy.context.scene.objects.link(new_atom)
+        #fin.write('{}\t{}\n'.format(i, time.time()-last))
+#print()
+#print(time.time()-start)
