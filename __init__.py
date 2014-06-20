@@ -89,10 +89,13 @@ from bpy.props import (StringProperty,
 # TODO maybe implement change of units within Blender
 # TODO maybe create a different mesh for refine value (maybe), allowing different molecule to have different refines
 
-class MB_PT_tools(Panel):
+class MolBlendPanel():
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
-    bl_label = "MolBlend - tools"
+    bl_category = "MolBlend"
+
+class MB_PT_tools(MolBlendPanel, Panel):
+    bl_label = "Tools"
     
     def draw(self, context):
         layout = self.layout
@@ -126,10 +129,15 @@ class MB_PT_tools(Panel):
         #row = box.row()
         #row.operator("mb.hover", text="Hover")
         
-        #--- atom props -------------------------------------------------------#
+class MB_PT_atom(MolBlendPanel, Panel):
+    bl_label = "Atom properties"
+    
+    def draw(self, context):
+        layout = self.layout
         box = layout.box()
         active_ob = context.object
-        if context.window_manager.mb.is_running and active_ob and active_ob.mb.type == 'ATOM':
+        if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM':
+        #if context.window_manager.mb.is_running and active_ob and active_ob.mb.type == 'ATOM':
             box.active = True
         else:
             box.active = False
@@ -142,17 +150,20 @@ class MB_PT_tools(Panel):
         col.label("Atom color")
         
         col = row.column()
-        if active_ob and active_ob.mb.type == 'ATOM':
+        if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM':
             col.prop(active_ob.mb, "element", text="")
             #if context.window_manager.mb.is_running:
             col.prop(context.scene.mb.elements[active_ob.mb.element], "covalent", text="")
             col.prop(active_ob.material_slots[0].material, "diffuse_color", text="")
-
-        #--- molecule props ---------------------------------------------------#
+        
+class MB_PT_molecule(MolBlendPanel, Panel):
+    bl_label = "Molecule properties"
+    
+    def draw(self, context):
+        layout = self.layout
         box = layout.box()
         active_ob = context.object
-        if (context.window_manager.mb.is_running 
-            and active_ob and active_ob.mb.type in ('ATOM', 'BOND')):
+        if (active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type in ('ATOM', 'BOND')):
             box.active = True
         else:
             box.active = False
@@ -167,7 +178,7 @@ class MB_PT_tools(Panel):
         col.label("Bond material")
         col.label("Bond color")
         col = row.column()
-        if active_ob and active_ob.mb.type in ('ATOM', 'BOND'):
+        if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type in ('ATOM', 'BOND'):
             mol = active_ob.mb.get_molecule()
             col.prop(mol.atom_scales[mol.draw_style], "val", text="")
             col.prop(mol, "bond_radius", text="")
@@ -178,15 +189,37 @@ class MB_PT_tools(Panel):
         
         row = box.row()
         row.operator("mb.center_mol_parent")
-        
-        #--- global settings --------------------------------------------------#
+
+class MB_PT_import_export(MolBlendPanel, Panel):
+    bl_label = "Import/Export"
+    
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        box.active = context.window_manager.mb.is_running
+        row = box.row()
+        row.label("Import - Export")
+        row = box.row()
+        row.operator("mb.import_molecule", text="Import")
+        row = box.row()
+        row.operator("mb.export_molecule", text="Export")
+    
+class MB_PT_global(MolBlendPanel, Panel):
+    bl_label = "Global Settings"
+    
+    def draw(self, context):
+        layout = self.layout
         box = layout.box()
         box.active = context.window_manager.mb.is_running
         box.label("Global settings")
         
-        #--- view setting -----------------------------------------------------#        
+class MB_PT_view(MolBlendPanel, Panel):
+    bl_label = "View"
+    
+    def draw(self, context):
+        layout = self.layout
         box = layout.box()
-        box.active = context.window_manager.mb.is_running
+        #box.active = context.window_manager.mb.is_running
         row = box.row()
         row.label("View")
         row = box.row()
@@ -205,16 +238,7 @@ class MB_PT_tools(Panel):
         row.label(icon='MANIPUL')
         row.operator("screen.region_quadview", text="Quadview")
         
-        #--- import-export-----------------------------------------------------#
-        box = layout.box()
-        box.active = context.window_manager.mb.is_running
-        row = box.row()
-        row.label("Import - Export")
-        row = box.row()
-        row.operator("mb.import_molecule", text="Import")
-        row = box.row()
-        row.operator("mb.export_molecule", text="Export")
-    
+
 #class MB_PT_settings(Panel):
     #bl_space_type = "VIEW_3D"
     #bl_region_type = "TOOLS"

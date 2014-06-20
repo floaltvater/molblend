@@ -60,8 +60,8 @@ class enums():
     mb_tools = [('NONE', "None", "None"),
                     ('ADD_ATOM', "Add atom", "Add atom"),
                     ('SELECT', "Select", "Select"),
-                    ('MOVE', "Move", "Move"),
-                    ('ROTATE', "Rotate", "Rotate")
+                    #('MOVE', "Move", "Move"),
+                    #('ROTATE', "Rotate", "Rotate")
                    ]
     radius_types = [('covalent', 'covalent', 'covalent'),
                     ('vdw', 'van der Waals', 'van der Waals'),
@@ -237,7 +237,8 @@ def get_bond_data(type='MESH', refine=8):
             
             bm.to_mesh(data)
             bm.free()
-            bpy.ops.object.shade_smooth()
+            data.update()
+            #bpy.ops.object.shade_smooth()
 
             
     if type == 'CURVE':
@@ -630,6 +631,14 @@ def add_atom(context, location, element, atom_name, molecule):
     return new_atom
 
 def add_bond(context, first_atom, second_atom, refine=8):
+    if first_atom == second_atom:
+        debug_print('WARNING: add_bond: first_atom == second_atom', 3)
+        return None
+    for b in first_atom.mb.bonds:
+        for ba in b.get_object().mb.bonded_atoms:
+            if ba.get_object() == second_atom:
+                debug_print('WARNING: add_bond: Bond already exists', 3)
+                return None
     #if first_atom.mb.id_molecule != second_atom.mb.id_molecule:
         ## TODO join molecule properties if connecting different molecules
         #pass

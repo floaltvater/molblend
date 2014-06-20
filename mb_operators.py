@@ -219,8 +219,31 @@ class MB_OT_right_click(Operator):
     def execute(self, context):
         return {'FINISHED'}
 
-    def invoke(self,context,event):
+    def invoke(self, context, event):
         bpy.ops.wm.call_menu(name="MB_MT_right_click_menu")
+        return {'FINISHED'}
+
+class MB_OT_set_tool(Operator):
+    '''
+    Simple operator that allows to use keyboard shortcuts to set active tool
+    '''
+    bl_idname = "mb.set_tool"
+    bl_label = "Set tool"
+    bl_options = {'REGISTER'}
+    
+    add_atom = BoolProperty(default=False)
+    select = BoolProperty(default=False)
+    
+    def execute(self, context):
+        print(self.add_atom, self.select)
+        if self.add_atom and not self.select:
+            print('add_atom')
+            context.window_manager.mb.globals.active_tool = 'ADD_ATOM'
+        elif self.select and not self.add_atom:
+            print('select')
+            context.window_manager.mb.globals.active_tool = 'SELECT'
+        else:
+            debug_print('WARNING: mb.set_tool properties are set incorrectly.', 1)
         return {'FINISHED'}
     
 class MB_OT_add_atom(Operator):
@@ -284,25 +307,29 @@ class MB_OT_add_atom(Operator):
                 #return {'RUNNING_MODAL'}
             new_bond = context.scene.objects.get(self.new_bond_name)
             first_atom = context.scene.objects.get(self.first_atom_name)
-            hover_ob = mb_utils.return_cursor_object(context, event, exclude=[new_atom], mb_type='ATOM')
-            if hover_ob:
-                new_atom.draw_bounds_type = 'SPHERE'
-                new_atom.draw_type = 'BOUNDS'
-                if new_bond:
-                    new_bond.constraints["stretch"].target = hover_ob
+            
+            if not event.ctrl and not event.alt:
+                hover_ob = mb_utils.return_cursor_object(context, event, exclude=[new_atom], mb_type='ATOM')
+                if hover_ob:
+                    new_atom.draw_bounds_type = 'SPHERE'
+                    new_atom.draw_type = 'BOUNDS'
+                    if new_bond:
+                        new_bond.constraints["stretch"].target = hover_ob
+                else:
+                    new_atom.draw_type = 'SOLID'
+                    if new_bond:
+                        new_bond.constraints["stretch"].target = new_atom
             else:
                 new_atom.draw_type = 'SOLID'
                 if new_bond:
                     new_bond.constraints["stretch"].target = new_atom
-            
-            if event.ctrl and new_bond:
-                # lock into certain angles
-                self.coord_3d = mb_utils.get_fixed_geometry(context, first_atom, self.coord_3d, self.geometry)
-            if event.alt and new_bond:
-                # constrain length
-                length = 1.0
-                self.coord_3d = mb_utils.get_fixed_length(context, first_atom, self.coord_3d, length)
-                
+                if event.ctrl and new_bond:
+                    # lock into certain angles
+                    self.coord_3d = mb_utils.get_fixed_geometry(context, first_atom, self.coord_3d, self.geometry)
+                if event.alt and new_bond:
+                    # constrain length
+                    length = 1.0
+                    self.coord_3d = mb_utils.get_fixed_length(context, first_atom, self.coord_3d, length)
             
             new_atom.location = self.coord_3d
             # sometimes, when bond is exactly along axis, the dimension goes to zero due to the stretch constraint
@@ -313,21 +340,18 @@ class MB_OT_add_atom(Operator):
         elif event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
             # check if new atom is above already existing atom
             new_atom = context.object
+            first_atom = context.scene.objects.get(self.first_atom_name)
             hover_ob = mb_utils.return_cursor_object(context, event, exclude=[new_atom], mb_type='ATOM')
             if hover_ob:
                 mol = new_atom.mb.get_molecule()
                 mol.remove_atom(new_atom)
+                mol.atom_index -= 1
                 context.scene.objects.unlink(new_atom)
+                bpy.data.objects.remove(new_atom)
                 new_bond = context.scene.objects.get(self.new_bond_name)
-                if new_bond and hover_ob == new_bond.constraints["parent"].target:
+                if new_bond and hover_ob:
                     context.scene.objects.unlink(new_bond)
-                elif new_bond:
-                    b = hover_ob.mb.bonds.add()
-                    b.name = new_bond.name
-                    
-                    new_bond.constraints["stretch"].target = hover_ob
-                    new_bond.mb.bonded_atoms[-1].name = hover_ob.name
-                    mb_utils.assign_bond_material(new_bond)
+                    mb_utils.add_bond(context, first_atom, hover_ob)
                     
             return {'FINISHED'}
         
