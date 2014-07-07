@@ -235,12 +235,9 @@ class MB_OT_set_tool(Operator):
     select = BoolProperty(default=False)
     
     def execute(self, context):
-        print(self.add_atom, self.select)
         if self.add_atom and not self.select:
-            print('add_atom')
             context.window_manager.mb.globals.active_tool = 'ADD_ATOM'
         elif self.select and not self.add_atom:
-            print('select')
             context.window_manager.mb.globals.active_tool = 'SELECT'
         else:
             debug_print('WARNING: mb.set_tool properties are set incorrectly.', 1)
@@ -268,7 +265,7 @@ class MB_OT_add_atom(Operator):
     ctrl = BoolProperty(default=False)
     alt = BoolProperty(default=False)
     
-    geometry = EnumProperty(name="Geometry", default='VIEW', items=mb_utils.enums.geometries,
+    geometry = EnumProperty(name="Geometry", default='SINGLE', items=mb_utils.enums.geometries,
                       description="Geometry the new bond should be in relative to existing bonds. Press CTRL to activate.")
     
     def mb_atom_objects(self, context):
@@ -325,7 +322,7 @@ class MB_OT_add_atom(Operator):
                     new_bond.constraints["stretch"].target = new_atom
                 if event.ctrl and new_bond:
                     # lock into certain angles
-                    self.coord_3d = mb_utils.get_fixed_geometry(context, first_atom, self.coord_3d, self.geometry)
+                    self.coord_3d = mb_utils.get_fixed_geometry(context, first_atom, new_atom, self.coord_3d, self.geometry)
                 if event.alt and new_bond:
                     # constrain length
                     length = 1.0
@@ -721,6 +718,12 @@ class MB_OT_import_molecule(Operator, ImportHelper):
             maxlen=1024,
             subtype='FILE_PATH',
             )
+    #modepath = StringProperty(
+            #name="Mode Path",
+            #description="Filepath to normal mode file",
+            #maxlen=1024,
+            #subtype='FILE_PATH',
+            #)
     directory = StringProperty(
             name="Directory",
             description="Directory used for importing the file",
@@ -884,6 +887,12 @@ class MB_OT_import_molecule(Operator, ImportHelper):
         col = row.column()
         col.prop(self, "bond_color")
         
+        #box = layout.box()
+        #row = box.row()
+        #row.label(text="Normal modes")
+        #row = box.row()
+        #row.prop(self, "modepath")
+        
         box = layout.box()
         row = box.row()
         row.label(text="Masking object")
@@ -956,8 +965,8 @@ class MB_OT_import_molecule(Operator, ImportHelper):
         return {'RUNNING_MODAL'}
                 
     def execute(self, context):
-        import time
-        start = time.time()
+        ##import time
+        ##start = time.time()
         paths = [os.path.join(self.directory, f.name) for f in self.files]
         if not paths:
             paths.append(bpy.path.abspath(self.filepath))
@@ -1033,7 +1042,7 @@ class MB_OT_import_molecule(Operator, ImportHelper):
                 
                 #import_molecule.build_frames(self.images_per_key, self.skip_frames,
                                         #frame_list, self.interpolation)
-        print("Imported in {} s".format(time.time()-start))
+        #print("Imported in {} s".format(time.time()-start))
         return {'FINISHED'}
 
 class ExportPDB(Operator, ExportHelper):

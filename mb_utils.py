@@ -54,35 +54,45 @@ class enums():
                     ('BOND', "Bond", "Bond"),
                     #('CHARGE', "Charge", "Charge"),
                    ]
-    group_types = [('NONE', "None", "None"),
-                    ('MOLECULE', "Molecule", "Molecule"),
-                   ]
-    mb_tools = [('NONE', "None", "None"),
-                    ('ADD_ATOM', "Add atom", "Add atom"),
-                    ('SELECT', "Select", "Select"),
-                    #('MOVE', "Move", "Move"),
-                    #('ROTATE', "Rotate", "Rotate")
-                   ]
+    #group_types = [('NONE', "None", "None"),
+                    #('MOLECULE', "Molecule", "Molecule"),
+                   #]
+    mb_tools = [('BLENDER', "Blender", "Use normal Blender input"),
+                ('ADD_ATOM', "Add atom", "Add atom"),
+                ('SELECT', "Select", "Select"),
+                #('MOVE', "Move", "Move"),
+                #('ROTATE', "Rotate", "Rotate")
+               ]
     radius_types = [('covalent', 'covalent', 'covalent'),
                     ('vdw', 'van der Waals', 'van der Waals'),
-                    ('constant', 'constant', 'constant')
+                    ('constant', 'constant', 'constant'),
                    ]
     molecule_styles = [('BALLS', 'Balls', 'Space filling'),
                        ('BAS', 'Balls and Sticks', 'Balls and Sticks'),
-                       ('STICKS', 'Sticks', 'Sticks')]
+                       ('STICKS', 'Sticks', 'Sticks'),
+                      ]
     bond_material = [('ATOMS', "Atoms", "Same as atoms"),
-                     ('GENERIC', "Generic" , "Single bond color")]
-    geometries = [('VIEW', "Planar angles", "Angles are multiples of 30 and 45 deg. in the view plane"),
-                  ('OCTAHEDRAL', "Octahedral", "Octahedral"),
-                  ('TETRAHEDRAL', "Tetrahedral", "Tetrahedral or sp3"),
+                     ('GENERIC', "Generic" , "Single bond color"),
+                    ]
+    #geometries = [('VIEW', "Planar angles", "Angles are multiples of 30 and 45 deg. in the view plane"),
+                  #('OCTAHEDRAL', "Octahedral", "Octahedral"),
+                  #('TETRAHEDRAL', "Tetrahedral", "Tetrahedral or sp3"),
+                  #('TRIGONAL', "Trig. planar", "Trigonal planar or sp2"),
+                  #('LINEAR', "Linear", "Linear or sp")]
+    geometries = [('SINGLE', "Single atom", "Angles are multiples of 30 and 45 deg. in the view plane"),
+                  ('LINEAR', "Linear", "Linear or sp"),
                   ('TRIGONAL', "Trig. planar", "Trigonal planar or sp2"),
-                  ('LINEAR', "Linear", "Linear or sp")]
+                  ('TETRAHEDRAL', "Tetrahedral", "Tetrahedral or sp3"),
+                  ('OCTAHEDRAL', "Octahedral", "Octahedral"),
+                 ]
     angstrom_per_unit = [('1.0', "Angstrom", "Angstrom"),
-                        ('0.529177249', "Bohr", "Bohr"),
-                        ('0.01', "pm", "Picometer"),
-                        ('OTHER', "Other", "Custom Unit")]
+                         ('0.529177249', "Bohr", "Bohr"),
+                         ('0.01', "pm", "Picometer"),
+                         ('OTHER', "Other", "Custom Unit"),
+                        ]
     file_types = [('XYZ', "*.xyz", "xyz format"),
-                  ('PDB', "*.pdb", "Protein Databank format")]
+                  ('PDB', "*.pdb", "Protein Databank format"),
+                 ]
 
 def create_new_keyconfig(context):
     
@@ -121,7 +131,7 @@ def add_element(context, element, element_dict):
 def initialize_elements(context):
     for element, data in ELEMENTS_DEFAULT.items():
         add_element(context, element, data)
-
+        
 def update_all_meshes(self, context):
     # TODO this callback might be to heavy for scenes with lots of meshes
     for me in bpy.data.meshes:
@@ -763,47 +773,23 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=[], mb_type=''
     # we could do lots of stuff but for the example just select.
     return best_obj
 
-def get_view_matrix(region, rv3d):
-    '''
-    returns the matrix that converts world coordinates into a coordinate system
-    aligned with the view, where x points to the right of the screen, y points up,
-    and z is the view vector pointing out of the screen.
-    '''
-    # get viewing vector
-    if rv3d:
-        view_vector = view3d_utils.region_2d_to_vector_3d(region, rv3d, (0, 0)).normalized()
-    else:
-        view_vector = Vector((0, 0, 1))
-    
-    # get vector that points up on screen (along screen y-axis)
-    vec1 = view3d_utils.region_2d_to_origin_3d(region, rv3d, (0, 0))
-    vec2 = view3d_utils.region_2d_to_origin_3d(region, rv3d, (0, 1))
-    up_vector = (vec2 - vec1).normalized()
-    
-    # get third orthogonal vector (along screen x-axis)
-    right_vector = up_vector.cross(view_vector).normalized()
-    
-    # get transformed x and y components of bond_vector
-    basis_change_matrix = Matrix((right_vector, up_vector, view_vector))
-    basis_change_matrix.transpose()
-    return basis_change_matrix
-
-def get_fixed_angle(context, first_atom, coord_3d):
+def get_fixed_angle(context, first_atom, coord_3d, angle_list=[]):
     # get current vector between first_atom and the mouse pointer
     bond_vector = coord_3d - first_atom.location
     
-    basis_change_matrix = get_view_matrix(context.region, context.region_data)
+    basis_change_matrix = context.region_data.view_matrix.to_3x3()
+    basis_change_matrix.transpose()
     # bond vector in viewing coordinates
     transformed = basis_change_matrix.inverted() * bond_vector
     # projection of coordinates into screen plane
     xy_vec = Vector((transformed.x, transformed.y))
-    # anambiguous angle between screen-x-axis and bond vector
+    # unambiguous angle between screen-x-axis and bond vector
     angle = math.atan2(xy_vec.y, xy_vec.x)
     
-    #angle_list = (0, 30, 45, 60, 90, 120, 135, 180, 210, 225, 240, 270, 300, 315, 330, 360)
-    angles_30 = list(range(-180, 181, 30))
-    angles_45 = list(range(-180, 181, 45))
-    angle_list = set(angles_30 + angles_45)
+    if not angle_list:
+        angles_30 = list(range(-180, 181, 30))
+        angles_45 = list(range(-180, 181, 45))
+        angle_list = set(angles_30 + angles_45)
     fixed_angles = sorted(list(map(math.radians, angle_list)))
     # find closest fixed angle in list
     pos = bisect_left(fixed_angles, angle)
@@ -833,82 +819,183 @@ def get_fixed_length(context, first_atom, coord_3d, length):
     bond_vector = (coord_3d - first_atom.location).normalized()
     return first_atom.location + bond_vector * length
 
-def get_fixed_geometry(context, first_atom, coord_3d, geometry):
+def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
     '''
     use existing bonds of first_atom to calculate new possible bond vectors for new bond
     based on geometry return the position that is closest to the mouse pointer (coord_3d)
     '''
     # get current vector between first_atom and the mouse pointer
-    bond_vector = coord_3d - first_atom.location
+    #bond_vector = coord_3d - first_atom.location
     
-    basis_change_matrix = get_view_matrix(context.region, context.region_data)
-    # bond vector in viewing coordinates
-    transformed = basis_change_matrix.inverted() * bond_vector
-    # and projected into screen plane
-    xy_vec = Vector((transformed.x, transformed.y))
+    #basis_change_matrix = context.region_data.view_matrix.to_3x3()
+    #basis_change_matrix.transpose()
+    ## bond vector in viewing coordinates
+    #transformed = basis_change_matrix.inverted() * bond_vector
+    ## and projected into screen plane
+    #xy_vec = Vector((transformed.x, transformed.y))
     
     bond_vecs = []
     for bond in first_atom.mb.bonds:
         bond_ob = bond.get_object()
         for atom in bond_ob.mb.bonded_atoms:
-            if not atom.name == first_atom.name:
-                
+            if not atom.name == first_atom.name and not atom.name == new_atom.name:
                 bond_vecs.append((atom.get_object().location - first_atom.location).normalized())
                 break
     
-    # last bond is the current active bond
-    n_bonds = len(bond_vecs) - 1
-    if n_bonds == 0:
-        return coord_3d
+    # existing number of bonds
+    n_bonds = len(bond_vecs)
+    #if n_bonds == 0:
+        #return coord_3d
     
-    elif geometry == 'VIEW':
+    if geometry == 'SINGLE' or n_bonds == 0:
         return get_fixed_angle(context, first_atom, coord_3d)
     
-    elif geometry == 'LINEAR':
-        if n_bonds != 1:
-            return coord_3d
-        else:
-            return first_atom.location - bond_vecs[0] * xy_vec.length
+    #elif n_bonds == 0:
+        #return coord_3d
     
+    elif geometry == 'LINEAR':
+        # matrix to change between view and world coordinates
+        basis_change_matrix = context.region_data.view_matrix.to_3x3()
+        basis_change_matrix.transpose()
+        # get all possible angles projected into the view plane
+        fixed_xy = []
+        for bond_vec in bond_vecs:
+            # bond vector in viewing coordinates
+            transformed = basis_change_matrix.inverted() * bond_vec
+            # projection of point mirrored coordinates into screen plane
+            fixed_xy.append(-Vector((transformed.x, transformed.y)))
+            ## unambiguous angle between screen-x-axis and bond vector
+            #fixed_angles.append(math.atan2(xy_vec.y, xy_vec.x))
+        
+        # get current vector between first_atom and the mouse pointer
+        bond_vector = coord_3d - first_atom.location
+        
+        # bond vector in viewing coordinates
+        transformed = basis_change_matrix.inverted() * bond_vector
+        # projection of coordinates into screen plane
+        xy_vec = Vector((transformed.x, transformed.y))
+        ## unambiguous angle between screen-x-axis and bond vector
+        #angle = math.atan2(xy_vec.y, xy_vec.x)
+        
+        # find index of closest fixed xy in list
+        pos, min_angle = min(enumerate(xy_vec.angle(other) for other in fixed_xy), key=lambda p: p[1])
+        
+        fixed_bond_vector = -bond_vecs[pos]
+        
+        # calculate new coordinates of second atom
+        fixed_vector = first_atom.location + fixed_bond_vector * xy_vec.length
+        return fixed_vector
+
     elif geometry == 'TRIGONAL':
-        if n_bonds > 2:
-            return coord_3d
-        elif n_bonds == 2:
-            # return negative angle bisecting vector
-            new_bond_vector = (bond_vecs[0] + bond_vecs[1]).normalized()
-            # if the two existing bonds are exactly linear, the new vector will have zero length
-            # and the new bond can lie on a circle around the middle atom.
-            # TODO return the point on the circle that is closest to the mouse pointer
-            if new_bond_vector.length == 0:
-                return coord_3d
-            else:
-                return first_atom.location - (bond_vecs[0] + bond_vecs[1]).normalized() * xy_vec.length
-        elif n_bonds == 1:
-            current_vec = -bond_vecs[0]
+        
+        basis_change_matrix = context.region_data.view_matrix.to_3x3()
+        basis_change_matrix.transpose()
+        
+        # get current vector between first_atom and the mouse pointer
+        bond_vector = coord_3d - first_atom.location
+        
+        # bond vector in viewing coordinates
+        transformed = basis_change_matrix.inverted() * bond_vector
+        # projection of coordinates into screen plane
+        xy_vec = Vector((transformed.x, transformed.y))
+        
+        if n_bonds >= 2:
+            #TODO only gets one vector!
+            # get the bisecting vector on the larger angle side of any two existing bonds
+            fixed_xy = []
+            bisect_vectors = []
+            for i, b1 in enumerate(bond_vecs[:-1]):
+                for b2 in bond_vecs[i+1:]:
+                    bisect_vector = -(b1 + b2).normalized()
+                    if (b1+b2).cross(b1).length < 1e-06:
+                        # if the two existing bonds are exactly linear, the new vector will have zero length
+                        # and the new bond can lie on a circle around the middle atom.
+                        # return the two fixed angles that are orthogonal to the two bonds and in the view plane
+                        view = basis_change_matrix.col[2]
+                        bisect_vector = b1.cross(view).normalized()
+                        # need to append an extra bisecting vector
+                        bisect_vectors.append(bisect_vector)
+                        transformed = basis_change_matrix.inverted() * bisect_vector
+                        fixed_xy.append(Vector((transformed.x, transformed.y)))
+                        # ... and the other one
+                        bisect_vector = -bisect_vector
+                    
+                    bisect_vectors.append(bisect_vector)
+                    transformed = basis_change_matrix.inverted() * bisect_vector
+                    fixed_xy.append(Vector((transformed.x, transformed.y)))
             
+            # find index of closest fixed xy in list
+            pos, min_angle = min(enumerate(xy_vec.angle(other) for other in fixed_xy), key=lambda p: p[1])
             
-            # rotate xy_vec so that x axis lies on existing bond
+            fixed_bond_vector = bisect_vectors[pos]
             
-            # TODO
-            #with only one bond, triangle is on a cone! Need to implement funcionality that returns the intersection of this cone with the mouse 3D coordinates
-            
-            bond_vecs[0]
-            
-            # get angle
-            
-            angle = math.atan2(xy_vec.y, xy_vec.x)
-            # new angle (60 degrees) has the same sign as the old one
-            fixed = math.copysign(math.pi*2/3, angle)
-            
-            transformed.x = math.cos(fixed) * xy_vec.length
-            transformed.y = math.sin(fixed) * xy_vec.length
-            
-            # transform back to world coordinates
-            new_bond_vector = basis_change_matrix * transformed
             # calculate new coordinates of second atom
-            fixed_vector = first_atom.location + new_bond_vector
+            fixed_vector = first_atom.location + fixed_bond_vector * xy_vec.length
             return fixed_vector
+        
+        elif n_bonds == 1:
+            # convert bond_vec to polar coordinates
+            x, y, z = bond_vecs[0].xyz
+            r = math.sqrt(x*x + y*y + z*z)
+            theta = math.acos(z/r) # 0 <= theta <= pi
+            phi = math.atan2(y, x) # -pi < phi <= pi
+            
+            fixed_xy = []
+            bisect_vectors = []
+            # increase and decrease theta by 30
+            for angle in (-60, 60):
+                new_theta = theta + angle * math.pi/180
+                # convert back to cartesian
+                x = r * math.sin(new_theta) * math.cos(phi)
+                y = r * math.sin(new_theta) * math.sin(phi)
+                z = r * math.cos(new_theta)
+                #print(angle, x)
+                bisect_vector = -Vector((x, y, z))
+                bisect_vectors.append(bisect_vector)
+                transformed = basis_change_matrix.inverted() * bisect_vector
+                fixed_xy.append(Vector((transformed.x, transformed.y)))
+            
+            # find index of closest fixed xy in list
+            pos, min_angle = min(enumerate(xy_vec.angle(other) for other in fixed_xy), key=lambda p: p[1])
+            
+            fixed_bond_vector = bisect_vectors[pos]
+            
+            # calculate new coordinates of second atom
+            fixed_vector = first_atom.location + fixed_bond_vector * xy_vec.length
+            return fixed_vector
+    #elif geometry == 'OCTAHEDRAL':
+        ##TODO cover all possible 90 degree angles and check against other existing bonds
+        ## convert bond_vec to polar coordinates
+        #x, y, z = bond_vecs[0].xyz
+        #r = math.sqrt(x*x + y*y + z*z)
+        #theta = math.acos(z/r) # 0 <= theta <= pi
+        #phi = math.atan2(y, x) # -pi < phi <= pi
+        
+        #fixed_xy = []
+        #bisect_vectors = []
+        ## increase and decrease theta by 30
+        #for angle in (-90, 0, 90):
+            #new_theta = theta + angle * math.pi/180
+            ## convert back to cartesian
+            #x = r * math.sin(new_theta) * math.cos(phi)
+            #y = r * math.sin(new_theta) * math.sin(phi)
+            #z = r * math.cos(new_theta)
+            ##print(angle, x)
+            #bisect_vector = -Vector((x, y, z))
+            #bisect_vectors.append(bisect_vector)
+            #transformed = basis_change_matrix.inverted() * bisect_vector
+            #fixed_xy.append(Vector((transformed.x, transformed.y)))
+        
+        ## find index of closest fixed xy in list
+        #pos, min_angle = min(enumerate(xy_vec.angle(other) for other in fixed_xy), key=lambda p: p[1])
+        
+        #fixed_bond_vector = bisect_vectors[pos]
+        
+        ## calculate new coordinates of second atom
+        #fixed_vector = first_atom.location + fixed_bond_vector * xy_vec.length
+        #return fixed_vector
     # TODO implement all other geometries
+    
     else:
         return coord_3d
     
@@ -942,7 +1029,6 @@ def read_xyz_file(filepath_xyz, scale_distances=1.0, mask_planes=[], mask_flip=F
     [{index1: [element, atom_name, coords], index2: [...], ...}, [second frame], ...]
     '''
     number_frames = 0
-    total_number_atoms = 0
     all_frames = []
     # Open the file ...
     with open(filepath_xyz, "r") as fin:
@@ -968,18 +1054,6 @@ def read_xyz_file(filepath_xyz, scale_distances=1.0, mask_planes=[], mask_flip=F
                 all_atoms = {}
                 for i in range(number_atoms):
                     
-                    # This is a guarantee that only the total number of atoms of the
-                    # first frame is used. Condition is, so far, that the number of
-                    # atoms in a xyz file is constant. However, sometimes the number
-                    # may increase (or decrease). If it decreases, the addon crashes.
-                    # If it increases, only the tot number of atoms of the first frame
-                    # is used.
-                    # By time, I will allow varying atom numbers ... but this takes 
-                    # some time ...            
-                    if number_frames != 0:
-                        if i >= total_number_atoms:
-                            break
-                    
                     line = fin.readline()
                     line = line.strip()
                     split_list = line.split()
@@ -996,11 +1070,7 @@ def read_xyz_file(filepath_xyz, scale_distances=1.0, mask_planes=[], mask_flip=F
                         element = "Vac"
                         atom_name = "Vacancy"
                     
-                    # ... take what is written in the xyz file. These are somewhat
-                    # unknown atoms. This should never happen, the element list is
-                    # almost complete. However, we do this due to security reasons.
-                    
-                    all_atoms[i] = [element, atom_name, location]
+                    all_atoms[i] = [element, atom_name, location, i]
                 
                 all_frames.append(all_atoms)
                 number_frames += 1
@@ -1018,7 +1088,6 @@ def read_pdb_file(filepath_pdb, scale_distances=1.0, mask_planes=[], mask_flip=F
     '''
     
     number_frames = 0
-    total_number_atoms = 0
     
     all_frames = []
     all_atoms = {}
@@ -1027,6 +1096,7 @@ def read_pdb_file(filepath_pdb, scale_distances=1.0, mask_planes=[], mask_flip=F
     # if double == False: exclude double bonds
     double = False
     with open(filepath_pdb, "r") as fin:
+        i = -1
         for line in fin:
             
             if line == "":
@@ -1034,7 +1104,7 @@ def read_pdb_file(filepath_pdb, scale_distances=1.0, mask_planes=[], mask_flip=F
             
             # get atom information
             if line[:6] == 'HETATM' or line[:4] == 'ATOM':
-                
+                i += 1
                 location = Vector(list(map(float, (line[30:38], line[38:46], line[46:54])))) * scale_distances
                 #if len(location) != 3:
                     #print(location)
@@ -1053,7 +1123,7 @@ def read_pdb_file(filepath_pdb, scale_distances=1.0, mask_planes=[], mask_flip=F
                     element = "Vac"
                     atom_name = "Vacancy"
                 
-                all_atoms[index] = [element, atom_name, location]
+                all_atoms[index] = [element, atom_name, location, i]
             
             # get bond information
             elif line[:6] == 'CONECT':
@@ -1148,12 +1218,12 @@ def read_qe_file(filepath, scale_distances=1.0, mask_planes=[], mask_flip=False)
                     element = "Vac"
                     atom_name = "Vacancy"
                 
-                all_atoms[i] = [element, atom_name, location]
+                all_atoms[i] = [element, atom_name, location, i]
             else:
                 break
     return [all_atoms]
 
-def read_qe_unit_cell(filepath, draw_type='ARROWS'):
+def read_qe_unit_cell(filepath):
     unit_vectors = []
     with open(filepath, 'r') as fin:
         for line in fin:
@@ -1165,8 +1235,10 @@ def read_qe_unit_cell(filepath, draw_type='ARROWS'):
                     line = fin.readline()
                     unit_vectors.append(Vector(list(map(float, line.split()))) * unit)
                 break
-    
-    #if 'CUBE' in draw_type:
+
+def draw_unit_cell(unit_vectors, draw_style='ARROWS'):
+    # TODO implement different drawing styles
+    #if 'CUBE' in draw_style:
     bpy.ops.mesh.primitive_cube_add(location=(0,0,0))
     uc_cube = bpy.context.object
     uc_cube.name = "unit_cell"
@@ -1191,7 +1263,7 @@ def read_qe_unit_cell(filepath, draw_type='ARROWS'):
     vg.append(uc_cube.vertex_groups.new('c'))
     vg[-1].add([4], 1, 'REPLACE')
     
-    if 'ARROWS' in draw_type:
+    if 'ARROWS' in draw_style:
         radius = 0.1
         ring_y = 0.9
         ring_scale = 2
@@ -1287,7 +1359,26 @@ def read_qe_unit_cell(filepath, draw_type='ARROWS'):
             
             
     return unit_vectors
-    
+
+#def read_modes(filepath):
+    ## read mode file, modes need to be in same order as atoms in input file
+    ## currently only supports dynmat.out
+    #with open(filepath, 'r') as fin:
+        #all_evecs = {}
+        #for line in fin:
+            #lstrip = line.strip()
+            ## new mode
+            #if lstrip.startswith('omega('):
+                #m = re.search('omega\(([ 0-9]+)\).+ ([-.0-9]+)(?= \[cm-1\])', lstrip)
+                #i = int(m.group(1))
+                #freq = float(m.group(2))
+                #current = []
+                #all_evecs[freq] = current # links current to all_evecs[freq]
+            #elif lstrip.startswith('('):
+                #lsplit = lstrip[1:-1].split()
+                #current.append(map(float, lsplit[::2]))
+    #return all_evecs
+
 def find_bonds(all_atoms, bonds={}):
     '''
     loops through all atoms and returns a list of bonds between them in the format
@@ -1321,6 +1412,7 @@ def find_bonds(all_atoms, bonds={}):
     return bonds
 
 def import_molecule(filepath,
+                    modepath,
                     molecule,
                     #ball,
                     refine,
@@ -1343,11 +1435,16 @@ def import_molecule(filepath,
     bonds = {}
     axes = []
     
-    if filepath[-3:] == 'xyz':
+    #if modepath:
+        #modes = read_modes(modepath)
+    
+    if filepath.rsplit('.')[-1] == 'xyz':
         all_frames = read_xyz_file(filepath, scale_distances, mask_planes, mask_flip)
         bonds = {}
-    elif filepath[-3:] == 'pdb':
+    elif filepath.rsplit('.')[-1] == 'pdb':
         all_frames, bonds = read_pdb_file(filepath, scale_distances, mask_planes, mask_flip)
+    #elif filepath.rsplit('.')[-1] in ('axsf', 'xsf'):
+        #all_frames, axes = read_xsf_file(filepath, scale_distances, mask_planes, mask_flip)
     else:
         # read first lines of file to determine file format
         with open(filepath, 'r') as fin:
@@ -1357,19 +1454,34 @@ def import_molecule(filepath,
                 bonds = {}
                 # read unit cell and create cube
                 axes = read_qe_unit_cell(filepath)
+                draw_unit_cell(axes)
+    
+    # replace the index i with the corresponding mode
+    
+    #if modepath and modes:
+        #for all_atoms in all_frames:
+            #for index, data in all_atoms:
+                #try:
+                    #data[-1] = [mode[data[-1]] for mode in modes]
+                #except (IndexError, TypeError):
+                    #debug_print("WARNING: Modes couldn't be matched with atoms.", 1)
+                    #modes = None
+                    #break
+            #if not modes:
+                #break
     
     if sum(supercell) > 3 and axes:
         debug_print("Creating supercell.", level=3)
         for frame in range(len(all_frames)):
-            all_atoms = {}
             max_index = max(all_frames[frame]) + 1
             n_unit_cell = 0
+            all_atoms = {}
             for i in range(supercell[0]):
                 for j in range(supercell[1]):
                     for k in range(supercell[2]):
-                        for index, (element, atom_name, location) in sorted(all_frames[frame].items()):
-                            location = location.copy() + i*axes[0] + j*axes[1] + k*axes[2]
-                            all_atoms[index + max_index*n_unit_cell] = [element, atom_name, location]
+                        for index, data in sorted(all_frames[frame].items()):
+                            location = data[2].copy() + i*axes[0] + j*axes[1] + k*axes[2]
+                            all_atoms[index + max_index*n_unit_cell] = data
                         n_unit_cell += 1
             all_frames[frame] = all_atoms
     
@@ -1403,6 +1515,27 @@ def import_molecule(filepath,
         elif new_atom.mb.index > index:
             error.add("WARNING: Indeces will not be the same as imported.")
         
+        #if modes:
+            #atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, new_atom.mb.index)
+            ## first create default action where the atom is in it's rest position
+            #anim_data = new_atom.animation_data_create()
+            #anim_data.action = bpy.data.actions.new(name="equilibrium_{}".format(atom_id))
+            #anim_data.action.use_fake_user = True
+            #for dim in range(3):
+                #fcu = anim_data.action.fcurves.new(data_path="location", index=dim)
+                #fcu.keyframe_points.add(1)
+                #fcu.keyframe_points[0].co = 1.0, new_atom.location[dim]
+            ## then add one action per mode
+            #for i, mode_vec in enumerate(data[3]):
+                #action = bpy.data.actions.new(name="mode_{}_{}".format(i, atom_id))
+                #action.use_fake_user = True
+                #for dim in range(3):
+                    #fcu = action.fcurves.new(data_path="location", index=dim)
+                    #fcu.keyframe_points.add(3)
+                    #fcu.keyframe_points[0].co = 1.0, new_atom.location[dim]+mode_vec[dim]
+                    #fcu.keyframe_points[1].co = 11.0, new_atom.location[dim]-mode_vec[dim]
+                    #fcu.keyframe_points[2].co = 21.0, new_atom.location[dim]+mode_vec[dim]
+
         atom_obs[index] = new_atom
     debug_print("", 4)
 

@@ -31,7 +31,7 @@ bl_info = {
     "description": "Work with chemical structures",
     "author": "Florian Altvater",
     "version": (0,1),
-    "blender": (2,6),
+    "blender": (2,7),
     "location": "View3D > Tool Shelf > MolBlend",
     "warning": "under development",
     "wiki_url": "",
@@ -64,14 +64,16 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
+# TODO add "tool" Blender to use Blender input (reverts to Blender keymap)
 # TODO fix use of refine value
 # TODO When Blender is closed while operator is running, then the MolBlend keyconfig will be active on reload, even if addon is not running
 # TODO when switching draw styles, check that all molecule parts are on the same layer!
 # TODO Cycles material nodesocketcolor is not updated when diffuse_color is changed (driver issue). Call update_all_meshes before rendering!
 
 ### FEATURES
+# TODO import phonons and map to keyframes
 # TODO add frames operator (also for import)
-# TODO allow to use NURBS or META for atoms and bonds
+# TODO allow to use NURBS or META for atoms and bonds (http://johnnygizmo.blogspot.nl/2014/06/striping-curve-in-blendercycles.html for uv shader)
 # TODO add operator that can "unify" and separate molecules
 # TODO add alt+select operator to select all connected atoms
 # TODO rethink groups and molecules

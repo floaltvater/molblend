@@ -203,9 +203,9 @@ class mb_scene(PropertyGroup):
 class mb_wm_globals(PropertyGroup):
     group_selected_extend = BoolProperty(name="Extend", default=False, description="Extend selected group to selection")
     element_to_add = StringProperty(name="Element", default="C", description="Element to add to scene")
-    geometry_to_add = EnumProperty(name="Geometry", default='VIEW', items=mb_utils.enums.geometries,
+    geometry_to_add = EnumProperty(name="Geometry", default='SINGLE', items=mb_utils.enums.geometries,
                       description="Geometry the new bond should be in relative to existing bonds. Press ALT to activate.")
-    active_tool = EnumProperty(name="Tool", items=mb_utils.enums.mb_tools,
+    active_tool = EnumProperty(name="Tool", items=mb_utils.enums.mb_tools, default='ADD_ATOM',
                   description="Select active tool")
 
 class mb_window_manager(PropertyGroup):
