@@ -64,6 +64,7 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
+# TODO store normal modes as molecular property, for later access and mor solid handling of active_mode IntProperty callback (like setting maximum number etc.)
 # TODO add "tool" Blender to use Blender input (reverts to Blender keymap)
 # TODO fix use of refine value
 # TODO When Blender is closed while operator is running, then the MolBlend keyconfig will be active on reload, even if addon is not running
@@ -95,7 +96,7 @@ class MolBlendPanel():
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
     bl_category = "MolBlend"
-
+    
 class MB_PT_tools(MolBlendPanel, Panel):
     bl_label = "Tools"
     
@@ -131,6 +132,26 @@ class MB_PT_tools(MolBlendPanel, Panel):
         #row = box.row()
         #row.operator("mb.hover", text="Hover")
         
+
+class MB_PT_import_export(MolBlendPanel, Panel):
+    bl_label = "Import/Export"
+    
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        box.active = context.window_manager.mb.is_running
+        row = box.row()
+        row.label("Import - Export")
+        row = box.row()
+        row.prop(context.window_manager.mb.globals, "import_path")
+        row = box.row()
+        row.prop(context.window_manager.mb.globals, "import_modes")
+        row.prop(context.window_manager.mb.globals, "modes_path")
+        row = box.row()
+        row.operator("mb.import_molecule", text="Import")
+        row = box.row()
+        row.operator("mb.export_molecule", text="Export")
+
 class MB_PT_atom(MolBlendPanel, Panel):
     bl_label = "Atom properties"
     
@@ -179,6 +200,7 @@ class MB_PT_molecule(MolBlendPanel, Panel):
         col.label("Draw style")
         col.label("Bond material")
         col.label("Bond color")
+        col.label("Active mode")
         col = row.column()
         if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type in ('ATOM', 'BOND'):
             mol = active_ob.mb.get_molecule()
@@ -188,24 +210,11 @@ class MB_PT_molecule(MolBlendPanel, Panel):
             col.prop(mol, "draw_style", text="")
             col.prop(mol, "bond_material", text="")
             col.prop(mol, "bond_color", text="")
+            col.prop(mol, "active_mode", text="")
         
         row = box.row()
         row.operator("mb.center_mol_parent")
 
-class MB_PT_import_export(MolBlendPanel, Panel):
-    bl_label = "Import/Export"
-    
-    def draw(self, context):
-        layout = self.layout
-        box = layout.box()
-        box.active = context.window_manager.mb.is_running
-        row = box.row()
-        row.label("Import - Export")
-        row = box.row()
-        row.operator("mb.import_molecule", text="Import")
-        row = box.row()
-        row.operator("mb.export_molecule", text="Export")
-    
 class MB_PT_global(MolBlendPanel, Panel):
     bl_label = "Global Settings"
     

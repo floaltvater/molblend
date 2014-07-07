@@ -137,6 +137,25 @@ def update_all_meshes(self, context):
     for me in bpy.data.meshes:
         me.update()
 
+def update_active_mode(self, context):
+    for atom in self.atoms:
+        atom_ob = atom.get_object()
+        atom_id = '{}.{}'.format(self.index, atom_ob.mb.index)
+        if self.active_mode == 0:
+            action_name = "equilibrium_{}".format(atom_id)
+        else:
+            action_name = "mode_{}_{}".format(self.active_mode, atom_id)
+        action = bpy.data.actions.get(action_name)
+        if not action:
+            debug_print("Mode {} not found for molecule '{}'.".format(self.active_mode, self.name_mol), 1)
+            return
+        anim_data = atom_ob.animation_data
+        if not anim_data:
+            debug_print("No animation data for molecule '{}'.".format(self.name_mol), 1)
+            return
+        anim_data.action = action
+            
+    
 def mouse_2d_to_location_3d(context, coord, depth=Vector((0, 0, 0))):
     region = context.region
     rv3d = context.region_data
@@ -1235,6 +1254,7 @@ def read_qe_unit_cell(filepath):
                     line = fin.readline()
                     unit_vectors.append(Vector(list(map(float, line.split()))) * unit)
                 break
+    return unit_vectors
 
 def draw_unit_cell(unit_vectors, draw_style='ARROWS'):
     # TODO implement different drawing styles
@@ -1360,24 +1380,26 @@ def draw_unit_cell(unit_vectors, draw_style='ARROWS'):
             
     return unit_vectors
 
-#def read_modes(filepath):
-    ## read mode file, modes need to be in same order as atoms in input file
-    ## currently only supports dynmat.out
-    #with open(filepath, 'r') as fin:
-        #all_evecs = {}
-        #for line in fin:
-            #lstrip = line.strip()
-            ## new mode
-            #if lstrip.startswith('omega('):
-                #m = re.search('omega\(([ 0-9]+)\).+ ([-.0-9]+)(?= \[cm-1\])', lstrip)
-                #i = int(m.group(1))
-                #freq = float(m.group(2))
-                #current = []
-                #all_evecs[freq] = current # links current to all_evecs[freq]
-            #elif lstrip.startswith('('):
-                #lsplit = lstrip[1:-1].split()
-                #current.append(map(float, lsplit[::2]))
-    #return all_evecs
+def read_modes(filepath):
+    # read mode file, modes need to be in same order as atoms in input file
+    # currently only supports dynmat.out
+    with open(filepath, 'r') as fin:
+        all_evecs = []
+        freqs = []
+        for line in fin:
+            lstrip = line.strip()
+            # new mode
+            if lstrip.startswith('omega('):
+                m = re.search('omega\(([ 0-9]+)\).+ ([-.0-9]+)(?= \[cm-1\])', lstrip)
+                i = int(m.group(1))
+                freq = float(m.group(2))
+                freqs.append(freq)
+                current = []
+                all_evecs.append(current) # links current to all_evecs
+            elif lstrip.startswith('('):
+                lsplit = lstrip[1:-1].split()
+                current.append(list(map(float, lsplit[::2])))
+    return freqs, all_evecs
 
 def find_bonds(all_atoms, bonds={}):
     '''
@@ -1435,8 +1457,10 @@ def import_molecule(filepath,
     bonds = {}
     axes = []
     
-    #if modepath:
-        #modes = read_modes(modepath)
+    if modepath:
+        frequencies, modes = read_modes(modepath)
+        if not modes:
+            debug_print("WARNING: Couldn't read any normal modes in file {}".format(modepath), 1)
     
     if filepath.rsplit('.')[-1] == 'xyz':
         all_frames = read_xyz_file(filepath, scale_distances, mask_planes, mask_flip)
@@ -1455,20 +1479,19 @@ def import_molecule(filepath,
                 # read unit cell and create cube
                 axes = read_qe_unit_cell(filepath)
                 draw_unit_cell(axes)
-    
     # replace the index i with the corresponding mode
     
-    #if modepath and modes:
-        #for all_atoms in all_frames:
-            #for index, data in all_atoms:
+    if modepath and modes:
+        for all_atoms in all_frames:
+            for index, data in all_atoms.items():
                 #try:
-                    #data[-1] = [mode[data[-1]] for mode in modes]
+                    data[-1] = [mode[data[-1]] for mode in modes]
                 #except (IndexError, TypeError):
                     #debug_print("WARNING: Modes couldn't be matched with atoms.", 1)
                     #modes = None
                     #break
-            #if not modes:
-                #break
+            if not modes:
+                break
     
     if sum(supercell) > 3 and axes:
         debug_print("Creating supercell.", level=3)
@@ -1479,9 +1502,9 @@ def import_molecule(filepath,
             for i in range(supercell[0]):
                 for j in range(supercell[1]):
                     for k in range(supercell[2]):
-                        for index, data in sorted(all_frames[frame].items()):
-                            location = data[2].copy() + i*axes[0] + j*axes[1] + k*axes[2]
-                            all_atoms[index + max_index*n_unit_cell] = data
+                        for index, (element, atom_name, location, modes) in sorted(all_frames[frame].items()):
+                            location = location.copy() + i*axes[0] + j*axes[1] + k*axes[2]
+                            all_atoms[index + max_index*n_unit_cell] = [element, atom_name, location, modes]
                         n_unit_cell += 1
             all_frames[frame] = all_atoms
     
@@ -1515,27 +1538,31 @@ def import_molecule(filepath,
         elif new_atom.mb.index > index:
             error.add("WARNING: Indeces will not be the same as imported.")
         
-        #if modes:
-            #atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, new_atom.mb.index)
-            ## first create default action where the atom is in it's rest position
-            #anim_data = new_atom.animation_data_create()
-            #anim_data.action = bpy.data.actions.new(name="equilibrium_{}".format(atom_id))
-            #anim_data.action.use_fake_user = True
-            #for dim in range(3):
-                #fcu = anim_data.action.fcurves.new(data_path="location", index=dim)
-                #fcu.keyframe_points.add(1)
-                #fcu.keyframe_points[0].co = 1.0, new_atom.location[dim]
-            ## then add one action per mode
-            #for i, mode_vec in enumerate(data[3]):
-                #action = bpy.data.actions.new(name="mode_{}_{}".format(i, atom_id))
-                #action.use_fake_user = True
-                #for dim in range(3):
-                    #fcu = action.fcurves.new(data_path="location", index=dim)
-                    #fcu.keyframe_points.add(3)
-                    #fcu.keyframe_points[0].co = 1.0, new_atom.location[dim]+mode_vec[dim]
-                    #fcu.keyframe_points[1].co = 11.0, new_atom.location[dim]-mode_vec[dim]
-                    #fcu.keyframe_points[2].co = 21.0, new_atom.location[dim]+mode_vec[dim]
-
+        if modes:
+            atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, new_atom.mb.index)
+            # first create default action where the atom is in it's rest position
+            anim_data = new_atom.animation_data_create()
+            anim_data.action = bpy.data.actions.new(name="equilibrium_{}".format(atom_id))
+            anim_data.action.use_fake_user = True
+            for dim in range(3):
+                fcu = anim_data.action.fcurves.new(data_path="location", index=dim)
+                fcu.keyframe_points.add(1)
+                fcu.keyframe_points[0].co = 1.0, new_atom.location[dim]
+            # then add one action per mode
+            for i, mode_vec in enumerate(data[3]):
+                action = bpy.data.actions.new(name="mode_{}_{}".format(i, atom_id))
+                action.use_fake_user = True
+                for dim in range(3):
+                    fcu = action.fcurves.new(data_path="location", index=dim)
+                    fcu.keyframe_points.add(3)
+                    fcu.keyframe_points[0].co = 1.0, new_atom.location[dim]+mode_vec[dim]
+                    fcu.keyframe_points[0].interpolation = 'SINE'
+                    fcu.keyframe_points[1].co = 11.0, new_atom.location[dim]-mode_vec[dim]
+                    fcu.keyframe_points[1].interpolation = 'SINE'
+                    fcu.keyframe_points[2].co = 21.0, new_atom.location[dim]+mode_vec[dim]
+                    fcu.keyframe_points[2].interpolation = 'SINE'
+                    fcu.update()
+                    
         atom_obs[index] = new_atom
     debug_print("", 4)
 

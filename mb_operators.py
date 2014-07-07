@@ -705,7 +705,7 @@ class MB_OT_hover(Operator):
             return {'CANCELLED'}
 
 # This is the class for the file dialog.
-class MB_OT_import_molecule(Operator, ImportHelper):
+class MB_OT_import_molecule(Operator):
     bl_idname = "mb.import_molecule"
     bl_label  = "Import XYZ/PDB (*.xyz,*.pdb)"
     bl_options = {'PRESET', 'UNDO'}
@@ -949,7 +949,7 @@ class MB_OT_import_molecule(Operator, ImportHelper):
         #row.prop(self, "interpolation")
     
     def invoke(self, context, event):
-        # before file browser is opened, initialize atom scales
+        # before import dialog is opened, initialize atom scales
         if not len(context.scene.mb.globals.atom_scales):
             default_scales = {'BALLS': 1.0, 'BAS': 0.3, 'STICKS': 0.001}
         else:
@@ -961,80 +961,81 @@ class MB_OT_import_molecule(Operator, ImportHelper):
             atom_scale.name = style
             atom_scale.val = default_scales[style]
         
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
+        return context.window_manager.invoke_props_dialog(self)
                 
     def execute(self, context):
         ##import time
         ##start = time.time()
-        paths = [os.path.join(self.directory, f.name) for f in self.files]
-        if not paths:
-            paths.append(bpy.path.abspath(self.filepath))
+        filepath = context.window_manager.mb.globals.import_path
+        if context.window_manager.mb.globals.import_modes:
+            modes_path = context.window_manager.mb.globals.modes_path
+        else:
+            modes_path = ''
         
-        for filepath in paths:
-            new_molecule = context.scene.mb.new_molecule()
-            
-            new_molecule.name_mol = self.name_mol
-            new_molecule.draw_style = self.draw_style
-            new_molecule.radius_type = self.radius_type
-            new_molecule.bond_radius = self.bond_radius
-            for scale in self.atom_scales:
-                new_molecule.atom_scales[scale.name].val = scale.val
-            
-            ## check if select_frames is ok, otherwise import first frame only
-            error_list = []
-            #frame_list = []
-            #if self.use_select_frames:
-                #try:
-                    #for item in self.select_frames.split(','):
-                        #if '-' in item:
-                            #start, end = map(int, item.split('-'))
-                            #frame_list.extend(range(start, end+1))
-                        #elif '+' in item:
-                            #frame_list.extend(map(int, item.split('+')))
-                        #else:
-                            #frame_list.append(int(item))
-                #except (ValueError, TypeError):
-                    #error_list.append('Format error in the frame list. Using first frame only.')
-                    #frame_list.append(1)
-                #if not frame_list:
-                    #error_list.append('Frame list was empty. Using first frame only.')
-                    #frame_list.append(1)
-            
-            mask = bpy.data.objects.get(self.use_mask)
-            mask_planes = []
-            if not mask and self.use_mask:
-                error_list.append('Mask object not found. Not using mask.')
-            elif mask:
-                world_mat = mask.matrix_world
-                # get all planes/faces (normal vector, point on plane) from mask object
-                mask_planes = [(world_mat*pg.normal.copy(), world_mat*mask.data.vertices[pg.vertices[0]].co) for pg in mask.data.polygons]
-            
-            if error_list:
-                debug_print('\n'.join(error_list), level=1)
-            
-            if self.length_unit == 'OTHER':
-                scale_distances = self.length_unit_other
-            else:
-                scale_distances = float(self.length_unit)
-            # Execute main routine
-            mb_utils.import_molecule(
-                                    filepath,
-                                    new_molecule,
-                                    #self.ball,
-                                    self.refine,
-                                    scale_distances,
-                                    #self.stick,
-                                    #self.bond_sectors,
-                                    self.bond_guess,
-                                    self.use_center,
-                                    #self.use_center_all,
-                                    #self.use_camera,
-                                    #self.use_lamp,
-                                    mask_planes,
-                                    self.mask_flip,
-                                    self.supercell,
-                                    )
+        new_molecule = context.scene.mb.new_molecule()
+        
+        new_molecule.name_mol = self.name_mol
+        new_molecule.draw_style = self.draw_style
+        new_molecule.radius_type = self.radius_type
+        new_molecule.bond_radius = self.bond_radius
+        for scale in self.atom_scales:
+            new_molecule.atom_scales[scale.name].val = scale.val
+        
+        ## check if select_frames is ok, otherwise import first frame only
+        error_list = []
+        #frame_list = []
+        #if self.use_select_frames:
+            #try:
+                #for item in self.select_frames.split(','):
+                    #if '-' in item:
+                        #start, end = map(int, item.split('-'))
+                        #frame_list.extend(range(start, end+1))
+                    #elif '+' in item:
+                        #frame_list.extend(map(int, item.split('+')))
+                    #else:
+                        #frame_list.append(int(item))
+            #except (ValueError, TypeError):
+                #error_list.append('Format error in the frame list. Using first frame only.')
+                #frame_list.append(1)
+            #if not frame_list:
+                #error_list.append('Frame list was empty. Using first frame only.')
+                #frame_list.append(1)
+        
+        mask = bpy.data.objects.get(self.use_mask)
+        mask_planes = []
+        if not mask and self.use_mask:
+            error_list.append('Mask object not found. Not using mask.')
+        elif mask:
+            world_mat = mask.matrix_world
+            # get all planes/faces (normal vector, point on plane) from mask object
+            mask_planes = [(world_mat*pg.normal.copy(), world_mat*mask.data.vertices[pg.vertices[0]].co) for pg in mask.data.polygons]
+        
+        if error_list:
+            debug_print('\n'.join(error_list), level=1)
+        
+        if self.length_unit == 'OTHER':
+            scale_distances = self.length_unit_other
+        else:
+            scale_distances = float(self.length_unit)
+        # Execute main routine
+        mb_utils.import_molecule(
+                                filepath,
+                                modes_path,
+                                new_molecule,
+                                #self.ball,
+                                self.refine,
+                                scale_distances,
+                                #self.stick,
+                                #self.bond_sectors,
+                                self.bond_guess,
+                                self.use_center,
+                                #self.use_center_all,
+                                #self.use_camera,
+                                #self.use_lamp,
+                                mask_planes,
+                                self.mask_flip,
+                                self.supercell,
+                                )
             #if self.use_all_frames:
                 #frame_list.extend(range(1, len(import_molecule.ALL_FRAMES)+1))
             ## Load frames

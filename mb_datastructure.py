@@ -117,6 +117,10 @@ class mb_molecule(PropertyGroup):
     atom_scales = CollectionProperty(type=atom_scale)
     parent = PointerProperty(type=mb_object_pointer)
     
+    active_mode = IntProperty(name="Active Mode", default=0, min=0,
+        description="Active Mode to display. 0 = equilibrium position",
+        update=mb_utils.update_active_mode)
+    
     def add_atom(self, ob, replace_name=""):
         '''
         add an atom's object name to the molecule's atoms collection
@@ -207,6 +211,11 @@ class mb_wm_globals(PropertyGroup):
                       description="Geometry the new bond should be in relative to existing bonds. Press ALT to activate.")
     active_tool = EnumProperty(name="Tool", items=mb_utils.enums.mb_tools, default='ADD_ATOM',
                   description="Select active tool")
+    import_path = StringProperty(name="Import file", default="", subtype="FILE_PATH",
+        description="Filepath to molecule file to import (.xyz, .pdb)")
+    import_modes = BoolProperty(name="Modes", default=False, description="Import normal modes of molecule as keyframes")
+    modes_path = StringProperty(name="Modes file", default="", subtype="FILE_PATH",
+        description="Filepath to modes file to import (Quantum Espresso output)")
 
 class mb_window_manager(PropertyGroup):
     is_running = BoolProperty(default=False, description="MolBlend is running.")
