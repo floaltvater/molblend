@@ -64,7 +64,6 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
-# TODO store normal modes as molecular property, for later access and mor solid handling of active_mode IntProperty callback (like setting maximum number etc.)
 # TODO add "tool" Blender to use Blender input (reverts to Blender keymap)
 # TODO fix use of refine value
 # TODO When Blender is closed while operator is running, then the MolBlend keyconfig will be active on reload, even if addon is not running
@@ -72,7 +71,8 @@ from bpy.props import (StringProperty,
 # TODO Cycles material nodesocketcolor is not updated when diffuse_color is changed (driver issue). Call update_all_meshes before rendering!
 
 ### FEATURES
-# TODO import phonons and map to keyframes
+# TODO clean up code and comment
+# TODO add more analytic tools for phonons like showing frequencies/spectrum etc.
 # TODO add frames operator (also for import)
 # TODO allow to use NURBS or META for atoms and bonds (http://johnnygizmo.blogspot.nl/2014/06/striping-curve-in-blendercycles.html for uv shader)
 # TODO add operator that can "unify" and separate molecules
@@ -146,6 +146,8 @@ class MB_PT_import_export(MolBlendPanel, Panel):
         row.prop(context.window_manager.mb.globals, "import_path")
         row = box.row()
         row.prop(context.window_manager.mb.globals, "import_modes")
+        row = box.row()
+        row.active = context.window_manager.mb.globals.import_modes
         row.prop(context.window_manager.mb.globals, "modes_path")
         row = box.row()
         row.operator("mb.import_molecule", text="Import")
@@ -157,64 +159,20 @@ class MB_PT_atom(MolBlendPanel, Panel):
     
     def draw(self, context):
         layout = self.layout
-        box = layout.box()
         active_ob = context.object
         if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM':
-        #if context.window_manager.mb.is_running and active_ob and active_ob.mb.type == 'ATOM':
-            box.active = True
-        else:
-            box.active = False
-        box.label("Atom properties")
-        
-        row = box.row()
-        col = row.column()
-        col.label("Element")
-        col.label("Atom radius")
-        col.label("Atom color")
-        
-        col = row.column()
-        if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM':
-            col.prop(active_ob.mb, "element", text="")
-            #if context.window_manager.mb.is_running:
-            col.prop(context.scene.mb.elements[active_ob.mb.element], "covalent", text="")
-            col.prop(active_ob.material_slots[0].material, "diffuse_color", text="")
-        
+            active_ob.mb.draw_properties(context, layout, active_ob)
+    
 class MB_PT_molecule(MolBlendPanel, Panel):
     bl_label = "Molecule properties"
     
     def draw(self, context):
         layout = self.layout
-        box = layout.box()
         active_ob = context.object
-        if (active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type in ('ATOM', 'BOND')):
-            box.active = True
-        else:
-            box.active = False
-        box.label("Molecule properties")
-        
-        row = box.row()
-        col = row.column()
-        col.label("Atom scale")
-        col.label("Bond radius")
-        col.label("Radius type")
-        col.label("Draw style")
-        col.label("Bond material")
-        col.label("Bond color")
-        col.label("Active mode")
-        col = row.column()
         if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type in ('ATOM', 'BOND'):
             mol = active_ob.mb.get_molecule()
-            col.prop(mol.atom_scales[mol.draw_style], "val", text="")
-            col.prop(mol, "bond_radius", text="")
-            col.prop(mol, "radius_type", text="")
-            col.prop(mol, "draw_style", text="")
-            col.prop(mol, "bond_material", text="")
-            col.prop(mol, "bond_color", text="")
-            col.prop(mol, "active_mode", text="")
+            mol.draw_properties(layout)
         
-        row = box.row()
-        row.operator("mb.center_mol_parent")
-
 class MB_PT_global(MolBlendPanel, Panel):
     bl_label = "Global Settings"
     

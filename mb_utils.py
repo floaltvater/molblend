@@ -138,24 +138,65 @@ def update_all_meshes(self, context):
         me.update()
 
 def update_active_mode(self, context):
+    
+    if self.max_mode == 0:
+        self.active_mode = 0
+        return
+
     for atom in self.atoms:
         atom_ob = atom.get_object()
         atom_id = '{}.{}'.format(self.index, atom_ob.mb.index)
-        if self.active_mode == 0:
+        
+        if self.active_mode > self.max_mode:
+            self.active_mode = self.max_mode
+            return
+        elif self.active_mode == 0:
             action_name = "equilibrium_{}".format(atom_id)
         else:
             action_name = "mode_{}_{}".format(self.active_mode, atom_id)
+        
         action = bpy.data.actions.get(action_name)
-        if not action:
-            debug_print("Mode {} not found for molecule '{}'.".format(self.active_mode, self.name_mol), 1)
-            return
         anim_data = atom_ob.animation_data
-        if not anim_data:
-            debug_print("No animation data for molecule '{}'.".format(self.name_mol), 1)
+        if action and anim_data:
+            anim_data.action = action
+            update_mode_scale(self, context)
+        elif not action:
+            debug_print("Mode {} not found for atom '{}'. ({})".format(self.active_mode, atom_id, action_name), 1)
+        elif not anim_data:
+            debug_print("No animation data for atom '{}'.".format(atom_id), 1)
+        
+    if self.active_mode == 0:
+        # stop animation
+        if context.screen.is_animation_playing:
+            bpy.ops.screen.animation_play()
+            context.scene.frame_current = 1
+    else:
+        # start animation
+        if not context.screen.is_animation_playing:
+            context.scene.frame_end = 20
+            bpy.ops.screen.animation_play()
+
+def update_mode_scale(self, context):
+    for atom in self.atoms:
+        atom_ob = atom.get_object()
+        try:
+            action = atom_ob.animation_data.action
+        except AttributeError:
+            debug_print("WARNING: No animation data when updating mode scale.", 3)
             return
-        anim_data.action = action
-            
-    
+        mode_vec = action.mb.mode_vector
+        for dim, fcu in enumerate(action.fcurves):
+            if len(fcu.keyframe_points) > 2:
+                kf1 = fcu.keyframe_points[0]
+                kf2 = fcu.keyframe_points[1]
+                kf3 = fcu.keyframe_points[2]
+                middle = (kf1.co[1] + kf2.co[1]) / 2.0
+                scaled = self.mode_scale * mode_vec[dim]
+                kf1.co[1] = middle + scaled
+                kf2.co[1] = middle - scaled
+                kf3.co[1] = middle + scaled
+                fcu.update()
+                
 def mouse_2d_to_location_3d(context, coord, depth=Vector((0, 0, 0))):
     region = context.region
     rv3d = context.region_data
@@ -1189,10 +1230,10 @@ def read_qe_file(filepath, scale_distances=1.0, mask_planes=[], mask_flip=False)
         for line in fin:
             if "ATOMIC_POSITIONS" in line:
                 # double check units
-                if "angstrom" in line.lower() and scale_distances != '1.0':
+                if "angstrom" in line.lower() and scale_distances != 1.0:
                     scale_distances = 1.0
                     debug_print("Found coordinates in Angstrom. Overriding unit.", level=1)
-                elif "bohr" in line.lower() and scale_distances != '0.529177249':
+                elif "bohr" in line.lower() and scale_distances != 0.529177249:
                     scale_distances = 0.529177249
                     debug_print("Found coordinates in Bohr. Overriding unit.", level=1)
                 elif "crystal" in line.lower():
@@ -1201,7 +1242,7 @@ def read_qe_file(filepath, scale_distances=1.0, mask_planes=[], mask_flip=False)
                     for line in fin:
                         if "CELL_PARAMETERS" in line:
                             # TODO include alat units etc.
-                            unit = 0.529177249 if "bohr" in line else 1.0
+                            unit = 0.529177249 if "bohr" in line or "cubic" in line else 1.0
                             for i in range(3):
                                 line = fin.readline()
                                 unit_vectors.append(Vector(list(map(float, line.split()))) * unit)
@@ -1248,7 +1289,7 @@ def read_qe_unit_cell(filepath):
         for line in fin:
             if "CELL_PARAMETERS" in line:
                 # TODO include alat units etc.
-                unit = 0.529177249 if "bohr" in line else 1.0
+                unit = 0.529177249 if "bohr" in line or "cubic" in line else 1.0
                 
                 for i in range(3):
                     line = fin.readline()
@@ -1457,10 +1498,16 @@ def import_molecule(filepath,
     bonds = {}
     axes = []
     
+    # read normal modes
     if modepath:
+        debug_print("Reading modes file", 3)
         frequencies, modes = read_modes(modepath)
         if not modes:
             debug_print("WARNING: Couldn't read any normal modes in file {}".format(modepath), 1)
+        else:
+            molecule.max_mode = len(frequencies)
+    else:
+        modes = None
     
     if filepath.rsplit('.')[-1] == 'xyz':
         all_frames = read_xyz_file(filepath, scale_distances, mask_planes, mask_flip)
@@ -1484,12 +1531,12 @@ def import_molecule(filepath,
     if modepath and modes:
         for all_atoms in all_frames:
             for index, data in all_atoms.items():
-                #try:
+                try:
                     data[-1] = [mode[data[-1]] for mode in modes]
-                #except (IndexError, TypeError):
-                    #debug_print("WARNING: Modes couldn't be matched with atoms.", 1)
-                    #modes = None
-                    #break
+                except (IndexError, ValueError) as e:
+                    debug_print("WARNING: Modes couldn't be matched with atoms. ({})".format(e), 1)
+                    modes = None
+                    break
             if not modes:
                 break
     
@@ -1502,9 +1549,9 @@ def import_molecule(filepath,
             for i in range(supercell[0]):
                 for j in range(supercell[1]):
                     for k in range(supercell[2]):
-                        for index, (element, atom_name, location, modes) in sorted(all_frames[frame].items()):
+                        for index, (element, atom_name, location, mode_vecs) in sorted(all_frames[frame].items()):
                             location = location.copy() + i*axes[0] + j*axes[1] + k*axes[2]
-                            all_atoms[index + max_index*n_unit_cell] = [element, atom_name, location, modes]
+                            all_atoms[index + max_index*n_unit_cell] = [element, atom_name, location, mode_vecs]
                         n_unit_cell += 1
             all_frames[frame] = all_atoms
     
@@ -1542,25 +1589,26 @@ def import_molecule(filepath,
             atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, new_atom.mb.index)
             # first create default action where the atom is in it's rest position
             anim_data = new_atom.animation_data_create()
-            anim_data.action = bpy.data.actions.new(name="equilibrium_{}".format(atom_id))
-            anim_data.action.use_fake_user = True
+            eq_action = bpy.data.actions.new(name="equilibrium_{}".format(atom_id))
+            eq_action.use_fake_user = True
             for dim in range(3):
-                fcu = anim_data.action.fcurves.new(data_path="location", index=dim)
+                fcu = eq_action.fcurves.new(data_path="location", index=dim)
                 fcu.keyframe_points.add(1)
                 fcu.keyframe_points[0].co = 1.0, new_atom.location[dim]
-            # then add one action per mode
+            anim_data.action = eq_action
+            
+            # then create one action per mode
             for i, mode_vec in enumerate(data[3]):
-                action = bpy.data.actions.new(name="mode_{}_{}".format(i, atom_id))
+                action = bpy.data.actions.new(name="mode_{}_{}".format(i+1, atom_id))
                 action.use_fake_user = True
+                action.mb.mode_vector = mode_vec
                 for dim in range(3):
                     fcu = action.fcurves.new(data_path="location", index=dim)
                     fcu.keyframe_points.add(3)
-                    fcu.keyframe_points[0].co = 1.0, new_atom.location[dim]+mode_vec[dim]
-                    fcu.keyframe_points[0].interpolation = 'SINE'
-                    fcu.keyframe_points[1].co = 11.0, new_atom.location[dim]-mode_vec[dim]
-                    fcu.keyframe_points[1].interpolation = 'SINE'
-                    fcu.keyframe_points[2].co = 21.0, new_atom.location[dim]+mode_vec[dim]
-                    fcu.keyframe_points[2].interpolation = 'SINE'
+                    for p in range(3):
+                        loc = new_atom.location[dim] + pow(-1, p) * mode_vec[dim]
+                        fcu.keyframe_points[p].co = 1.0 + 10*p, loc
+                        fcu.keyframe_points[p].interpolation = 'BEZIER'
                     fcu.update()
                     
         atom_obs[index] = new_atom

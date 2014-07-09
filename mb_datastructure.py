@@ -54,24 +54,24 @@ class mb_mesh_pointer(PropertyGroup):
 class atom_scale(PropertyGroup):
     name = StringProperty()
     val = FloatProperty(name="Atom scale", default=0.3, min=0.0, max=5.0,
-                        precision=2, update=mb_utils.update_all_meshes)
+                precision=2, update=mb_utils.update_all_meshes)
 
 class mb_object(PropertyGroup):
     
     index = IntProperty(name="Index")
     name = StringProperty(name="Object name")
     type = EnumProperty(name="type", items=mb_utils.enums.object_types,
-                        description="Select the object type",
-                        default='NONE')
+        description="Select the object type",
+        default='NONE')
     id_molecule = StringProperty(name="Molecule ID")
     bonds = CollectionProperty(type=mb_object_pointer)
     bonded_atoms = CollectionProperty(type=mb_object_pointer)
     atom_name = StringProperty(name="Atom name")
     element = StringProperty(name="Element",
-                             description="Element Symbol",
-                             update=mb_utils.update_atom_element)
+        description="Element Symbol",
+        update=mb_utils.update_atom_element)
     element_long = StringProperty(name="Element name", 
-                                  description="Full element name")
+        description="Full element name")
     
     def get_molecule(self):
         return bpy.context.scene.mb.molecules.get(self.id_molecule)
@@ -79,14 +79,40 @@ class mb_object(PropertyGroup):
     def get_object(self):
         return bpy.data.objects.get(self.name)
         
-    def draw_properties(self, layout, name):
-        row = layout.row()
-        row.prop(self, "element")
-        row = layout.row()
-        row.prop(self, "atom_name")
-        row = layout.row()
-        row.prop(bpy.context.scene.objects[name], "name")
-
+    def draw_properties(self, context, layout, ob):
+        box = layout.box()
+        box.label("Atom properties")
+        
+        props = {
+                "Element": [self, "element", 10],
+                "Name": [self, "atom_name", 20],
+                "Atom radius": [context.scene.mb.elements[self.element], "covalent", 30],
+                "Atom color": [ob.material_slots[0].material, "diffuse_color", 40],
+                }
+        for label, (data, prop, i) in sorted(props.items(), key=lambda t: t[-1][-1]):
+            row = box.row()
+            #row.label(label)
+            row.prop(data, prop, text=label)
+            #props[label].append(row)
+        
+        #props["Active mode"][-1].active = bool(self.max_mode)
+        #props["Mode scale"][-1].active = bool(self.max_mode)
+        
+        
+        #row = box.row()
+        
+        #col = row.column()
+        #col.prop(self, "element")
+        #row = layout.row()
+        #row.prop(self, "atom_name")
+        #col.prop(context.scene.mb.elements[self.element], "covalent")
+        #col.prop(self_ob.material_slots[0].material, "diffuse_color")
+        
+        #row = layout.row()
+        #row.prop(self, "element")
+        #row = layout.row()
+        #row.prop(self, "atom_name")
+        
 class mb_molecule(PropertyGroup):
     index = IntProperty(name="Molecule index")
     name = StringProperty(name="Molecule identifier")
@@ -97,30 +123,61 @@ class mb_molecule(PropertyGroup):
     atom_index = IntProperty()
     bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
     bond_material = EnumProperty(name="Bond material",
-                                description="Choose bond material",
-                                items=mb_utils.enums.bond_material, default='ATOMS',
-                                update=mb_utils.update_bond_material)
+        description="Choose bond material",
+        items=mb_utils.enums.bond_material, default='ATOMS',
+        update=mb_utils.update_bond_material)
     bond_color = FloatVectorProperty(name='Bond color', default=(0.8, 0.8, 0.8),
-                                     min=0.0, max=1.0, subtype='COLOR',
-                                     update=mb_utils.update_all_meshes)
+        min=0.0, max=1.0, subtype='COLOR',
+        update=mb_utils.update_all_meshes)
     # dito
     meshes = CollectionProperty(name="Molecule meshes", type=mb_mesh_pointer)
     draw_style = EnumProperty(name="Display style", items=mb_utils.enums.molecule_styles,
-                         description="Style to draw atoms and bonds",
-                         default='BAS',
-                         update=mb_utils.set_draw_style)
+        description="Style to draw atoms and bonds",
+        default='BAS',
+        update=mb_utils.set_draw_style)
     radius_type = EnumProperty(name="Radius type", items=mb_utils.enums.radius_types,
-                               default='covalent', update=mb_utils.update_radius_type)
+        default='covalent', update=mb_utils.update_radius_type)
     bond_radius = FloatProperty(name="Bond radius", default=0.15, min=0.0, max=3.0,
-                                description="Radius of bonds for Sticks, and Ball and Sticks",
-                                update=mb_utils.update_all_meshes)
+        description="Radius of bonds for Sticks, and Ball and Sticks",
+        update=mb_utils.update_all_meshes)
     atom_scales = CollectionProperty(type=atom_scale)
     parent = PointerProperty(type=mb_object_pointer)
     
+    max_mode = IntProperty(name="Number of modes", default=0, min=0,
+        description="Number of vibrational modes of molecule")
     active_mode = IntProperty(name="Active Mode", default=0, min=0,
         description="Active Mode to display. 0 = equilibrium position",
         update=mb_utils.update_active_mode)
+    mode_scale = FloatProperty(name="Mode Scale", default=1.0, 
+        min=-10.0, max=10.0, description="Scale of normal mode displacement",
+        update=mb_utils.update_mode_scale)
     
+    def draw_properties(self, layout):
+        box = layout.box()
+        box.label("Molecule properties")
+
+        props = {
+                "Atom scale": [self.atom_scales[self.draw_style], "val", 10],
+                "Bond radius": [self, "bond_radius", 20],
+                "Radius type": [self, "radius_type", 30],
+                "Draw style": [self, "draw_style", 40],
+                "Bond material": [self, "bond_material", 50],
+                "Bond color": [self, "bond_color", 60],
+                "Active mode": [self, "active_mode", 70],
+                "Mode scale": [self, "mode_scale", 80],
+                }
+        for label, (data, prop, i) in sorted(props.items(), key=lambda t: t[-1][-1]):
+            row = box.row()
+            #row.label(label)
+            row.prop(data, prop)
+            props[label].append(row)
+        
+        props["Active mode"][-1].active = bool(self.max_mode)
+        props["Mode scale"][-1].active = bool(self.max_mode)
+        
+        row = box.row()
+        row.operator("mb.center_mol_parent")
+        
     def add_atom(self, ob, replace_name=""):
         '''
         add an atom's object name to the molecule's atoms collection
@@ -149,7 +206,12 @@ class mb_molecule(PropertyGroup):
         for index, a in enumerate(self.atoms):
             if a.name == ob.name:
                 self.atoms.remove(index)
-    
+
+class mb_action(PropertyGroup):
+    name = StringProperty(name="Action name")
+    mode_vector = FloatVectorProperty(name="Mode vector",
+        description="Original mode vector for atom as read from file")
+        
 class mb_element(PropertyGroup):
     name = StringProperty(name="Element")
     element = StringProperty(name="Element")
@@ -157,19 +219,19 @@ class mb_element(PropertyGroup):
     atomic_number = IntProperty(name="Atomic number")
     color = FloatVectorProperty(name="Color", subtype='COLOR', size=3)
     covalent = FloatProperty(name="Covalent radius", min=0.0, max=5.0, 
-                             update=mb_utils.update_all_meshes)
+        update=mb_utils.update_all_meshes)
     vdw = FloatProperty(name="vdW radius", min=0.0, max=5.0, 
-                        update=mb_utils.update_all_meshes)
+        update=mb_utils.update_all_meshes)
     constant = FloatProperty(name="Constant radius", min=0.0, max=5.0,
-                             update=mb_utils.update_all_meshes)
+        update=mb_utils.update_all_meshes)
 
 class mb_scn_globals(PropertyGroup):
     draw_style = EnumProperty(name="Draw style", items=mb_utils.enums.molecule_styles,
-                         description="Style to draw atoms and bonds", default='BAS')
+        description="Style to draw atoms and bonds", default='BAS')
     radius_type = EnumProperty(name="Radius type", items=mb_utils.enums.radius_types,
-                               default='covalent')
+        default='covalent')
     bond_radius = FloatProperty(name="Bond radius", default=0.15, min=0.0, max=3.0,
-                                description="Radius of bonds for Sticks, and Ball and Sticks")
+        description="Radius of bonds for Sticks, and Ball and Sticks")
     atom_scales = CollectionProperty(type=atom_scale)
 
 class mb_scene(PropertyGroup):
@@ -208,9 +270,9 @@ class mb_wm_globals(PropertyGroup):
     group_selected_extend = BoolProperty(name="Extend", default=False, description="Extend selected group to selection")
     element_to_add = StringProperty(name="Element", default="C", description="Element to add to scene")
     geometry_to_add = EnumProperty(name="Geometry", default='SINGLE', items=mb_utils.enums.geometries,
-                      description="Geometry the new bond should be in relative to existing bonds. Press ALT to activate.")
+        description="Geometry the new bond should be in relative to existing bonds. Press ALT to activate.")
     active_tool = EnumProperty(name="Tool", items=mb_utils.enums.mb_tools, default='ADD_ATOM',
-                  description="Select active tool")
+        description="Select active tool")
     import_path = StringProperty(name="Import file", default="", subtype="FILE_PATH",
         description="Filepath to molecule file to import (.xyz, .pdb)")
     import_modes = BoolProperty(name="Modes", default=False, description="Import normal modes of molecule as keyframes")
@@ -224,6 +286,7 @@ class mb_window_manager(PropertyGroup):
     
 def register():
     bpy.types.Object.mb = PointerProperty(type=mb_object)
+    bpy.types.Action.mb = PointerProperty(type=mb_action)
     #bpy.types.Group.mb = PointerProperty(type=mb_group)
     #bpy.types.World.mb = PointerProperty(type=mb_world)
     bpy.types.Scene.mb = PointerProperty(type=mb_scene)

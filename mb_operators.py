@@ -786,7 +786,7 @@ class MB_OT_import_molecule(Operator):
         description="Unit in input file, will be converted to Angstrom")
     length_unit_other = FloatProperty(
         name="Custom Unit", default=1.0, min=0.000001,
-        description="Enter unit of input file as Angstrom/unit")
+        description="Enter conversion factor in Angstrom/unit in file")
     bond_guess = BoolProperty(
         name = "Guess bonds", default=True,
         description = "Guess bonds that are not in the file.")
