@@ -48,13 +48,17 @@ class mb_object_pointer(PropertyGroup):
 class mb_mesh_pointer(PropertyGroup):
     name = StringProperty(name="Mesh name")
     
-    def get_object(self):
+    def get_data(self):
         return bpy.data.meshes.get(self.name)
 
 class atom_scale(PropertyGroup):
     name = StringProperty()
     val = FloatProperty(name="Atom scale", default=0.3, min=0.0, max=5.0,
                 precision=2, update=mb_utils.update_all_meshes)
+
+class mb_mesh(PropertyGroup):
+    type = EnumProperty(name="type", items=[('MESH', 'MESH', 'MESH'),],
+        description="Do not change", default='MESH')
 
 class mb_object(PropertyGroup):
     
@@ -63,9 +67,10 @@ class mb_object(PropertyGroup):
     type = EnumProperty(name="type", items=mb_utils.enums.object_types,
         description="Select the object type",
         default='NONE')
-    id_molecule = StringProperty(name="Molecule ID")
+    molecule_name = StringProperty(name="Molecule identifier")
+    
+    # for type == 'ATOM'
     bonds = CollectionProperty(type=mb_object_pointer)
-    bonded_atoms = CollectionProperty(type=mb_object_pointer)
     atom_name = StringProperty(name="Atom name")
     element = StringProperty(name="Element",
         description="Element Symbol",
@@ -73,11 +78,76 @@ class mb_object(PropertyGroup):
     element_long = StringProperty(name="Element name", 
         description="Full element name")
     
+    # for type == 'BOND'
+    bonded_atoms = CollectionProperty(type=mb_object_pointer)
+    
     def get_molecule(self):
-        return bpy.context.scene.mb.molecules.get(self.id_molecule)
+        return bpy.context.scene.mb.molecules.get(self.molecule_name)
     
     def get_object(self):
         return bpy.data.objects.get(self.name)
+    
+    def add_bond(self, ob, replace_name=""):
+        if not self.type == 'ATOM':
+            debug_print("WARNING: Something is trying to add bond to non-ATOM type object", 1)
+            return
+        ob_name = ob.name
+        if ob_name in self.bonds:
+            item = self.bonds[ob_name]
+        elif replace_name:
+            item = self.bonds.get(replace_name)
+            if item:
+                # if object is already in self.bonds, just delete replace_item
+                if ob_name in self.bonds:
+                    self.bonds.remove_bond(item.get_object())
+                else:
+                    item.name = ob_name
+            else:
+                debug_print("WARNING: {} not found in {}".format(replace_name, self.bonds), 3)
+        else:
+            item = self.bonds.add()
+            item.name = ob_name
+        return item
+    
+    def remove_bond(self, ob):
+        if not self.type == 'ATOM':
+            debug_print("WARNING: Something is trying to remove bond from non-ATOM type object", 1)
+            return
+        for i, b in enumerate(self.bonds):
+            if b.name == ob.name:
+                self.bonds.remove(i)
+                return
+    
+    def add_bonded_atom(self, ob):
+        if not self.type == 'BOND':
+            debug_print("WARNING: Something is trying to add bonded_atom to non-BOND type object", 1)
+            return
+        ob_name = ob.name
+        if ob_name in self.bonded_atoms:
+            item = self.bonded_atoms[ob_name]
+        elif replace_name:
+            item = self.bonded_atoms.get(replace_name)
+            if item:
+                # if object is already in self.bonded_atoms, just delete replace_item
+                if ob_name in self.bonded_atoms:
+                    self.bonded_atoms.remove_bonded_atom(item.get_object())
+                else:
+                    item.name = ob_name
+            else:
+                debug_print("WARNING: {} not found in {}".format(replace_name, self.bonded_atoms), 3)
+        else:
+            item = self.bonded_atoms.add()
+            item.name = ob_name
+        return item
+    
+    def remove_bonded_atom(self, ob):
+        if not self.type == 'ATOM':
+            debug_print("WARNING: Something is trying to remove bonded_atom from non-BOND type object", 1)
+            return
+        for i, a in enumerate(self.bonded_atoms):
+            if a.name == ob.name:
+                self.bonded_atoms.remove(i)
+                return
         
     def draw_properties(self, context, layout, ob):
         box = layout.box()
@@ -112,16 +182,19 @@ class mb_object(PropertyGroup):
         #row.prop(self, "element")
         #row = layout.row()
         #row.prop(self, "atom_name")
-        
+class mb_molecule_objects(PropertyGroup):
+    atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
+    bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
+    meshes = CollectionProperty(name="Molecule meshes", type=mb_mesh_pointer)
+    other = CollectionProperty(name="Bonds", type=mb_object_pointer)
+    
 class mb_molecule(PropertyGroup):
     index = IntProperty(name="Molecule index")
     name = StringProperty(name="Molecule identifier")
     name_mol = StringProperty(name="Molecule Name")
-    atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
     # index that increases with each added atom in the molecule, but doesn't decrease when
     # atom is deleted. => Not an indicator of size of molecule! Only guarantees uniqueness for atom names
     atom_index = IntProperty()
-    bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
     bond_material = EnumProperty(name="Bond material",
         description="Choose bond material",
         items=mb_utils.enums.bond_material, default='ATOMS',
@@ -130,7 +203,6 @@ class mb_molecule(PropertyGroup):
         min=0.0, max=1.0, subtype='COLOR',
         update=mb_utils.update_all_meshes)
     # dito
-    meshes = CollectionProperty(name="Molecule meshes", type=mb_mesh_pointer)
     draw_style = EnumProperty(name="Display style", items=mb_utils.enums.molecule_styles,
         description="Style to draw atoms and bonds",
         default='BAS',
@@ -141,7 +213,11 @@ class mb_molecule(PropertyGroup):
         description="Radius of bonds for Sticks, and Ball and Sticks",
         update=mb_utils.update_all_meshes)
     atom_scales = CollectionProperty(type=atom_scale)
-    parent = PointerProperty(type=mb_object_pointer)
+    refine_atoms = IntProperty(name="Refine atoms", default=8, min=3, max=64,
+        description="Refine value for atom meshes", update=mb_utils.update_refine_atoms)
+    refine_bonds = IntProperty(name="Refine bonds", default=8, min=3, max=64,
+        description="Refine value for atom meshes", update=mb_utils.update_refine_bonds)
+    parent = PointerProperty(name="Parent", type=mb_object_pointer)
     
     max_mode = IntProperty(name="Number of modes", default=0, min=0,
         description="Number of vibrational modes of molecule")
@@ -151,6 +227,8 @@ class mb_molecule(PropertyGroup):
     mode_scale = FloatProperty(name="Mode Scale", default=1.0, 
         min=-10.0, max=10.0, description="Scale of normal mode displacement",
         update=mb_utils.update_mode_scale)
+    
+    objects = PointerProperty(name="Molecule objects", type=mb_molecule_objects)
     
     def draw_properties(self, layout):
         box = layout.box()
@@ -165,6 +243,8 @@ class mb_molecule(PropertyGroup):
                 "Bond color": [self, "bond_color", 60],
                 "Active mode": [self, "active_mode", 70],
                 "Mode scale": [self, "mode_scale", 80],
+                "Refine atoms": [self, "refine_atoms", 90],
+                "Refine bonds": [self, "refine_bonds", 100],
                 }
         for label, (data, prop, i) in sorted(props.items(), key=lambda t: t[-1][-1]):
             row = box.row()
@@ -178,34 +258,65 @@ class mb_molecule(PropertyGroup):
         row = box.row()
         row.operator("mb.center_mol_parent")
         
-    def add_atom(self, ob, replace_name=""):
+    def add_object(self, ob, replace_name=""):
         '''
-        add an atom's object name to the molecule's atoms collection
+        add an object's name to the molecule's atoms collection
         if replace_name is given, the first atom's name is replaced by the new one
-        if name is already in collection, print a Warning and just return the atom
+        if name is already in collection, just return the atom
         '''
-        if ob.name in self.atoms:
-            debug_print("WARNING: {} already part of molecule.".format(ob.name), 1)
-            return self.atoms[ob.name]
-        
-        if replace_name:
-            for atom in self.atoms:
-                if atom.name == replace_name:
-                    atom.name = ob.name
-                    return atom
+        collection = {'ATOM': self.objects.atoms,
+                      'BOND': self.objects.bonds,
+                      'MESH': self.objects.meshes,
+                      'NONE': self.objects.other}[ob.mb.type]
+        ob_name = ob.name
+        if ob_name in collection:
+            item = collection[ob_name]
+        elif replace_name:
+            item = collection.get(replace_name)
+            if item:
+                # if object is already in collection, just delete replace_item
+                if ob_name in collection:
+                    collection.remove_object(item.get_object())
+                else:
+                    item.name = ob_name
+            else:
+                debug_print("WARNING: {} not found in {}".format(replace_name, collection), 3)
         else:
-            atom = self.atoms.add()
-            atom.name = ob.name
-            return atom
-        
-    def add_bond(self, ob):
-        bond = self.bonds.add()
-        bond.name = ob.name
-        
-    def remove_atom(self, ob):
-        for index, a in enumerate(self.atoms):
+            item = collection.add()
+            item.name = ob_name
+        return item
+    
+    def remove_object(self, ob):
+        collection = {'ATOM': self.objects.atoms,
+                      'BOND': self.objects.bonds,
+                      'MESH': self.objects.meshes,
+                      'NONE': self.objects.other}[ob.mb.type]
+        for i, a in enumerate(collection):
             if a.name == ob.name:
-                self.atoms.remove(index)
+                collection.remove(i)
+                return
+    
+    def remove_objects(self, ob_list=[]):
+        objects = {'ATOM': [ob.name for ob in ob_list if ob.mb.type == 'ATOM'],
+                   'BOND': [ob.name for ob in ob_list if ob.mb.type == 'BOND'],
+                   'MESH': [ob.name for ob in ob_list if ob.mb.type == 'MESH'],
+                   'NONE': [ob.name for ob in ob_list if ob.mb.type == 'NONE']}
+        
+        collection = {'ATOM': self.objects.atoms,
+                      'BOND': self.objects.bonds,
+                      'MESH': self.objects.meshes,
+                      'NONE': self.objects.other}
+        for ob_type, ob_name_list in objects.items():
+            # find all the indices of the objects to delete
+            indeces = []
+            for i, a in enumerate(collection[ob_type]):
+                if a.name in ob_name_list:
+                    indeces.append(i)
+            # delete higher numbers first to not mess up the order of the collection
+            for i in reversed(indeces):
+                collection[ob_type].remove(i)
+        return
+
 
 class mb_action(PropertyGroup):
     name = StringProperty(name="Action name")
@@ -286,6 +397,7 @@ class mb_window_manager(PropertyGroup):
     
 def register():
     bpy.types.Object.mb = PointerProperty(type=mb_object)
+    bpy.types.Mesh.mb = PointerProperty(type=mb_mesh)
     bpy.types.Action.mb = PointerProperty(type=mb_action)
     #bpy.types.Group.mb = PointerProperty(type=mb_group)
     #bpy.types.World.mb = PointerProperty(type=mb_world)
@@ -295,6 +407,7 @@ def register():
 def unregister():
     #del bpy.types.Group.mb
     del bpy.types.Object.mb
+    del bpy.types.Mesh.mb
     del bpy.types.Scene.mb
     #del bpy.types.World.mb
     #del bpy.types.WindowManager.mb

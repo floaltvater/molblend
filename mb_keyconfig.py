@@ -13,7 +13,9 @@ def kmi_props_setattr(kmi_props, attr, value):
 wm = bpy.context.window_manager
 kc = wm.keyconfigs.new("MolBlend")
 
-# Map 3D View
+#--- Map 3D View --------------------------------------------------------------#
+
+# MolBlend keys
 km = kc.keymaps.new('3D View', space_type='VIEW_3D', region_type='WINDOW', modal=False)
 
 kmitems = km.keymap_items
@@ -60,6 +62,13 @@ kmi_props_setattr(kmi.properties, 'select', False)
 kmi = kmitems.new('mb.set_tool', 'S', 'PRESS')
 kmi_props_setattr(kmi.properties, 'add_atom', False)
 kmi_props_setattr(kmi.properties, 'select', True)
+
+
+# Map Object Mode
+km = kc.keymaps.new('Object Mode', space_type='EMPTY', region_type='WINDOW', modal=False)
+
+kmi = km.keymap_items.new('mb.delete', 'X', 'PRESS')
+kmi = km.keymap_items.new('mb.delete', 'DEL', 'PRESS')
 
 
 
@@ -375,6 +384,7 @@ kmi = km.keymap_items.new('transform.resize', 'T', 'PRESS', shift=True, alt=True
 kmi_props_setattr(kmi.properties, 'texture_space', True)
 kmi = km.keymap_items.new('transform.skin_resize', 'A', 'PRESS', ctrl=True)
 
+
 # Map Object Mode
 km = kc.keymaps.new('Object Mode', space_type='EMPTY', region_type='WINDOW', modal=False)
 
@@ -421,14 +431,14 @@ kmi_props_setattr(kmi.properties, 'unselected', True)
 kmi = km.keymap_items.new('object.hide_render_clear', 'H', 'PRESS', ctrl=True, alt=True)
 kmi = km.keymap_items.new('object.hide_render_set', 'H', 'PRESS', ctrl=True)
 kmi = km.keymap_items.new('object.move_to_layer', 'M', 'PRESS')
-kmi = km.keymap_items.new('object.delete', 'X', 'PRESS')
-kmi_props_setattr(kmi.properties, 'use_global', False)
-kmi = km.keymap_items.new('object.delete', 'X', 'PRESS', shift=True)
-kmi_props_setattr(kmi.properties, 'use_global', True)
-kmi = km.keymap_items.new('object.delete', 'DEL', 'PRESS')
-kmi_props_setattr(kmi.properties, 'use_global', False)
-kmi = km.keymap_items.new('object.delete', 'DEL', 'PRESS', shift=True)
-kmi_props_setattr(kmi.properties, 'use_global', True)
+#kmi = km.keymap_items.new('object.delete', 'X', 'PRESS')
+#kmi_props_setattr(kmi.properties, 'use_global', False)
+#kmi = km.keymap_items.new('object.delete', 'X', 'PRESS', shift=True)
+#kmi_props_setattr(kmi.properties, 'use_global', True)
+#kmi = km.keymap_items.new('object.delete', 'DEL', 'PRESS')
+#kmi_props_setattr(kmi.properties, 'use_global', False)
+#kmi = km.keymap_items.new('object.delete', 'DEL', 'PRESS', shift=True)
+#kmi_props_setattr(kmi.properties, 'use_global', True)
 kmi = km.keymap_items.new('wm.call_menu', 'A', 'PRESS', shift=True)
 kmi_props_setattr(kmi.properties, 'name', 'INFO_MT_add')
 kmi = km.keymap_items.new('object.duplicates_make_real', 'A', 'PRESS', shift=True, ctrl=True)

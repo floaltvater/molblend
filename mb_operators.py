@@ -21,15 +21,15 @@
 if "bpy" in locals():
     import imp
     imp.reload(mb_utils)
+    imp.reload(mb_import_export)
 else:
     from molblend import mb_utils
+    from molblend import mb_import_export
 
 import bpy
-
 from bpy.types import (Operator,
                        PropertyGroup,
                        Menu)
-
 from bpy.props import (StringProperty,
                        BoolProperty,
                        IntProperty,
@@ -40,13 +40,9 @@ from bpy.props import (StringProperty,
                        PointerProperty,
                        CollectionProperty,
                        EnumProperty)
-
 from bpy_extras.io_utils import ImportHelper, ExportHelper
-
 import os
-
 from mathutils import Vector
-
 from .helper import debug_print
 
 #from operator import attrgetter
@@ -341,13 +337,15 @@ class MB_OT_add_atom(Operator):
             hover_ob = mb_utils.return_cursor_object(context, event, exclude=[new_atom], mb_type='ATOM')
             if hover_ob:
                 mol = new_atom.mb.get_molecule()
-                mol.remove_atom(new_atom)
+                mol.remove_object(new_atom)
                 mol.atom_index -= 1
                 context.scene.objects.unlink(new_atom)
                 bpy.data.objects.remove(new_atom)
                 new_bond = context.scene.objects.get(self.new_bond_name)
                 if new_bond and hover_ob:
+                    first_atom.mb.remove_bond(new_bond)
                     context.scene.objects.unlink(new_bond)
+                    bpy.data.objects.remove(new_bond)
                     mb_utils.add_bond(context, first_atom, hover_ob)
                     
             return {'FINISHED'}
@@ -404,19 +402,56 @@ class MB_OT_add_atom(Operator):
         if first_atom:
             new_bond = mb_utils.add_bond(context, first_atom, new_atom)
             self.new_bond_name = new_bond.name
-            # add bond to atoms mb props
-            #b = first_atom.mb.bonds.add()
-            #b.name = new_bond.name
-            #b = new_atom.mb.bonds.add()
-            #b.name = new_bond.name
-            ## add it to molecule collection
-            #molecule.add_bond(new_bond)
-            #new_bond.hide = (molecule.draw_style == 'BALLS')
         
         context.scene.objects.active = new_atom
         new_atom.select = True
         return {'FINISHED'}
 
+class MB_OT_delete(Operator):
+    '''
+    Delete objects
+    '''
+    bl_idname = "mb.delete"
+    bl_label = "Delete"
+    bl_options = {'UNDO', 'REGISTER'}
+    
+    @classmethod
+    def poll(cls, context):
+        if context.selected_objects:
+            return True
+        else:
+            False
+    
+    def execute(self, context):
+        for ob in context.selected_objects:
+            # If an atom gets deleted, delete all its bonds as well
+            if ob.mb.type == 'ATOM' and len(ob.mb.bonds) > 0:
+                for bond in ob.mb.bonds:
+                    bond_ob = bond.get_object()
+                    bond_ob.select = True
+                    # make sure that the other bonded atom forgets the bond
+                    for a in bond_ob.mb.bonded_atoms:
+                        if not a.name == ob.name:
+                            a.get_object().mb.remove_bond(bond.get_object())
+            # If a bond gets deleted, delete reference in bonded_atoms
+            elif ob.mb.type == 'BOND':
+                for a in ob.mb.bonded_atoms:
+                    a.get_object().mb.remove_bond(ob)
+        # now collect all objects per molecule
+        molecules = {}
+        for ob in context.selected_objects:
+            try:
+                molecules[ob.mb.get_molecule()].append(ob)
+            except KeyError:
+                molecules[ob.mb.get_molecule()] = [ob]
+        for mol, ob_list in molecules.items():
+            mol.remove_objects(ob_list)
+        
+        bpy.ops.object.delete()
+        return {'FINISHED'}
+        
+    
+    
 class MB_OT_center_mol_parent(Operator):
     '''
     Custom delete function
@@ -450,26 +485,12 @@ class MB_OT_center_mol_parent(Operator):
                 return {'CANCELLED'}
             else:
                 origin = Vector((0.0,0.0,0.0))
-                center = sum([atom.get_object().location for atom in molecule.atoms], origin) / len(molecule.atoms)
-                for atom in molecule.atoms:
+                center = sum([atom.get_object().location for atom in molecule.objects.atoms], origin) / len(molecule.objects.atoms)
+                for atom in molecule.objects.atoms:
                     atom.get_object().location -= center
                 molecule.parent.get_object().location = center
         return {'FINISHED'}
 
-class MB_OT_delete(Operator):
-    '''
-    Custom delete function
-    find out what is deleted and update data accordingly
-    '''
-    bl_idname = "mb.delete"
-    bl_label = "Delete"
-    bl_options = {'UNDO', 'REGISTER'}
-    
-    def invoke(self, context, event):
-        pass
-    def execute(self, context):
-        pass
-        
 
 class MB_MT_group_menu(Menu):
     bl_idname = "MB_MT_group_menu"
@@ -775,8 +796,10 @@ class MB_OT_import_molecule(Operator):
                ##('2', "Meta" , "Metaballs")
                #),
                #default='NURBS',) 
-    refine = IntProperty(name="Refine mesh", min=3, max=64, default=8,
-                         description="Refine value that determines number of vertices per mesh")
+    refine_atoms = IntProperty(name="Refine atoms", default=8, min=3, max=64,
+        description="Refine value for atom meshes")
+    refine_bonds = IntProperty(name="Refine bonds", default=8, min=3, max=64,
+        description="Refine value for atom meshes")
     # TODO this might be handy for different units in files
     #scale_distances = FloatProperty (
         #name = "Distances", default=1.0, min=0.0001,
@@ -849,8 +872,9 @@ class MB_OT_import_molecule(Operator):
         #col.prop(self, "mesh_azimuth")
         #col.prop(self, "mesh_zenith")
         row = box.row()
-        col = row.column()
-        col.prop(self, "refine")
+        row.prop(self, "refine_atoms")
+        row = box.row()
+        row.prop(self, "refine_bonds")
         row = box.row()
         row.prop(self, "radius_type")
         row = box.row()
@@ -978,6 +1002,8 @@ class MB_OT_import_molecule(Operator):
         new_molecule.draw_style = self.draw_style
         new_molecule.radius_type = self.radius_type
         new_molecule.bond_radius = self.bond_radius
+        new_molecule.refine_atoms = self.refine_atoms
+        new_molecule.refine_bonds = self.refine_bonds
         for scale in self.atom_scales:
             new_molecule.atom_scales[scale.name].val = scale.val
         
@@ -1018,12 +1044,13 @@ class MB_OT_import_molecule(Operator):
         else:
             scale_distances = float(self.length_unit)
         # Execute main routine
-        mb_utils.import_molecule(
+        mb_import_export.import_molecule(
                                 filepath,
                                 modes_path,
                                 new_molecule,
                                 #self.ball,
-                                self.refine,
+                                self.refine_atoms,
+                                self.refine_bonds,
                                 scale_distances,
                                 #self.stick,
                                 #self.bond_sectors,
@@ -1090,11 +1117,11 @@ class ExportPDB(Operator, ExportHelper):
             scale_distances = float(self.length_unit)
         
         if self.file_type == 'PDB':
-            mb_utils.export_pdb(bpy.path.abspath(self.filepath),
-                                scale_distances,
-                                self.selection_only)
+            mb_import_export.export_pdb(bpy.path.abspath(self.filepath),
+                                        scale_distances,
+                                        self.selection_only)
         elif self.file_type == 'XYZ':
-            mb_utils.export_xyz(bpy.path.abspath(self.filepath),
-                                scale_distances,
-                                self.selection_only)
+            mb_import_export.export_xyz(bpy.path.abspath(self.filepath),
+                                        scale_distances,
+                                        self.selection_only)
         return {'FINISHED'}
