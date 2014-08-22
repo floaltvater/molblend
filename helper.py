@@ -17,7 +17,7 @@
 #
 # ***** END GPL LICENCE BLOCK *****
 
-debug = 4
+debug = 3
 
 def debug_print(arg, level=1, end='\n'):
     if debug >= level:

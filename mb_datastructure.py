@@ -118,7 +118,7 @@ class mb_object(PropertyGroup):
                 self.bonds.remove(i)
                 return
     
-    def add_bonded_atom(self, ob):
+    def add_bonded_atom(self, ob, replace_name=""):
         if not self.type == 'BOND':
             debug_print("WARNING: Something is trying to add bonded_atom to non-BOND type object", 1)
             return
@@ -141,8 +141,8 @@ class mb_object(PropertyGroup):
         return item
     
     def remove_bonded_atom(self, ob):
-        if not self.type == 'ATOM':
-            debug_print("WARNING: Something is trying to remove bonded_atom from non-BOND type object", 1)
+        if not self.type == 'BOND':
+            debug_print("WARNING: Something is trying to remove bonded_atom {} ({}) from non-BOND type object {} ({})".format(ob.name, ob.mb.type, self.name, self.type), 1)
             return
         for i, a in enumerate(self.bonded_atoms):
             if a.name == ob.name:
@@ -150,8 +150,7 @@ class mb_object(PropertyGroup):
                 return
         
     def draw_properties(self, context, layout, ob):
-        box = layout.box()
-        box.label("Atom properties")
+        #layout.label("Atom properties")
         
         props = {
                 "Element": [self, "element", 10],
@@ -160,7 +159,7 @@ class mb_object(PropertyGroup):
                 "Atom color": [ob.material_slots[0].material, "diffuse_color", 40],
                 }
         for label, (data, prop, i) in sorted(props.items(), key=lambda t: t[-1][-1]):
-            row = box.row()
+            row = layout.row()
             #row.label(label)
             row.prop(data, prop, text=label)
             #props[label].append(row)
@@ -169,7 +168,7 @@ class mb_object(PropertyGroup):
         #props["Mode scale"][-1].active = bool(self.max_mode)
         
         
-        #row = box.row()
+        #row = layout.row()
         
         #col = row.column()
         #col.prop(self, "element")
@@ -218,7 +217,8 @@ class mb_molecule(PropertyGroup):
     refine_bonds = IntProperty(name="Refine bonds", default=8, min=3, max=64,
         description="Refine value for atom meshes", update=mb_utils.update_refine_bonds)
     parent = PointerProperty(name="Parent", type=mb_object_pointer)
-    
+    dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
+
     max_mode = IntProperty(name="Number of modes", default=0, min=0,
         description="Number of vibrational modes of molecule")
     active_mode = IntProperty(name="Active Mode", default=0, min=0,
@@ -231,9 +231,39 @@ class mb_molecule(PropertyGroup):
     objects = PointerProperty(name="Molecule objects", type=mb_molecule_objects)
     
     def draw_properties(self, layout):
-        box = layout.box()
-        box.label("Molecule properties")
-
+        #layout.label("Molecule properties")
+        row = layout.row()
+        row.prop(self, "name_mol", text="")
+        row = layout.row()
+        row.label("(id: {}".format(self.parent.name))
+        
+        row = layout.row()
+        row.active = bool(self.max_mode)
+        row.prop(self, "active_mode")
+        row = layout.row()
+        row.active = bool(self.max_mode)
+        row.prop(self, "mode_scale")
+        
+        if self.parent.get_object():
+            col = layout.column()
+            col.prop(self.parent.get_object(), "location", text="Center of mass")
+        row = layout.row()
+        row.operator("mb.center_mol_parent")
+        
+        if self.dipole.get_object():
+            col = layout.column()
+            col.prop(self.dipole.get_object(), "location", text="Dipole")
+        else:
+            row = layout.row()
+            row.operator("mb.draw_dipole")
+    
+    def draw_styles(self, layout):
+        #layout.label("Molecule draw style")
+        row = layout.row()
+        row.label(self.name_mol)
+        row = layout.row()
+        row.label("(id: {}".format(self.parent.name))
+        
         props = {
                 "Atom scale": [self.atom_scales[self.draw_style], "val", 10],
                 "Bond radius": [self, "bond_radius", 20],
@@ -241,22 +271,12 @@ class mb_molecule(PropertyGroup):
                 "Draw style": [self, "draw_style", 40],
                 "Bond material": [self, "bond_material", 50],
                 "Bond color": [self, "bond_color", 60],
-                "Active mode": [self, "active_mode", 70],
-                "Mode scale": [self, "mode_scale", 80],
-                "Refine atoms": [self, "refine_atoms", 90],
-                "Refine bonds": [self, "refine_bonds", 100],
+                "Refine atoms": [self, "refine_atoms", 70],
+                "Refine bonds": [self, "refine_bonds", 80],
                 }
         for label, (data, prop, i) in sorted(props.items(), key=lambda t: t[-1][-1]):
-            row = box.row()
-            #row.label(label)
+            row = layout.row()
             row.prop(data, prop)
-            props[label].append(row)
-        
-        props["Active mode"][-1].active = bool(self.max_mode)
-        props["Mode scale"][-1].active = bool(self.max_mode)
-        
-        row = box.row()
-        row.operator("mb.center_mol_parent")
         
     def add_object(self, ob, replace_name=""):
         '''
@@ -317,7 +337,6 @@ class mb_molecule(PropertyGroup):
                 collection[ob_type].remove(i)
         return
 
-
 class mb_action(PropertyGroup):
     name = StringProperty(name="Action name")
     mode_vector = FloatVectorProperty(name="Mode vector",
@@ -336,6 +355,28 @@ class mb_element(PropertyGroup):
     constant = FloatProperty(name="Constant radius", min=0.0, max=5.0,
         update=mb_utils.update_all_meshes)
 
+class mb_scn_import(PropertyGroup):
+    filepath = StringProperty(name="Import file", default="", subtype="FILE_PATH",
+        description="Filepath to molecule file to import (.xyz, .pdb)")
+    modes = BoolProperty(name="Modes", default=False, description="Import normal modes of molecule as keyframes.")
+    modes_path = StringProperty(name="Modes file", default="", subtype="FILE_PATH",
+        description="Filepath to modes file to import (In Quantum Espresso: dynmat.out)")
+        
+class mb_scn_export(PropertyGroup):
+    filepath = StringProperty(name="Export file", default="", subtype="FILE_PATH",
+        description="Filepath to exported molecule file (.xyz, .pdb)")
+    selection_only = BoolProperty(name="Selected Objects", default=True,
+        description="Only export selected objects")
+    file_type = EnumProperty(
+        name="File type", default="XYZ", items=mb_utils.enums.file_types,
+        description="File format to export to", update=mb_utils.update_export_file_type)
+    length_unit = EnumProperty(
+        name="Unit", default='1.0', items=mb_utils.enums.angstrom_per_unit,
+        description="Unit in output file (to convert to from Angstrom)")
+    length_unit_other = FloatProperty(
+        name="Custom Unit", default=1.0, min=0.000001,
+        description="Enter unit of export file as Angstrom/unit")
+        
 class mb_scn_globals(PropertyGroup):
     draw_style = EnumProperty(name="Draw style", items=mb_utils.enums.molecule_styles,
         description="Style to draw atoms and bonds", default='BAS')
@@ -344,7 +385,10 @@ class mb_scn_globals(PropertyGroup):
     bond_radius = FloatProperty(name="Bond radius", default=0.15, min=0.0, max=3.0,
         description="Radius of bonds for Sticks, and Ball and Sticks")
     atom_scales = CollectionProperty(type=atom_scale)
-
+    
+    import_props = PointerProperty(type=mb_scn_import)
+    export_props = PointerProperty(type=mb_scn_export)
+    
 class mb_scene(PropertyGroup):
     elements = CollectionProperty(type=mb_element)
     molecules = CollectionProperty(type=mb_molecule)
@@ -368,28 +412,112 @@ class mb_scene(PropertyGroup):
             new_scale.name = scale.name
             new_scale.val = scale.val
         # create new empty that will be the parent for the molecule
-        parent_ob = bpy.data.objects.new("molecule_{}".format(mol.index), None)
+        parent_ob = bpy.data.objects.new(mol.name_mol, None)
         parent_ob.empty_draw_type = 'SPHERE'
         parent_ob.empty_draw_size = 0.3
         bpy.context.scene.objects.link(parent_ob)
         mol.parent.name = parent_ob.name
+        parent_ob.mb.molecule_name = mol.name
         return mol
     #view = bpy.props.CollectionProperty(type=mb_view)
     #display = bpy.props.PointerProperty(type=mb_display_properties)
+    
+    def remove_molecule(self, mol):
+        # Make sure all objects are deleted first
+        if 0 == len(mol.objects.atoms) == len(mol.objects.other) == len(mol.objects.bonds):
+            # delete all meshes
+            for me in mol.objects.meshes:
+                bpy.data.meshes.remove(me.get_data())
+            # delete parent
+            bpy.context.scene.objects.unlink(mol.parent.get_object())
+            bpy.data.objects.remove(mol.parent.get_object())
+            
+            # Finally delete molecule from scene collection
+            for i, mol_item in enumerate(self.molecules):
+                if mol == mol_item:
+                    mol_id = mol.name
+                    name = mol.name_mol
+                    self.molecules.remove(i)
+                    debug_print("Deleted {} ({}).".format(mol_id, name), 3)
+                    return
+            
+        else:
+            ob_list = ([ob.get_object() for ob in mol.objects.atoms] + 
+                       [ob.get_object() for ob in mol.objects.other] + 
+                       [ob.get_object() for ob in mol.objects.bonds])
+            self.remove_objects(ob_list) # will call remove_molecule again
+            
+    def remove_object(self, ob):
+        if ob.mb.type == 'MESH':
+            debug_print("WARNING: Deleting individual mesh not necessary.", 1)
+        elif ob.mb.type == 'ATOM':
+            # remove link from bonds
+            for b in ob.mb.bonds:
+                b_ob = b.get_object()
+                if b_ob:
+                    b_ob.mb.remove_bonded_atom(ob)
+        elif ob.mb.type == 'BOND':
+            # remove link from atoms
+            for a in ob.mb.bonded_atoms:
+                a_ob = a.get_object()
+                if a_ob:
+                    a_ob.mb.remove_bond(ob)
+        # remove link from molecule
+        mol = ob.mb.get_molecule()
+        if mol:
+            mol.remove_object(ob)
+        # delete object from blender
+        bpy.context.scene.objects.unlink(ob)
+        bpy.data.objects.remove(ob)
+        # check if object was last object in molecule and delete molecule if so
+        if mol and 0 == len(mol.objects.atoms) == len(mol.objects.other) == len(mol.objects.bonds):
+            self.remove_molecule(mol)
+    
+    def remove_objects(self, ob_list):
+        # now collect all objects per molecule
+        molecules = {}
+        found_mesh = False
+        for ob in ob_list:
+            if ob.mb.type == 'MESH':
+                found_mesh = True
+            if ob.mb.type == 'ATOM':
+                # remove link from bonds
+                for b in ob.mb.bonds:
+                    b_ob = b.get_object()
+                    if b_ob:
+                        b_ob.mb.remove_bonded_atom(ob)
+            elif ob.mb.type == 'BOND':
+                # remove link from atoms
+                for a in ob.mb.bonded_atoms:
+                    a_ob = a.get_object()
+                    if a_ob:
+                        a_ob.mb.remove_bond(ob)
+            try:
+                molecules[ob.mb.get_molecule()].append(ob)
+            except KeyError:
+                molecules[ob.mb.get_molecule()] = [ob]
+        if found_mesh:
+            debug_print("WARNING: Deleting individual meshes not necessary.", 1)
+        
+        for mol, ob_list in molecules.items():
+            if mol:
+                mol.remove_objects(ob_list)
+            [bpy.context.scene.objects.unlink(ob) for ob in ob_list]
+            [bpy.data.objects.remove(ob) for ob in ob_list]
+        if mol and 0 == len(mol.objects.atoms) == len(mol.objects.other) == len(mol.objects.bonds):
+            self.remove_molecule(mol)
 
+
+    
 class mb_wm_globals(PropertyGroup):
     group_selected_extend = BoolProperty(name="Extend", default=False, description="Extend selected group to selection")
     element_to_add = StringProperty(name="Element", default="C", description="Element to add to scene")
     geometry_to_add = EnumProperty(name="Geometry", default='SINGLE', items=mb_utils.enums.geometries,
         description="Geometry the new bond should be in relative to existing bonds. Press ALT to activate.")
-    active_tool = EnumProperty(name="Tool", items=mb_utils.enums.mb_tools, default='ADD_ATOM',
+    active_tool = EnumProperty(name="Tool", items=mb_utils.enums.mb_tools, default='SELECT',
         description="Select active tool")
-    import_path = StringProperty(name="Import file", default="", subtype="FILE_PATH",
-        description="Filepath to molecule file to import (.xyz, .pdb)")
-    import_modes = BoolProperty(name="Modes", default=False, description="Import normal modes of molecule as keyframes")
-    modes_path = StringProperty(name="Modes file", default="", subtype="FILE_PATH",
-        description="Filepath to modes file to import (Quantum Espresso output)")
-
+    
+    
 class mb_window_manager(PropertyGroup):
     is_running = BoolProperty(default=False, description="MolBlend is running.")
     globals = PointerProperty(type=mb_wm_globals)

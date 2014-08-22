@@ -83,7 +83,7 @@ class MB_OT_start(Operator):
         # store last active keyconfig name
         wm.mb.last_keyconfig = wm.keyconfigs.active.name
         
-        keyconfig = mb_utils.create_new_keyconfig(context)
+        keyconfig = mb_utils.create_new_keyconfig('MolBlend', context)
         wm.keyconfigs.active = keyconfig
         
         # initialize elements
@@ -125,7 +125,20 @@ class MB_OT_modal(Operator):
                     if hover_ob is not None:
                         hover_ob.select = True
                     context.scene.objects.active = hover_ob
-            return {'PASS_THROUGH'}
+            # set correct keyconfig
+            if wm.mb.globals.active_tool == 'BLENDER':
+                if not wm.keyconfigs.active.name == wm.mb.last_keyconfig:
+                    kc = wm.keyconfigs.get(wm.mb.last_keyconfig)
+                    if not kc:
+                        kc = wm.keyconfigs[0]
+                    wm.keyconfigs.active = kc
+            else:
+                if not wm.keyconfigs.active.name == "MolBlend":
+                    kc = wm.keyconfigs.get("MolBlend")
+                    if not kc:
+                        kc = mb_utils.create_new_keyconfig("MolBlend", context)
+                    wm.keyconfigs.active = kc
+        return {'PASS_THROUGH'}
     
     def invoke(self, context, event):
         debug_print('Start modal background', 3)
@@ -322,13 +335,13 @@ class MB_OT_add_atom(Operator):
                 if event.alt and new_bond:
                     # constrain length
                     length = 1.0
-                    self.coord_3d = mb_utils.get_fixed_length(context, first_atom, self.coord_3d, length)
+                    self.coord_3d = mb_utils.get_fixed_length(context, first_atom, new_atom, self.coord_3d, length=-1)
             
             new_atom.location = self.coord_3d
             # sometimes, when bond is exactly along axis, the dimension goes to zero due to the stretch constraint
             # check for this occurence and fix it
             if new_bond:
-                mb_utils.check_bond_dimension(new_bond)
+                mb_utils.check_ob_dimensions(new_bond)
         
         elif event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
             # check if new atom is above already existing atom
@@ -343,9 +356,8 @@ class MB_OT_add_atom(Operator):
                 bpy.data.objects.remove(new_atom)
                 new_bond = context.scene.objects.get(self.new_bond_name)
                 if new_bond and hover_ob:
-                    first_atom.mb.remove_bond(new_bond)
-                    context.scene.objects.unlink(new_bond)
-                    bpy.data.objects.remove(new_bond)
+                    context.scene.mb.remove_object(new_bond)
+                    
                     mb_utils.add_bond(context, first_atom, hover_ob)
                     
             return {'FINISHED'}
@@ -408,12 +420,10 @@ class MB_OT_add_atom(Operator):
         return {'FINISHED'}
 
 class MB_OT_delete(Operator):
-    '''
-    Delete objects
-    '''
     bl_idname = "mb.delete"
     bl_label = "Delete"
     bl_options = {'UNDO', 'REGISTER'}
+    bl_description = "Delete objects"
     
     @classmethod
     def poll(cls, context):
@@ -422,6 +432,10 @@ class MB_OT_delete(Operator):
         else:
             False
     
+    def invoke(self, context, event):
+        bpy.ops.wm.call_menu(name="MB_MT_confirm_delete_menu")
+        return {'FINISHED'}
+        
     def execute(self, context):
         for ob in context.selected_objects:
             # If an atom gets deleted, delete all its bonds as well
@@ -429,25 +443,23 @@ class MB_OT_delete(Operator):
                 for bond in ob.mb.bonds:
                     bond_ob = bond.get_object()
                     bond_ob.select = True
-                    # make sure that the other bonded atom forgets the bond
-                    for a in bond_ob.mb.bonded_atoms:
-                        if not a.name == ob.name:
-                            a.get_object().mb.remove_bond(bond.get_object())
-            # If a bond gets deleted, delete reference in bonded_atoms
-            elif ob.mb.type == 'BOND':
-                for a in ob.mb.bonded_atoms:
-                    a.get_object().mb.remove_bond(ob)
-        # now collect all objects per molecule
-        molecules = {}
-        for ob in context.selected_objects:
-            try:
-                molecules[ob.mb.get_molecule()].append(ob)
-            except KeyError:
-                molecules[ob.mb.get_molecule()] = [ob]
-        for mol, ob_list in molecules.items():
-            mol.remove_objects(ob_list)
         
-        bpy.ops.object.delete()
+        ## now collect all objects per molecule
+        #molecules = {}
+        #for ob in context.selected_objects:
+            #try:
+                #molecules[ob.mb.get_molecule()].append(ob)
+            #except KeyError:
+                #molecules[ob.mb.get_molecule()] = [ob]
+        #for mol, ob_list in molecules.items():
+            #mol.remove_objects(ob_list)
+        #for ob in context.selected_objects:
+            #context.scene.mb.remove_object(ob)
+        context.scene.mb.remove_objects([ob for ob in context.selected_objects])
+
+        #bpy.ops.object.delete()
+        
+        # check if molecule has atoms left. If not, delete molecule instance
         return {'FINISHED'}
         
     
@@ -518,6 +530,14 @@ class MB_MT_right_click_menu(Menu):
         if context.object and context.object.users_group:
             op = layout.operator("mb.select", text="Select group")
             op.group = True
+
+class MB_MT_confirm_delete_menu(Menu):
+    bl_idname = "MB_MT_confirm_delete_menu"
+    bl_label = "OK?"
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("mb.delete", text="Delete")
 
 class MB_OT_group_selected(Operator):
     '''
@@ -659,6 +679,57 @@ class MB_OT_select(Operator):
     def invoke(self, context, event):
         return self.execute(context)
 
+class MB_OT_draw_dipole(Operator):
+    bl_idname = "mb.draw_dipole"
+    bl_label = "Draw dipole of molecule"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    dipole_vec = FloatVectorProperty(name="Dipole vector", size=3)
+    molecule_id = StringProperty(name="Molecule identifier", update=mb_utils.update_molecule_selection)
+    
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+        row.prop_search(self, "molecule_id", context.scene.mb, "molecules", text="")
+        col = layout.column()
+        col.prop(self, "dipole_vec")
+        
+    def invoke(self, context, event):
+        if context.object and context.object.mb.get_molecule():
+            self.molecule_id = context.object.mb.get_molecule().name
+        return context.window_manager.invoke_props_dialog(self)
+    
+    def execute(self, context):
+        mol = context.scene.mb.molecules.get(self.molecule_id)
+        if not mol:
+            debug_print("ERROR: draw_dipole: {} not found.".format(self.molecule_id))
+            return {'CANCELLED'}
+        
+        # add empty as stretch target
+        dipole_ob = bpy.data.objects.new("{}_dipole_target".format(mol.name_mol), None)
+        dipole_ob.empty_draw_type = 'SINGLE_ARROW'
+        dipole_ob.empty_draw_size = 0.5
+        bpy.context.scene.objects.link(dipole_ob)
+        mol.dipole.name = dipole_ob.name
+        dipole_ob.location = self.dipole_vec
+        dipole_ob.parent = mol.parent.get_object()
+        dipole_ob.mb.molecule_name = mol.name
+        
+        # add arrow object
+        arrow_mesh = mb_utils.get_arrow_data()
+        arrow_ob = bpy.data.objects.new("{}_dipole".format(mol.name_mol), arrow_mesh)
+        arrow_ob.parent = mol.parent.get_object()
+        bpy.context.scene.objects.link(arrow_ob)
+        bpy.context.scene.objects.active = arrow_ob
+        arrow_ob.mb.molecule_name = mol.name
+
+        c = arrow_ob.constraints.new('STRETCH_TO')
+        c.name = "stretch"
+        c.rest_length = 1.0
+        c.volume = 'NO_VOLUME'
+        c.target = dipole_ob
+        return {'FINISHED'}
+    
 #class MB_OT_unify_molecule(Operator):
     #bl_idname = "mb.unify_molecule"
     #bl_label = "Unify the molecular properties of the selected atoms and bonds, using the active object's properties"
@@ -734,23 +805,23 @@ class MB_OT_import_molecule(Operator):
     filename_ext = "*.pdb;*.xyz"
     #filter_glob  = StringProperty(default=filename_ext, options={'HIDDEN'},)
     filepath = StringProperty(
-            name="File Path",
-            description="Filepath used for importing one file",
-            maxlen=1024,
-            subtype='FILE_PATH',
-            )
+        name="File Path",
+        description="Filepath used for importing one file",
+        maxlen=1024,
+        subtype='FILE_PATH',
+        )
     #modepath = StringProperty(
-            #name="Mode Path",
-            #description="Filepath to normal mode file",
-            #maxlen=1024,
-            #subtype='FILE_PATH',
-            #)
+        #name="Mode Path",
+        #description="Filepath to normal mode file",
+        #maxlen=1024,
+        #subtype='FILE_PATH',
+        #)
     directory = StringProperty(
-            name="Directory",
-            description="Directory used for importing the file",
-            maxlen=1024,
-            subtype='FILE_PATH',
-            )
+        name="Directory",
+        description="Directory used for importing the file",
+        maxlen=1024,
+        subtype='FILE_PATH',
+        )
     files = CollectionProperty(
         name="File Path",
         description="List with file names used for importing",
@@ -759,20 +830,20 @@ class MB_OT_import_molecule(Operator):
     
     #--- molecule properties --------------------------------------------------#
     name_mol = StringProperty(name="Molecule Name", default="Molecule",
-                              description="Name of imported molecule") # human readable name
+        description="Name of imported molecule") # human readable name
     bond_material = EnumProperty(name="Bond material",
-                                description="Choose bond material",
-                                items=mb_utils.enums.bond_material, default='ATOMS')
+        description="Choose bond material",
+        items=mb_utils.enums.bond_material, default='ATOMS')
     bond_color = FloatVectorProperty(name='Bond color', default=(0.8, 0.8, 0.8),
-                                     subtype='COLOR')
+        subtype='COLOR')
     # dito
     draw_style = EnumProperty(name="Display style", items=mb_utils.enums.molecule_styles,
-                         description="Style to draw atoms and bonds",
-                         default='BAS')
+        description="Style to draw atoms and bonds",
+        default='BAS')
     radius_type = EnumProperty(name="Radius type", items=mb_utils.enums.radius_types,
-                               default='covalent')
+        default='covalent')
     bond_radius = FloatProperty(name="Bond radius", default=0.15, min=0.0, max=3.0,
-                                description="Radius of bonds for Sticks, and Ball and Sticks")
+        description="Radius of bonds for Sticks, and Ball and Sticks")
 
     # this is a duplicate class from mb_datastructure for 
     class atom_scale(PropertyGroup):
@@ -819,9 +890,12 @@ class MB_OT_import_molecule(Operator):
     mask_flip = BoolProperty(
         name="Mask flip",
         description="Invert masking effect (only atoms outside of mask object are imported).")
+    draw_unit_cell = BoolProperty(
+        name = "Draw unit cell", default=False,
+        description = "Draw the unit cell if applicable.")
     supercell = IntVectorProperty(
-        name="Supercell", size=3, default=(2,2,2), min=1, subtype='XYZ',
-        description="Import a supercell")
+        name="Supercell", size=3, default=(1,1,1), min=1, subtype='XYZ',
+        description="Specify supercell dimensions")
     use_center = BoolProperty(
         name = "Object to origin (first frame)", default=False,
         description = "Put the object into the global origin, the first frame only")
@@ -939,6 +1013,8 @@ class MB_OT_import_molecule(Operator):
         row.active = (self.length_unit == 'OTHER')
         row.prop(self, "length_unit_other")
         row = box.row()
+        row.prop(self, "draw_unit_cell")
+        row = box.row()
         row.prop(self, "supercell")
         
         #row = box.row()
@@ -974,25 +1050,42 @@ class MB_OT_import_molecule(Operator):
     
     def invoke(self, context, event):
         # before import dialog is opened, initialize atom scales
-        if not len(context.scene.mb.globals.atom_scales):
-            default_scales = {'BALLS': 1.0, 'BAS': 0.3, 'STICKS': 0.001}
-        else:
-            default_scales = {}
-            for style in ('BALLS', 'BAS', 'STICKS'):
-                default_scales[style] = context.scene.mb.globals.atom_scales[style].val
-        for style in ('BALLS', 'BAS', 'STICKS'):
-            atom_scale = self.atom_scales.add()
-            atom_scale.name = style
-            atom_scale.val = default_scales[style]
+        if not len(self.atom_scales):
+            if not len(context.scene.mb.globals.atom_scales):
+                default_scales = {'BALLS': 1.0, 'BAS': 0.3, 'STICKS': 0.001}
+            else:
+                default_scales = {}
+                for style in ('BALLS', 'BAS', 'STICKS'):
+                    default_scales[style] = context.scene.mb.globals.atom_scales[style].val
+            for style in default_scales:
+                atom_scale = self.atom_scales.add()
+                atom_scale.name = style
+                atom_scale.val = default_scales[style]
         
         return context.window_manager.invoke_props_dialog(self)
-                
+    
     def execute(self, context):
+        if not len(self.atom_scales):
+            if not len(context.scene.mb.globals.atom_scales):
+                default_scales = {'BALLS': 1.0, 'BAS': 0.3, 'STICKS': 0.001}
+            else:
+                default_scales = {}
+                for style in ('BALLS', 'BAS', 'STICKS'):
+                    default_scales[style] = context.scene.mb.globals.atom_scales[style].val
+            for style in default_scales:
+                atom_scale = self.atom_scales.add()
+                atom_scale.name = style
+                atom_scale.val = default_scales[style]
+        
         ##import time
         ##start = time.time()
-        filepath = context.window_manager.mb.globals.import_path
-        if context.window_manager.mb.globals.import_modes:
-            modes_path = context.window_manager.mb.globals.modes_path
+        import_props = context.scene.mb.globals.import_props
+        filepath = bpy.path.abspath(import_props.filepath)
+        if not os.path.exists(filepath):
+            debug_print("ERROR: {} not found".format(filepath))
+            return {'CANCELLED'}
+        if import_props.modes:
+            modes_path = import_props.modes_path
         else:
             modes_path = ''
         
@@ -1044,7 +1137,7 @@ class MB_OT_import_molecule(Operator):
         else:
             scale_distances = float(self.length_unit)
         # Execute main routine
-        mb_import_export.import_molecule(
+        worked = mb_import_export.import_molecule(
                                 filepath,
                                 modes_path,
                                 new_molecule,
@@ -1061,8 +1154,11 @@ class MB_OT_import_molecule(Operator):
                                 #self.use_lamp,
                                 mask_planes,
                                 self.mask_flip,
+                                self.draw_unit_cell,
                                 self.supercell,
                                 )
+        if not worked:
+            context.scene.mb.remove_molecule(new_molecule)
             #if self.use_all_frames:
                 #frame_list.extend(range(1, len(import_molecule.ALL_FRAMES)+1))
             ## Load frames
@@ -1073,11 +1169,12 @@ class MB_OT_import_molecule(Operator):
         #print("Imported in {} s".format(time.time()-start))
         return {'FINISHED'}
 
-class ExportPDB(Operator, ExportHelper):
+class ExportMolecule(Operator):
     bl_idname = "mb.export_molecule"
-    bl_label  = "Export molecule structure to file(*.pdb, *.xyz)"
-    filename_ext = "*.pdb;*.xyz"
-    filter_glob  = StringProperty(default=filename_ext, options={'HIDDEN'},)
+    bl_label  = "Export"
+    #filename_ext = "*.pdb;*.xyz"
+    #filter_glob  = StringProperty(default=filename_ext, options={'HIDDEN'},)
+    bl_description = "Export molecule structure to file (*.pdb, *.xyz)"
     
     #atom_pdb_export_type = EnumProperty(
         #name="Type of Objects",
@@ -1086,42 +1183,62 @@ class ExportPDB(Operator, ExportHelper):
                #('1', "Elements", "Export only those active objects which have"
                                  #" a proper element name")),
                #default='1',) 
-    file_type = EnumProperty(
-        name="File type", default="XYZ", items=mb_utils.enums.file_types,
-        description="File format to export to")
-    length_unit = EnumProperty(
-        name="Unit", default='1.0', items=mb_utils.enums.angstrom_per_unit,
-        description="Unit in input file, will be converted to Angstrom")
-    length_unit_other = FloatProperty(
-        name="Custom Unit", default=1.0, min=0.000001,
-        description="Enter unit of input file as Angstrom/unit")
-    selection_only = BoolProperty(name="Selected Objects", default=True,
-        description="Only export selected objects")
+    #file_type = EnumProperty(
+        #name="File type", default="XYZ", items=mb_utils.enums.file_types,
+        #description="File format to export to")
+    #length_unit = EnumProperty(
+        #name="Unit", default='1.0', items=mb_utils.enums.angstrom_per_unit,
+        #description="Unit in output file (to convert to from Angstrom)")
+    #length_unit_other = FloatProperty(
+        #name="Custom Unit", default=1.0, min=0.000001,
+        #description="Enter unit of export file as Angstrom/unit")
+    #selection_only = BoolProperty(name="Selected Objects", default=True,
+        #description="Only export selected objects")
     
-    def draw(self, context):
-        layout = self.layout
-        row = layout.row()
-        row.prop(self, "file_type")
-        row = layout.row()
-        row.prop(self, "selection_only")
-        row = layout.row()
-        row.prop(self, "length_unit")
-        row = layout.row()
-        row.active = (self.length_unit == 'OTHER')
-        row.prop(self, "length_unit")
-
-    def execute(self, context):
-        if self.length_unit == 'OTHER':
-            scale_distances = self.length_unit_other
-        else:
-            scale_distances = float(self.length_unit)
+    #def draw(self, context):
+        #layout = self.layout
+        #row = layout.row()
+        #row.prop(self, "file_type")
+        #row = layout.row()
+        #row.prop(self, "selection_only")
+        #row = layout.row()
+        #row.prop(self, "length_unit")
+        #row = layout.row()
+        #row.active = (self.length_unit == 'OTHER')
+        #row.prop(self, "length_unit")
+    
+    #def invoke(self, context, event):
+        #active_ob = context.object
+        #if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule():
+            #self.filepath = active_ob.mb.get_molecule().name_mol
         
-        if self.file_type == 'PDB':
-            mb_import_export.export_pdb(bpy.path.abspath(self.filepath),
-                                        scale_distances,
-                                        self.selection_only)
-        elif self.file_type == 'XYZ':
-            mb_import_export.export_xyz(bpy.path.abspath(self.filepath),
-                                        scale_distances,
-                                        self.selection_only)
+    
+    def execute(self, context):
+        export_props = context.scene.mb.globals.export_props
+        if export_props.length_unit == 'OTHER':
+            scale_distances = export_props.length_unit_other
+        else:
+            scale_distances = float(export_props.length_unit)
+        
+        # convert into relative path if only filename is given (otherwise writes to homedirectory)
+        filepath = export_props.filepath
+        if not os.path.isabs(filepath) and not filepath.startswith("//"):
+            filepath = "//" + filepath
+        
+        if export_props.file_type == 'PDB':
+            if not export_props.filepath[-4:] == ".pdb":
+                export_props.filepath += ".pdb"
+            mb_import_export.export_pdb(bpy.path.abspath(export_props.filepath),
+                                        export_props.selection_only,
+                                        scale_distances)
+        elif export_props.file_type == 'XYZ':
+            if not export_props.filepath[-4:] == ".xyz":
+                export_props.filepath += ".xyz"
+            mb_import_export.export_xyz(bpy.path.abspath(export_props.filepath),
+                                        export_props.selection_only,
+                                        scale_distances)
+        elif export_props.file_type == 'B4W':
+            if not export_props.filepath[-4:] == ".xyz":
+                export_props.filepath += ".xyz"
+            mb_import_export.export_b4w(bpy.path.abspath(export_props.filepath))
         return {'FINISHED'}
