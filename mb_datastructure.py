@@ -53,13 +53,19 @@ class mb_mesh_pointer(PropertyGroup):
 
 class atom_scale(PropertyGroup):
     name = StringProperty()
-    val = FloatProperty(name="Atom scale", default=0.3, min=0.0, max=5.0,
+    val = FloatProperty(name="Atom scale", default=0.4, min=0.0, max=5.0,
                 precision=2, update=mb_utils.update_all_meshes)
 
 class mb_mesh(PropertyGroup):
     type = EnumProperty(name="type", items=[('MESH', 'MESH', 'MESH'),],
         description="Do not change", default='MESH')
 
+class mb_atom_mode(PropertyGroup):
+    name = IntProperty(name="index")
+    index = IntProperty(name="index")
+    freq = FloatProperty(name="frequency")
+    vec = FloatVectorProperty(name="vector", subtype="XYZ")
+    
 class mb_object(PropertyGroup):
     
     index = IntProperty(name="Index")
@@ -80,6 +86,7 @@ class mb_object(PropertyGroup):
     
     # for type == 'BOND'
     bonded_atoms = CollectionProperty(type=mb_object_pointer)
+    modes = CollectionProperty(type=mb_atom_mode)
     
     def get_molecule(self):
         return bpy.context.scene.mb.molecules.get(self.molecule_name)
@@ -208,7 +215,7 @@ class mb_molecule(PropertyGroup):
         update=mb_utils.set_draw_style)
     radius_type = EnumProperty(name="Radius type", items=mb_utils.enums.radius_types,
         default='covalent', update=mb_utils.update_radius_type)
-    bond_radius = FloatProperty(name="Bond radius", default=0.15, min=0.0, max=3.0,
+    bond_radius = FloatProperty(name="Bond radius", default=0.1, min=0.0, max=3.0,
         description="Radius of bonds for Sticks, and Ball and Sticks",
         update=mb_utils.update_all_meshes)
     atom_scales = CollectionProperty(type=atom_scale)
@@ -218,7 +225,7 @@ class mb_molecule(PropertyGroup):
         description="Refine value for atom meshes", update=mb_utils.update_refine_bonds)
     parent = PointerProperty(name="Parent", type=mb_object_pointer)
     dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
-
+    
     max_mode = IntProperty(name="Number of modes", default=0, min=0,
         description="Number of vibrational modes of molecule")
     active_mode = IntProperty(name="Active Mode", default=0, min=0,
@@ -226,7 +233,7 @@ class mb_molecule(PropertyGroup):
         update=mb_utils.update_active_mode)
     mode_scale = FloatProperty(name="Mode Scale", default=1.0, 
         min=-10.0, max=10.0, description="Scale of normal mode displacement",
-        update=mb_utils.update_mode_scale)
+        update=mb_utils.update_active_mode) # update_mode_scale
     
     objects = PointerProperty(name="Molecule objects", type=mb_molecule_objects)
     
@@ -235,7 +242,7 @@ class mb_molecule(PropertyGroup):
         row = layout.row()
         row.prop(self, "name_mol", text="")
         row = layout.row()
-        row.label("(id: {}".format(self.parent.name))
+        row.label("(id: '{}')".format(self.parent.name))
         
         row = layout.row()
         row.active = bool(self.max_mode)
@@ -382,7 +389,7 @@ class mb_scn_globals(PropertyGroup):
         description="Style to draw atoms and bonds", default='BAS')
     radius_type = EnumProperty(name="Radius type", items=mb_utils.enums.radius_types,
         default='covalent')
-    bond_radius = FloatProperty(name="Bond radius", default=0.15, min=0.0, max=3.0,
+    bond_radius = FloatProperty(name="Bond radius", default=0.1, min=0.0, max=3.0,
         description="Radius of bonds for Sticks, and Ball and Sticks")
     atom_scales = CollectionProperty(type=atom_scale)
     

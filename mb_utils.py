@@ -97,29 +97,36 @@ def update_active_mode(self, context):
     if self.max_mode == 0:
         self.active_mode = 0
         return
-
+    elif self.active_mode > self.max_mode:
+        self.active_mode = self.max_mode
+        return
+    
     for atom in self.objects.atoms:
         atom_ob = atom.get_object()
         atom_id = '{}.{}'.format(self.index, atom_ob.mb.index)
-        
-        if self.active_mode > self.max_mode:
-            self.active_mode = self.max_mode
-            return
-        elif self.active_mode == 0:
-            action_name = "equilibrium_{}".format(atom_id)
-        else:
-            action_name = "mode_{}_{}".format(self.active_mode, atom_id)
-        
-        action = bpy.data.actions.get(action_name)
         anim_data = atom_ob.animation_data
-        if action and anim_data:
-            anim_data.action = action
-            update_mode_scale(self, context)
-        elif not action:
-            debug_print("Mode {} not found for atom '{}'. ({})".format(self.active_mode, atom_id, action_name), 1)
-        elif not anim_data:
+        if anim_data:
+            action = anim_data.action
+            if action:
+                atom_vec = atom_ob.mb.modes[self.active_mode].vec * self.mode_scale
+                for dim in range(3):
+                    fcu = action.fcurves[dim]
+                    
+                    kf1 = fcu.keyframe_points[0]
+                    kf2 = fcu.keyframe_points[1]
+                    #kf3 = fcu.keyframe_points[2]
+                    middle = (kf1.co[1] + kf2.co[1]) / 2.0
+                    
+                    for p in range(3):
+                        loc = middle + pow(-1, p) * atom_vec[dim]
+                        fcu.keyframe_points[p].co = 1.0 + 10*p, loc
+                        fcu.keyframe_points[p].interpolation = 'BEZIER'
+                    fcu.update()
+            else:
+                debug_print("No action for atom '{}'.".format(atom_id), 1)
+        else:
             debug_print("No animation data for atom '{}'.".format(atom_id), 1)
-        
+    
     if self.active_mode == 0:
         # stop animation
         if context.screen.is_animation_playing:
@@ -131,27 +138,68 @@ def update_active_mode(self, context):
             context.scene.frame_end = 20
             bpy.ops.screen.animation_play()
 
-def update_mode_scale(self, context):
-    debug_print("mb_utils.update_mode_scale", 6)
-    for atom in self.objects.atoms:
-        atom_ob = atom.get_object()
-        try:
-            action = atom_ob.animation_data.action
-        except AttributeError:
-            debug_print("WARNING: No animation data when updating mode scale.", 3)
-            return
-        mode_vec = action.mb.mode_vector
-        for dim, fcu in enumerate(action.fcurves):
-            if len(fcu.keyframe_points) > 2:
-                kf1 = fcu.keyframe_points[0]
-                kf2 = fcu.keyframe_points[1]
-                kf3 = fcu.keyframe_points[2]
-                middle = (kf1.co[1] + kf2.co[1]) / 2.0
-                scaled = self.mode_scale * mode_vec[dim]
-                kf1.co[1] = middle + scaled
-                kf2.co[1] = middle - scaled
-                kf3.co[1] = middle + scaled
-                fcu.update()
+###########################################
+### old update_active_mode
+
+    #debug_print("mb_utils.update_active_mode", 6)
+    #if self.max_mode == 0:
+        #self.active_mode = 0
+        #return
+
+    #for atom in self.objects.atoms:
+        #atom_ob = atom.get_object()
+        
+        #if self.active_mode > self.max_mode:
+            #self.active_mode = self.max_mode
+            #return
+        #elif self.active_mode == 0:
+            #action_name = "equilibrium_{}".format(atom_id)
+        #else:
+            #action_name = "mode_{}_{}".format(self.active_mode, atom_id)
+        
+        #action = bpy.data.actions.get(action_name)
+        #anim_data = atom_ob.animation_data
+        #if action and anim_data:
+            #anim_data.action = action
+            #update_mode_scale(self, context)
+        #elif not action:
+            #debug_print("Mode {} not found for atom '{}'. ({})".format(self.active_mode, atom_id, action_name), 1)
+        #elif not anim_data:
+            #debug_print("No animation data for atom '{}'.".format(atom_id), 1)
+        
+    #if self.active_mode == 0:
+        ## stop animation
+        #if context.screen.is_animation_playing:
+            #bpy.ops.screen.animation_play()
+            #context.scene.frame_current = 1
+    #else:
+        ## start animation
+        #if not context.screen.is_animation_playing:
+            #context.scene.frame_end = 20
+            #bpy.ops.screen.animation_play()
+
+##################################################
+#def update_mode_scale(self, context):
+    #debug_print("mb_utils.update_mode_scale", 6)
+    #for atom in self.objects.atoms:
+        #atom_ob = atom.get_object()
+        #try:
+            #action = atom_ob.animation_data.action
+        #except AttributeError:
+            #debug_print("WARNING: No animation data when updating mode scale.", 3)
+            #return
+        #mode_vec = action.mb.mode_vector
+        #for dim, fcu in enumerate(action.fcurves):
+            #if len(fcu.keyframe_points) > 2:
+                #kf1 = fcu.keyframe_points[0]
+                #kf2 = fcu.keyframe_points[1]
+                #kf3 = fcu.keyframe_points[2]
+                #middle = (kf1.co[1] + kf2.co[1]) / 2.0
+                #scaled = self.mode_scale * mode_vec[dim]
+                #kf1.co[1] = middle + scaled
+                #kf2.co[1] = middle - scaled
+                #kf3.co[1] = middle + scaled
+                #fcu.update()
 
 def update_atom_element(self, context):
     debug_print("mb_utils.update_atom_element", 6)

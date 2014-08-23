@@ -89,7 +89,7 @@ class MB_OT_start(Operator):
         # initialize elements
         mb_utils.initialize_elements(context)
         # initialize atom scales
-        default_scales = {'BALLS': 1.0, 'BAS': 0.3, 'STICKS': 0.001}
+        default_scales = {'BALLS': 1.0, 'BAS': 0.4, 'STICKS': 0.001}
         if not len(context.scene.mb.globals.atom_scales):
             for style in ('BALLS', 'BAS', 'STICKS'):
                 atom_scale = context.scene.mb.globals.atom_scales.add()
@@ -842,13 +842,13 @@ class MB_OT_import_molecule(Operator):
         default='BAS')
     radius_type = EnumProperty(name="Radius type", items=mb_utils.enums.radius_types,
         default='covalent')
-    bond_radius = FloatProperty(name="Bond radius", default=0.15, min=0.0, max=3.0,
+    bond_radius = FloatProperty(name="Bond radius", default=0.1, min=0.0, max=3.0,
         description="Radius of bonds for Sticks, and Ball and Sticks")
 
     # this is a duplicate class from mb_datastructure for 
     class atom_scale(PropertyGroup):
         name = StringProperty()
-        val = FloatProperty(name="Atom scale", default=0.3, min=0.0, max=5.0,
+        val = FloatProperty(name="Atom scale", default=0.4, min=0.0, max=5.0,
                             precision=2)
     
     atom_scales = CollectionProperty(type=atom_scale)
@@ -929,122 +929,79 @@ class MB_OT_import_molecule(Operator):
     def draw(self, context):
         layout = self.layout
         row = layout.row()
-        col = row.column()
-        col.prop(self, "name_mol")
+        row.prop(self, "name_mol")
+        
+        layout.separator()
         row = layout.row()
+        row.prop(self, "draw_style")
+        row = layout.row()
+        # Atom props
         col = row.column()
-        col.prop(self, "draw_style")
+        col.prop(self, "refine_atoms")
+        col.prop(self.atom_scales[self.draw_style], "val", text="Atom scaling")
+        col.label(text="Atom radius")
+        col.prop(self, "radius_type", text="")
         
-        box = layout.box()
-        row = box.row()
-        row.label(text="Atoms")
-        #row = box.row()
-        #col = row.column()
-        #col.prop(self, "ball")
-        #row.active = (self.ball == "MESH")
-        #col = row.column(align=True)        
-        #col.prop(self, "mesh_azimuth")
-        #col.prop(self, "mesh_zenith")
-        row = box.row()
-        row.prop(self, "refine_atoms")
-        row = box.row()
-        row.prop(self, "refine_bonds")
-        row = box.row()
-        row.prop(self, "radius_type")
-        row = box.row()
-        row.label(text="Scaling factors")
-        row = box.row()
-        row.active = (self.draw_style != "STICKS")
-        row.prop(self.atom_scales[self.draw_style], "val", text="")
-        #row = box.row()
-        #row.prop(self, "scale_distances")
-        
-        box = layout.box()
-        box.active = (self.draw_style != "BALLS") # no bonds in balls style
-        
-        row = box.row()
-        row.label(text="Bonds")
-        #row = box.row()
-        #col = row.column()
-        #col.prop(self, "stick")
-        row = box.row()
-        col = row.column()
+        col = row.column()        
+        col.prop(self, "refine_bonds")
+        row = layout.row()
+        #row = layout.row()
         col.prop(self, "bond_radius")
-        row = box.row()
-        #row.active = (self.stick == 'MESH') # bond sectors only for mesh
-        #col = row.column()
-        #col.prop(self, "bond_sectors")
-        row = box.row()
-        col = row.column()
-        col.prop(self, "bond_guess")
-        row = box.row()
-        col = row.column()
-        col.prop(self, "bond_material")
-        row = box.row()
-        row.active = (self.bond_material == 'GENERIC')
-        col = row.column()
+        col.label(text="Bond material")
+        col.prop(self, "bond_material", text="")
+        #row = col.row()
         col.prop(self, "bond_color")
+        col.prop(self, "bond_guess")
         
-        #box = layout.box()
-        #row = box.row()
-        #row.label(text="Normal modes")
-        #row = box.row()
-        #row.prop(self, "modepath")
-        
-        box = layout.box()
-        row = box.row()
+        layout.separator()
+        row = layout.row()
         row.label(text="Masking object")
-        
-        row = box.row()
         row.prop_search(self, "use_mask", bpy.data, "objects", text="")
-        row = box.row()
+        row = layout.row()
         row.prop(self, "mask_flip")
         
-        box = layout.box()
-        row = box.row()
-        row.label(text="Scene settings")
-        
-        row = box.row()
+        layout.separator()
+        row = layout.row()
         row.prop(self, "use_center")
         
-        row = box.row()
+        row = layout.row()
         row.prop(self, "length_unit")
-        row = box.row()
+        row = layout.row()
         row.active = (self.length_unit == 'OTHER')
         row.prop(self, "length_unit_other")
-        row = box.row()
+        row = layout.row()
         row.prop(self, "draw_unit_cell")
-        row = box.row()
+        row = layout.row()
         row.prop(self, "supercell")
         
-        #row = box.row()
+        #row = layout.row()
         #row.active = (self.use_all_frames or self.use_select_frames)
         #row.prop(self, "use_center_all")
         
-        #box = layout.box()
-        #box.active = (self.use_parenting or self.use_stretch_to)
-        #row = box.row()
+        #layout = layout.layout()
+        #layout.active = (self.use_parenting or self.use_stretch_to)
+        #row = layout.row()
         #row.label(text="Animation/Frames")
-        #row = box.row()
+        #row = layout.row()
         #row.prop(self, "use_all_frames")
-        #row = box.row()
+        #row = layout.row()
         #row.active = self.use_all_frames
         #col = row.column()
         #col.label(text="Skip frames")
         #col = row.column()
         #col.prop(self, "skip_frames")
-        #row = box.row()
+        #row = layout.row()
         #row.prop(self, "use_select_frames")
-        #row = box.row()
+        #row = layout.row()
         #row.active = self.use_select_frames
         #row.prop(self, "select_frames")
-        #row = box.row()
+        #row = layout.row()
         #row.active = (self.use_all_frames or self.use_select_frames)
         #col = row.column()
         #col.label(text="Frames/key")
         #col = row.column()
         #col.prop(self, "images_per_key")
-        #row = box.row()
+        #row = layout.row()
         #row.active = (self.use_all_frames or self.use_select_frames)
         #row.prop(self, "interpolation")
     
@@ -1052,7 +1009,7 @@ class MB_OT_import_molecule(Operator):
         # before import dialog is opened, initialize atom scales
         if not len(self.atom_scales):
             if not len(context.scene.mb.globals.atom_scales):
-                default_scales = {'BALLS': 1.0, 'BAS': 0.3, 'STICKS': 0.001}
+                default_scales = {'BALLS': 1.0, 'BAS': 0.4, 'STICKS': 0.001}
             else:
                 default_scales = {}
                 for style in ('BALLS', 'BAS', 'STICKS'):
@@ -1067,7 +1024,7 @@ class MB_OT_import_molecule(Operator):
     def execute(self, context):
         if not len(self.atom_scales):
             if not len(context.scene.mb.globals.atom_scales):
-                default_scales = {'BALLS': 1.0, 'BAS': 0.3, 'STICKS': 0.001}
+                default_scales = {'BALLS': 1.0, 'BAS': 0.4, 'STICKS': 0.001}
             else:
                 default_scales = {}
                 for style in ('BALLS', 'BAS', 'STICKS'):

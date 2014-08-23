@@ -64,7 +64,6 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
-# TODO make import popup smaller (or remove completely)
 # TODO normals on dipole arrow head (and probably cell vectors) are pointing inwards!
 # TODO check what happens when molecule is duplicated! Maybe fix driver issues and stuff
 # TODO introduce better Error handling: when anything crashes, clean up afterwards! (Like on import)
@@ -75,6 +74,8 @@ from bpy.props import (StringProperty,
 # TODO copy pasting from other files might make biiig problems!
 
 ### FEATURES
+# TODO add frequencies to molecule, and think about plotting spectrum in blender
+# TODO Think about modes after atoms are moved
 # TODO Operator to combine molecule into mesh: apply and delete all drivers!
 # TODO Allow to turn off hover for add atom operator. Get's really slow with lots of objects.
 # TODO array modifier for unit cells. Have bonds go into next unit cell. Add apply operator as well
