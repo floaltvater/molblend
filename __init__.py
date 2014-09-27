@@ -64,14 +64,12 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
-# TODO normals on dipole arrow head (and probably cell vectors) are pointing inwards!
-# TODO check what happens when molecule is duplicated! Maybe fix driver issues and stuff
+# TODO Duplication introduces lots of errors because all the properties are the same
+# TODO copy pasting from other files might make biiig problems!
 # TODO introduce better Error handling: when anything crashes, clean up afterwards! (Like on import)
 # TODO When MolBlend is not running and the user deletes an atom/bond, it doesn't take care of deleting it from the molecules collections. So add a function that checks at each start of MolBlend if a molecule's objects still exist, and if not, delete the name from the collection. Also needs to update all bonds and bonded_atoms lists. => Very expensive!!!
 # TODO when switching draw styles, check that all molecule parts are on the same layer!
 # TODO Cycles material nodesocketcolor is not updated when diffuse_color is changed (driver issue). Call update_all_meshes before rendering!
-# TODO clean up read functions for QE files (f.seek not pretty)
-# TODO copy pasting from other files might make biiig problems!
 
 ### FEATURES
 # TODO add frequencies to molecule, and think about plotting spectrum in blender

@@ -23,6 +23,7 @@ else:
     from molblend import mb_utils
 
 import bpy
+import os
 #------IMPORTS
 
 from bpy.types import PropertyGroup
@@ -191,7 +192,10 @@ class mb_object(PropertyGroup):
 class mb_molecule_objects(PropertyGroup):
     atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
     bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
+    bond_curve = PointerProperty(name="Parent", type=mb_object_pointer)
     meshes = CollectionProperty(name="Molecule meshes", type=mb_mesh_pointer)
+    parent = PointerProperty(name="Parent", type=mb_object_pointer)
+    dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
     other = CollectionProperty(name="Bonds", type=mb_object_pointer)
     
 class mb_molecule(PropertyGroup):
@@ -223,8 +227,6 @@ class mb_molecule(PropertyGroup):
         description="Refine value for atom meshes", update=mb_utils.update_refine_atoms)
     refine_bonds = IntProperty(name="Refine bonds", default=8, min=3, max=64,
         description="Refine value for atom meshes", update=mb_utils.update_refine_bonds)
-    parent = PointerProperty(name="Parent", type=mb_object_pointer)
-    dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
     
     max_mode = IntProperty(name="Number of modes", default=0, min=0,
         description="Number of vibrational modes of molecule")
@@ -242,7 +244,7 @@ class mb_molecule(PropertyGroup):
         row = layout.row()
         row.prop(self, "name_mol", text="")
         row = layout.row()
-        row.label("(id: '{}')".format(self.parent.name))
+        row.label("(id: '{}')".format(self.objects.parent.name))
         
         row = layout.row()
         row.active = bool(self.max_mode)
@@ -251,15 +253,15 @@ class mb_molecule(PropertyGroup):
         row.active = bool(self.max_mode)
         row.prop(self, "mode_scale")
         
-        if self.parent.get_object():
+        if self.objects.parent.get_object():
             col = layout.column()
-            col.prop(self.parent.get_object(), "location", text="Center of mass")
+            col.prop(self.objects.parent.get_object(), "location", text="Center of mass")
         row = layout.row()
         row.operator("mb.center_mol_parent")
         
-        if self.dipole.get_object():
+        if self.objects.dipole.get_object():
             col = layout.column()
-            col.prop(self.dipole.get_object(), "location", text="Dipole")
+            col.prop(self.objects.dipole.get_object(), "location", text="Dipole")
         else:
             row = layout.row()
             row.operator("mb.draw_dipole")
@@ -269,7 +271,7 @@ class mb_molecule(PropertyGroup):
         row = layout.row()
         row.label(self.name_mol)
         row = layout.row()
-        row.label("(id: {}".format(self.parent.name))
+        row.label("(id: {}".format(self.objects.parent.name))
         
         props = {
                 "Atom scale": [self.atom_scales[self.draw_style], "val", 10],
@@ -323,7 +325,8 @@ class mb_molecule(PropertyGroup):
                 collection.remove(i)
                 return
     
-    def remove_objects(self, ob_list=[]):
+    def remove_objects(self, ob_list=None):
+        ob_list = ob_list or []
         objects = {'ATOM': [ob.name for ob in ob_list if ob.mb.type == 'ATOM'],
                    'BOND': [ob.name for ob in ob_list if ob.mb.type == 'BOND'],
                    'MESH': [ob.name for ob in ob_list if ob.mb.type == 'MESH'],
@@ -363,7 +366,7 @@ class mb_element(PropertyGroup):
         update=mb_utils.update_all_meshes)
 
 class mb_scn_import(PropertyGroup):
-    filepath = StringProperty(name="Import file", default="", subtype="FILE_PATH",
+    filepath = StringProperty(name="Import file", default=os.getcwd() + "/", subtype="FILE_PATH",
         description="Filepath to molecule file to import (.xyz, .pdb)")
     modes = BoolProperty(name="Modes", default=False, description="Import normal modes of molecule as keyframes.")
     modes_path = StringProperty(name="Modes file", default="", subtype="FILE_PATH",
@@ -423,8 +426,13 @@ class mb_scene(PropertyGroup):
         parent_ob.empty_draw_type = 'SPHERE'
         parent_ob.empty_draw_size = 0.3
         bpy.context.scene.objects.link(parent_ob)
-        mol.parent.name = parent_ob.name
+        mol.objects.parent.name = parent_ob.name
         parent_ob.mb.molecule_name = mol.name
+        # create new curve object that will hold the bond splines
+        #cu = mb_utils.get_bond_curve(mol)
+        #curve_ob = bpy.data.objects.new("bond_curve_{}".format(mol.index), cu)
+        #curve_ob.parent = parent_ob
+        #mol.objects.bond_curve.name = curve_ob.name
         return mol
     #view = bpy.props.CollectionProperty(type=mb_view)
     #display = bpy.props.PointerProperty(type=mb_display_properties)
@@ -436,8 +444,8 @@ class mb_scene(PropertyGroup):
             for me in mol.objects.meshes:
                 bpy.data.meshes.remove(me.get_data())
             # delete parent
-            bpy.context.scene.objects.unlink(mol.parent.get_object())
-            bpy.data.objects.remove(mol.parent.get_object())
+            bpy.context.scene.objects.unlink(mol.objects.parent.get_object())
+            bpy.data.objects.remove(mol.objects.parent.get_object())
             
             # Finally delete molecule from scene collection
             for i, mol_item in enumerate(self.molecules):

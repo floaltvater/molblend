@@ -500,7 +500,7 @@ class MB_OT_center_mol_parent(Operator):
                 center = sum([atom.get_object().location for atom in molecule.objects.atoms], origin) / len(molecule.objects.atoms)
                 for atom in molecule.objects.atoms:
                     atom.get_object().location -= center
-                molecule.parent.get_object().location = center
+                molecule.objects.parent.get_object().location = center
         return {'FINISHED'}
 
 
@@ -710,15 +710,15 @@ class MB_OT_draw_dipole(Operator):
         dipole_ob.empty_draw_type = 'SINGLE_ARROW'
         dipole_ob.empty_draw_size = 0.5
         bpy.context.scene.objects.link(dipole_ob)
-        mol.dipole.name = dipole_ob.name
+        mol.objects.dipole.name = dipole_ob.name
         dipole_ob.location = self.dipole_vec
-        dipole_ob.parent = mol.parent.get_object()
+        dipole_ob.parent = mol.objects.parent.get_object()
         dipole_ob.mb.molecule_name = mol.name
         
         # add arrow object
         arrow_mesh = mb_utils.get_arrow_data()
         arrow_ob = bpy.data.objects.new("{}_dipole".format(mol.name_mol), arrow_mesh)
-        arrow_ob.parent = mol.parent.get_object()
+        arrow_ob.parent = mol.objects.parent.get_object()
         bpy.context.scene.objects.link(arrow_ob)
         bpy.context.scene.objects.active = arrow_ob
         arrow_ob.mb.molecule_name = mol.name

@@ -312,7 +312,7 @@ def update_molecule_selection(self, context):
         for col in (mol.objects.atoms, mol.objects.bonds, mol.objects.other):
             for ob in col:
                 ob.get_object().select = True
-        parent = mol.parent.get_object()
+        parent = mol.objects.parent.get_object()
         parent.select = True
         context.scene.objects.active = parent
 #--- General functions --------------------------------------------------------#
@@ -372,11 +372,12 @@ def mouse_2d_to_location_3d(context, coord, depth=Vector((0, 0, 0))):
     
     return view3d_utils.region_2d_to_location_3d(region, rv3d, coord, depth_location)
 
-def return_cursor_object(context, event, ray_max=10000.0, exclude=[], mb_type=''):
+def return_cursor_object(context, event, ray_max=10000.0, exclude=None, mb_type=''):
     debug_print("mb_utils.return_cursor_object", 6)
     """ This is a function that can be run from a modal operator
         to select the 3D object the mouse is hovered over.
     """
+    exclude = exclude or []
     # get the context arguments
     scene = context.scene
     region = context.region
@@ -448,8 +449,9 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=[], mb_type=''
 
 #--- Geometry functions -------------------------------------------------------#
 
-def get_fixed_angle(context, first_atom, coord_3d, angle_list=[]):
+def get_fixed_angle(context, first_atom, coord_3d, angle_list=None):
     debug_print("mb_utils.get_fixed_angle", 6)
+    angle_list = angle_list or []
     # get current vector between first_atom and the mouse pointer
     bond_vector = coord_3d - first_atom.location
     
@@ -712,7 +714,7 @@ def add_atom(context, location, element, atom_name, molecule):
     molecule.atom_index += 1
     
     # parent to molecule origin
-    new_atom.parent = molecule.parent.get_object()
+    new_atom.parent = molecule.objects.parent.get_object()
     
     # updating the element will call update_atom_element, which assigns a mesh, and sets all the drivers
     new_atom.mb.element = element
@@ -723,6 +725,9 @@ def add_atom(context, location, element, atom_name, molecule):
     return new_atom
 
 def add_bond(context, first_atom, second_atom):
+    #bond_type = "curve_modifier"
+    bond_type = "constraint"
+    
     debug_print("mb_utils.add_bond", 6)
     if first_atom == second_atom:
         debug_print('WARNING: add_bond: first_atom == second_atom', 3)
@@ -761,20 +766,36 @@ def add_bond(context, first_atom, second_atom):
     # add it to first molecule collection
     first_mol.add_object(new_bond)
     
-    # don't parent, as parenting also affects the scale
-    c = new_bond.constraints.new('COPY_LOCATION')
-    c.name = "parent"
-    c.target = first_atom
-    
-    c = new_bond.constraints.new('STRETCH_TO')
-    c.name = "stretch"
-    c.rest_length = 1.0
-    c.volume = 'NO_VOLUME'
-    c.target = second_atom
-    
+    if bond_type == "constraint":
+        # don't parent, as parenting also affects the scale
+        c = new_bond.constraints.new('COPY_LOCATION')
+        c.name = "parent"
+        c.target = first_atom
+        
+        c = new_bond.constraints.new('STRETCH_TO')
+        c.name = "stretch"
+        c.rest_length = 1.0
+        c.volume = 'NO_VOLUME'
+        c.target = second_atom
+    elif bond_type == "curve_modifier":
+        # get new bezier curve that hooks two first and second atom
+        curve_ob = first_mol.objects.bond_curve.get_object()
+        molcenter = first_mol.objects.parent.get_object().location
+        bc_data = curve_ob.data
+        # add spline to curve
+        sp = bc_data.splines.new('BEZIER')
+        sp.bezier_points.add(2)
+        for bp, atom in zip(sp.bezier_points[-2:], (first_atom, second_atom)):
+            bp.co = atom.location - molcenter
+            bp.handle_left_type = "VECTOR"
+            bp.handle_right_type = "VECTOR"
+        
+        
+        
+        
     assign_bond_material(new_bond)
     set_bond_drivers(context, new_bond, new_bond.mb.get_molecule())
-    new_bond.parent = first_mol.parent.get_object()
+    new_bond.parent = first_mol.objects.parent.get_object()
     
     return new_bond
 
@@ -816,6 +837,17 @@ def get_atom_data(element, molecule, type='MESH', name=""):
             bpy.context.scene.objects.active = last_active
         return me
 
+def get_bond_curve(molecule, name=""):
+    debug_print("mb_utils.get_bond_curve", 6)
+    if name:
+        curve_name = name
+    else:
+        curve_name = "bond_curve_{}".format(molecule.index)
+    curve = bpy.context.blend_data.curves.get(curve_name)
+    if not curve:
+        curve = bpy.data.curves.new(curve_name, "CURVE")
+        curve.show_handles = False
+        
 def get_bond_data(molecule, type='MESH', name=""):
     debug_print("mb_utils.get_bond_data", 6)
     new_bond = None
@@ -954,7 +986,7 @@ def get_arrow_data(type='MESH', name="arrow", material=None,
             # rotate 90 degrees around x, and shift along y axis
             tmp_co = vert.co.copy()
             vert.co.y = -tmp_co.z + .5
-            vert.co.z = -tmp_co.y
+            vert.co.z = tmp_co.y
             if vert.co.y > 0.01:
                 vert.select = False
         new_verts = []
