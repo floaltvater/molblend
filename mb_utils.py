@@ -39,19 +39,8 @@ import time
 class enums():
     object_types = [('NONE', "None", "None"),
                     ('ATOM', "Atom", "Atom"),
-                    #('MOLECULE', "Molecule", "Molecule"),
                     ('BOND', "Bond", "Bond"),
-                    #('CHARGE', "Charge", "Charge"),
                    ]
-    #group_types = [('NONE', "None", "None"),
-                    #('MOLECULE', "Molecule", "Molecule"),
-                   #]
-    mb_tools = [('BLENDER', "Blender", "Use normal Blender input"),
-                ('ADD_ATOM', "Add atom", "Add atom"),
-                ('SELECT', "Select", "Select"),
-                #('MOVE', "Move", "Move"),
-                #('ROTATE', "Rotate", "Rotate")
-               ]
     radius_types = [('covalent', 'covalent', 'covalent'),
                     ('vdw', 'van der Waals', 'van der Waals'),
                     ('constant', 'constant', 'constant'),
@@ -63,12 +52,8 @@ class enums():
     bond_material = [('ATOMS', "Atoms", "Same as atoms"),
                      ('GENERIC', "Generic" , "Single bond color"),
                     ]
-    #geometries = [('VIEW', "Planar angles", "Angles are multiples of 30 and 45 deg. in the view plane"),
-                  #('OCTAHEDRAL', "Octahedral", "Octahedral"),
-                  #('TETRAHEDRAL', "Tetrahedral", "Tetrahedral or sp3"),
-                  #('TRIGONAL', "Trig. planar", "Trigonal planar or sp2"),
-                  #('LINEAR', "Linear", "Linear or sp")]
-    geometries = [('SINGLE', "Single atom", "Angles are multiples of 30 and 45 deg. in the view plane"),
+    geometries = [('SINGLE', "Single atom", 
+                   "Angles are multiples of 30 and 45 deg. in the view plane"),
                   ('LINEAR', "Linear", "Linear or sp"),
                   ('TRIGONAL', "Trig. planar", "Trigonal planar or sp2"),
                   ('TETRAHEDRAL', "Tetrahedral", "Tetrahedral or sp3"),
@@ -84,7 +69,7 @@ class enums():
                   ('B4W', "b4w", "standalone HTML with embedded 3D viewer")
                  ]
 
-#--- Update functions ---------------------------------------------------------#
+#--- Update functions --------------------------------------------------------#
 
 def update_all_meshes(self, context):
     debug_print("mb_utils.update_all_meshes", 6)
@@ -108,7 +93,7 @@ def update_active_mode(self, context):
         if anim_data:
             action = anim_data.action
             if action:
-                atom_vec = atom_ob.mb.modes[self.active_mode].vec * self.mode_scale
+                avec = atom_ob.mb.modes[self.active_mode].vec * self.mode_scale
                 for dim in range(3):
                     fcu = action.fcurves[dim]
                     
@@ -118,7 +103,7 @@ def update_active_mode(self, context):
                     middle = (kf1.co[1] + kf2.co[1]) / 2.0
                     
                     for p in range(3):
-                        loc = middle + pow(-1, p) * atom_vec[dim]
+                        loc = middle + pow(-1, p) * avec[dim]
                         fcu.keyframe_points[p].co = 1.0 + 10*p, loc
                         fcu.keyframe_points[p].interpolation = 'BEZIER'
                     fcu.update()
@@ -138,69 +123,6 @@ def update_active_mode(self, context):
             context.scene.frame_end = 20
             bpy.ops.screen.animation_play()
 
-###########################################
-### old update_active_mode
-
-    #debug_print("mb_utils.update_active_mode", 6)
-    #if self.max_mode == 0:
-        #self.active_mode = 0
-        #return
-
-    #for atom in self.objects.atoms:
-        #atom_ob = atom.get_object()
-        
-        #if self.active_mode > self.max_mode:
-            #self.active_mode = self.max_mode
-            #return
-        #elif self.active_mode == 0:
-            #action_name = "equilibrium_{}".format(atom_id)
-        #else:
-            #action_name = "mode_{}_{}".format(self.active_mode, atom_id)
-        
-        #action = bpy.data.actions.get(action_name)
-        #anim_data = atom_ob.animation_data
-        #if action and anim_data:
-            #anim_data.action = action
-            #update_mode_scale(self, context)
-        #elif not action:
-            #debug_print("Mode {} not found for atom '{}'. ({})".format(self.active_mode, atom_id, action_name), 1)
-        #elif not anim_data:
-            #debug_print("No animation data for atom '{}'.".format(atom_id), 1)
-        
-    #if self.active_mode == 0:
-        ## stop animation
-        #if context.screen.is_animation_playing:
-            #bpy.ops.screen.animation_play()
-            #context.scene.frame_current = 1
-    #else:
-        ## start animation
-        #if not context.screen.is_animation_playing:
-            #context.scene.frame_end = 20
-            #bpy.ops.screen.animation_play()
-
-##################################################
-#def update_mode_scale(self, context):
-    #debug_print("mb_utils.update_mode_scale", 6)
-    #for atom in self.objects.atoms:
-        #atom_ob = atom.get_object()
-        #try:
-            #action = atom_ob.animation_data.action
-        #except AttributeError:
-            #debug_print("WARNING: No animation data when updating mode scale.", 3)
-            #return
-        #mode_vec = action.mb.mode_vector
-        #for dim, fcu in enumerate(action.fcurves):
-            #if len(fcu.keyframe_points) > 2:
-                #kf1 = fcu.keyframe_points[0]
-                #kf2 = fcu.keyframe_points[1]
-                #kf3 = fcu.keyframe_points[2]
-                #middle = (kf1.co[1] + kf2.co[1]) / 2.0
-                #scaled = self.mode_scale * mode_vec[dim]
-                #kf1.co[1] = middle + scaled
-                #kf2.co[1] = middle - scaled
-                #kf3.co[1] = middle + scaled
-                #fcu.update()
-
 def update_atom_element(self, context):
     debug_print("mb_utils.update_atom_element", 6)
     '''
@@ -211,9 +133,12 @@ def update_atom_element(self, context):
         self.element = self.element.strip()
         return
     # Comparison is case insensitive
-    # get dictionary that maps all lower case elements to case style as it is in the list
-    elements_map = dict([(element.name.lower(), element.name) for element in context.scene.mb.elements])
-    # if element is not yet in scene elements list, add new element. Use default settings
+    # get dictionary that maps all lower case elements to exact upper/lower 
+    # case as it appears in the list
+    elements_map = dict([(element.name.lower(), element.name)
+                         for element in context.scene.mb.elements])
+    # if element is not yet in scene elements list, add new element. 
+    # Use default settings
     if self.element.lower() not in elements_map:
         add_element(context, self.element, ELEMENTS_DEFAULT["Default"])
     # adjust case of entered element to match already existing element
@@ -237,7 +162,8 @@ def update_atom_element(self, context):
     for bond in self.bonds:
         assign_bond_material(bond.get_object())
     
-    # assign type last, to be able to check if element is newly assigned or just updated
+    # assign type last, to be able to check if element is newly assigned or
+    # just updated
     self.type = 'ATOM'
 
 def update_bond_material(self, context):
@@ -252,11 +178,12 @@ def update_refine_atoms(self, context):
     replaced_elements = set()
     for mesh in self.objects.meshes:
         if "atom_mesh" in mesh.name:
-            element = mesh.name.split(".")[-1] #mesh.name = "atom_mesh_{}.{}".format(molecule.index, element)
+            element = mesh.name.split(".")[-1]
             if not element in replaced_elements:
                 data = mesh.get_data()
                 # get new temporary atom mesh with new refine value
-                new_data = get_atom_data(element, self, type='MESH', name="tmp_mesh")
+                new_data = get_atom_data(element, self, type='MESH', 
+                                         name="tmp_mesh")
                 # replace mesh data
                 bm = bmesh.new()
                 bm.from_mesh(new_data)
@@ -291,8 +218,6 @@ def update_export_file_type(self, context):
     Append to everything else.
     """
     if self.filepath:
-        
-        #bpy.path.ensure_ext(filepath, ext, case_sensitive=False)
         filetypes = {'XYZ': ".xyz",
                      'PDB': ".pdb"}
         ext = filetypes[self.file_type]
@@ -315,7 +240,7 @@ def update_molecule_selection(self, context):
         parent = mol.objects.parent.get_object()
         parent.select = True
         context.scene.objects.active = parent
-#--- General functions --------------------------------------------------------#
+#--- General functions -------------------------------------------------------#
 
 def create_new_keyconfig(name, context):
     debug_print("mb_utils.create_new_keyconfig", 6)
@@ -340,8 +265,10 @@ def add_element(context, element, element_dict):
     new = context.scene.mb.elements.add()
     new.name = element
     new.element = element
-    new.element_name = element_dict.get("element name", default["element name"])
-    new.atomic_number = element_dict.get("atomic number", default["atomic number"])
+    new.element_name = element_dict.get("element name", 
+                                        default["element name"])
+    new.atomic_number = element_dict.get("atomic number", 
+                                         default["atomic number"])
     new.color = element_dict.get("color", default["color"])
     new.covalent = element_dict.get("covalent", default["covalent"])
     if "vdw1" in element_dict or "vdw2" in element_dict:
@@ -357,8 +284,17 @@ def initialize_elements(context):
     debug_print("mb_utils.initialize_elements", 6)
     for element, data in ELEMENTS_DEFAULT.items():
         add_element(context, element, data)
-
-
+        
+def is_initialized(context):
+    try:
+        context.scene.mb.elements['Default']
+        context.scene.mb.globals.atom_scales['BALLS']
+        context.scene.mb.globals.atom_scales['BAS']
+        context.scene.mb.globals.atom_scales['STICKS']
+    except KeyError as e:
+        return False
+    
+    return context.user_preferences.system.use_scripts_auto_execute
 #--- Viewport functions -------------------------------------------------------#
 
 def mouse_2d_to_location_3d(context, coord, depth=Vector((0, 0, 0))):
@@ -370,9 +306,11 @@ def mouse_2d_to_location_3d(context, coord, depth=Vector((0, 0, 0))):
     else:
         depth_location = context.scene.cursor_location.copy()
     
-    return view3d_utils.region_2d_to_location_3d(region, rv3d, coord, depth_location)
+    return view3d_utils.region_2d_to_location_3d(region, rv3d, coord, 
+                                                 depth_location)
 
-def return_cursor_object(context, event, ray_max=10000.0, exclude=None, mb_type=''):
+def return_cursor_object(context, event, ray_max=10000.0, exclude=None, 
+                         mb_type=''):
     debug_print("mb_utils.return_cursor_object", 6)
     """ This is a function that can be run from a modal operator
         to select the 3D object the mouse is hovered over.
@@ -388,8 +326,10 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None, mb_type=
     # get the ray from the viewport and mouse
     view_vector = view3d_utils.region_2d_to_vector_3d(region, rv3d, coord)
     
-    # have ray origin a little in front of actual origin, otherwise it might not get all of the objects
-    ray_origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, coord) + (0.5 * view_vector * ray_max)
+    # have ray origin a little in front of actual origin, otherwise it might 
+    # not get all of the objects
+    ray_origin = (view3d_utils.region_2d_to_origin_3d(region, rv3d, coord)
+                  + (0.5 * view_vector * ray_max))
     ray_target = ray_origin - (view_vector * ray_max)
     
     def visible_objects_and_duplis():
@@ -417,7 +357,8 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None, mb_type=
             ray_target_obj = matrix_inv * ray_target
             
             # cast the ray
-            hit, normal, face_index = obj.ray_cast(ray_origin_obj, ray_target_obj)
+            hit, normal, face_index = obj.ray_cast(ray_origin_obj, 
+                                                   ray_target_obj)
             
             if face_index != -1:
                 return hit, normal, face_index
@@ -447,7 +388,7 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None, mb_type=
     return best_obj
 
 
-#--- Geometry functions -------------------------------------------------------#
+#--- Geometry functions ------------------------------------------------------#
 
 def get_fixed_angle(context, first_atom, coord_3d, angle_list=None):
     debug_print("mb_utils.get_fixed_angle", 6)
@@ -505,37 +446,26 @@ def get_fixed_length(context, first_atom, second_atom, coord_3d, length=-1):
 def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
     debug_print("mb_utils.get_fixed_geometry", 6)
     '''
-    use existing bonds of first_atom to calculate new possible bond vectors for new bond
-    based on geometry return the position that is closest to the mouse pointer (coord_3d)
+    use existing bonds of first_atom to calculate new possible bond vectors for 
+    new bond based on geometry return the position that is closest to the mouse
+    pointer (coord_3d)
     '''
-    # get current vector between first_atom and the mouse pointer
-    #bond_vector = coord_3d - first_atom.location
-    
-    #basis_change_matrix = context.region_data.view_matrix.to_3x3()
-    #basis_change_matrix.transpose()
-    ## bond vector in viewing coordinates
-    #transformed = basis_change_matrix.inverted() * bond_vector
-    ## and projected into screen plane
-    #xy_vec = Vector((transformed.x, transformed.y))
     
     bond_vecs = []
     for bond in first_atom.mb.bonds:
         bond_ob = bond.get_object()
         for atom in bond_ob.mb.bonded_atoms:
-            if not atom.name == first_atom.name and not atom.name == new_atom.name:
-                bond_vecs.append((atom.get_object().location - first_atom.location).normalized())
+            if (not atom.name == first_atom.name 
+                and not atom.name == new_atom.name):
+                bond_vecs.append((atom.get_object().location 
+                                  - first_atom.location).normalized())
                 break
     
     # existing number of bonds
     n_bonds = len(bond_vecs)
-    #if n_bonds == 0:
-        #return coord_3d
     
     if geometry == 'SINGLE' or n_bonds == 0:
         return get_fixed_angle(context, first_atom, coord_3d)
-    
-    #elif n_bonds == 0:
-        #return coord_3d
     
     elif geometry == 'LINEAR':
         # matrix to change between view and world coordinates
@@ -562,7 +492,9 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
         #angle = math.atan2(xy_vec.y, xy_vec.x)
         
         # find index of closest fixed xy in list
-        pos, min_angle = min(enumerate(xy_vec.angle(other) for other in fixed_xy), key=lambda p: p[1])
+        pos, min_angle = min(
+            enumerate(xy_vec.angle(other) for other in fixed_xy),
+            key=lambda p: p[1])
         
         fixed_bond_vector = -bond_vecs[pos]
         
@@ -585,36 +517,43 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
         
         if n_bonds >= 2:
             #TODO only gets one vector!
-            # get the bisecting vector on the larger angle side of any two existing bonds
+            # get the bisecting vector on the larger angle side of any two
+            # existing bonds
             fixed_xy = []
             bisect_vectors = []
             for i, b1 in enumerate(bond_vecs[:-1]):
                 for b2 in bond_vecs[i+1:]:
                     bisect_vector = -(b1 + b2).normalized()
                     if (b1+b2).cross(b1).length < 1e-06:
-                        # if the two existing bonds are exactly linear, the new vector will have zero length
-                        # and the new bond can lie on a circle around the middle atom.
-                        # return the two fixed angles that are orthogonal to the two bonds and in the view plane
+            # if the two existing bonds are exactly linear, the new vector will
+            # have zero length and the new bond can lie on a circle around the 
+            # middle atom. Return the two fixed angles that are orthogonal to 
+            # the two bonds and in the view plane
                         view = basis_change_matrix.col[2]
                         bisect_vector = b1.cross(view).normalized()
                         # need to append an extra bisecting vector
                         bisect_vectors.append(bisect_vector)
-                        transformed = basis_change_matrix.inverted() * bisect_vector
+                        transformed = (basis_change_matrix.inverted() 
+                                       * bisect_vector)
                         fixed_xy.append(Vector((transformed.x, transformed.y)))
                         # ... and the other one
                         bisect_vector = -bisect_vector
                     
                     bisect_vectors.append(bisect_vector)
-                    transformed = basis_change_matrix.inverted() * bisect_vector
+                    transformed = (basis_change_matrix.inverted() 
+                                   * bisect_vector)
                     fixed_xy.append(Vector((transformed.x, transformed.y)))
             
             # find index of closest fixed xy in list
-            pos, min_angle = min(enumerate(xy_vec.angle(other) for other in fixed_xy), key=lambda p: p[1])
+            pos, min_angle = min(
+                enumerate(xy_vec.angle(other) for other in fixed_xy),
+                key=lambda p: p[1])
             
             fixed_bond_vector = bisect_vectors[pos]
             
             # calculate new coordinates of second atom
-            fixed_vector = first_atom.location + fixed_bond_vector * xy_vec.length
+            fixed_vector = (first_atom.location 
+                            + fixed_bond_vector * xy_vec.length)
             return fixed_vector
         
         elif n_bonds == 1:
@@ -640,15 +579,19 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
                 fixed_xy.append(Vector((transformed.x, transformed.y)))
             
             # find index of closest fixed xy in list
-            pos, min_angle = min(enumerate(xy_vec.angle(other) for other in fixed_xy), key=lambda p: p[1])
+            pos, min_angle = min(
+                enumerate(xy_vec.angle(other) for other in fixed_xy), 
+                key=lambda p: p[1])
             
             fixed_bond_vector = bisect_vectors[pos]
             
             # calculate new coordinates of second atom
-            fixed_vector = first_atom.location + fixed_bond_vector * xy_vec.length
+            fixed_vector = (first_atom.location 
+                            + fixed_bond_vector * xy_vec.length)
             return fixed_vector
     #elif geometry == 'OCTAHEDRAL':
-        ##TODO cover all possible 90 degree angles and check against other existing bonds
+        ## TODO cover all possible 90 degree angles and check against other 
+        ## existing bonds
         ## convert bond_vec to polar coordinates
         #x, y, z = bond_vecs[0].xyz
         #r = math.sqrt(x*x + y*y + z*z)
@@ -671,7 +614,9 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
             #fixed_xy.append(Vector((transformed.x, transformed.y)))
         
         ## find index of closest fixed xy in list
-        #pos, min_angle = min(enumerate(xy_vec.angle(other) for other in fixed_xy), key=lambda p: p[1])
+        #pos, min_angle = min(
+        #    enumerate(xy_vec.angle(other) for other in fixed_xy), 
+        #    key=lambda p: p[1])
         
         #fixed_bond_vector = bisect_vectors[pos]
         
@@ -692,7 +637,7 @@ def check_ob_dimensions(ob):
             c.keep_axis = toggle[c.keep_axis]
 
 
-#--- Add object functions -----------------------------------------------------#
+#--- Add object functions ----------------------------------------------------#
 
 def add_atom(context, location, element, atom_name, molecule):
     debug_print("mb_utils.add_atom", 6)
@@ -716,7 +661,8 @@ def add_atom(context, location, element, atom_name, molecule):
     # parent to molecule origin
     new_atom.parent = molecule.objects.parent.get_object()
     
-    # updating the element will call update_atom_element, which assigns a mesh, and sets all the drivers
+    # updating the element will call update_atom_element, which assigns a mesh,
+    # and sets all the drivers
     new_atom.mb.element = element
     # add atom object and mesh to molecule collections
     molecule.add_object(new_atom)
@@ -734,20 +680,18 @@ def add_bond(context, first_atom, second_atom):
         return None
     for b in first_atom.mb.bonds:
         if second_atom.name in b.get_object().mb.bonded_atoms:
-            debug_print('WARNING: add_bond: Bond {}-{} already exists'.format(first_atom.mb.index, second_atom.mb.index), 3)
+            debug_print('WARNING: add_bond: Bond "
+                "{}-{} already exists'.format(
+                first_atom.mb.index, second_atom.mb.index),
+                3)
             return None
-    #if first_atom.mb.molecule_name != second_atom.mb.molecule_name:
-        ## TODO join molecule properties if connecting different molecules
-        #pass
     # get new unique name for bond
     first_mol = first_atom.mb.get_molecule()
     second_mol = second_atom.mb.get_molecule()
-    name = "bond_{}.{}-{}.{}".format(first_mol.index, first_atom.mb.index, second_mol.index, second_atom.mb.index)
+    name = "bond_{}.{}-{}.{}".format(first_mol.index, first_atom.mb.index, 
+                                     second_mol.index, second_atom.mb.index)
     
     bond_mesh = get_bond_data(first_mol, type='MESH')
-    #bond_mesh = get_bond_data(type='CURVE')
-    #if True:
-        #bond_mesh.name = name
     new_bond = bpy.data.objects.new(name, bond_mesh)
     context.scene.objects.link(new_bond)
     new_bond.hide = (first_mol.draw_style == 'BALLS')
@@ -800,7 +744,7 @@ def add_bond(context, first_atom, second_atom):
     return new_bond
 
 
-#--- Get Mesh functions -------------------------------------------------------#
+#--- Get Mesh functions ------------------------------------------------------#
 
 def get_atom_data(element, molecule, type='MESH', name=""):
     debug_print("mb_utils.get_atom_data", 6)
@@ -818,7 +762,8 @@ def get_atom_data(element, molecule, type='MESH', name=""):
             
             refine = molecule.refine_atoms
             # create uv sphere and get mesh data
-            bpy.ops.mesh.primitive_uv_sphere_add(location=(0,0,0), segments=refine*2, ring_count=refine)
+            bpy.ops.mesh.primitive_uv_sphere_add(location=(0,0,0), 
+                segments=refine*2, ring_count=refine)
             new_atom = bpy.context.object
             bpy.ops.object.shade_smooth()
             me = new_atom.data
@@ -892,12 +837,13 @@ def get_bond_data(molecule, type='MESH', name=""):
             #for i in range(n_verts):
                 #bm.edges.new((new_verts[i], new_verts[(i+1)%n_verts]))
             
-            # little hacky, but don't understand how bmesh.utils.face_split works
+            # bad hack, but don't understand how bmesh.utils.face_split works
             # remove all faces
             for f in bm.faces:
                 bm.faces.remove(f)
             # now sort bm.verts
-            # v.co.y is either 0, 0.5, or 1.0. So multiply y with at least 4pi to sort by y value first
+            # v.co.y is either 0, 0.5, or 1.0. 
+            # So multiply y with at least 4pi to sort by y value first
             key = lambda v: v.co.y * 15 + math.atan2(v.co.x, v.co.z)
             verts_sorted = sorted((v for v in bm.verts), key=key)
             for i, v in enumerate(verts_sorted):
@@ -914,7 +860,8 @@ def get_bond_data(molecule, type='MESH', name=""):
                 f.smooth = True
             
             # again, sort by center.y first, than angle
-            key = lambda f: f.calc_center_median().y * 15 + math.atan2(f.normal.x, f.normal.z)
+            key = lambda f: (f.calc_center_median().y * 15 
+                             + math.atan2(f.normal.x, f.normal.z))
             half_faces = len(bm.faces)/2
             for i, f in enumerate(sorted((f for f in bm.faces), key=key)):
                 f.index = i
@@ -922,37 +869,6 @@ def get_bond_data(molecule, type='MESH', name=""):
             bm.to_mesh(data)
             bm.free()
             data.update()
-            #bpy.ops.object.shade_smooth()
-
-    # TODO need to fix it so that each molecule has it's own bond.
-    #if type == 'CURVE':
-        ## save last selection to restore later
-        #selected = bpy.context.selected_objects
-        #last_active = bpy.context.object
-        
-        ## get bevel object
-        #bevel_name = 'bond_bevel_{}'.format(molecule)
-        #bond_bevel = bpy.context.blend_data.objects.get(bevel_name)
-        #if not bond_bevel:
-            #debug_print("Create bond_bevel.", 3)
-            #bpy.ops.curve.primitive_bezier_circle_add(radius=0.15, location=(0,0,0))
-            #bond_bevel = bpy.context.object
-            #bond_bevel.name = bevel_name
-            
-        #bpy.ops.curve.primitive_bezier_curve_add(location=(0,0,0))
-        #new_bond = bpy.context.object
-        
-        #data = new_bond.data
-        #data.show_handles = False
-        
-        #bp = data.splines[0].bezier_points
-        #for i in range(2):
-            #bp[i].handle_left_type = 'VECTOR'
-            #bp[i].handle_right_type = 'VECTOR'
-        
-        #data.bevel_object = bond_bevel
-        ##bp[0].co = (0,0,0)
-        ##bp[1].co = (0,1,0)
     
     if new_bond:
         # finally delete object and reselect old selection
@@ -971,8 +887,8 @@ def get_arrow_data(type='MESH', name="arrow", material=None,
     if not data:
         debug_print("Create {} mesh.".format(name), 4)
         # Make arrow mesh
-        bpy.ops.mesh.primitive_cylinder_add(location=(0,0,0), radius=radius, vertices=8, 
-                depth=1, end_fill_type="TRIFAN")
+        bpy.ops.mesh.primitive_cylinder_add(location=(0,0,0), 
+            radius=radius, vertices=8, depth=1, end_fill_type="TRIFAN")
         ob = bpy.context.object
         ob.data.materials.append(None)
         ob.material_slots[0].material = material
@@ -995,21 +911,20 @@ def get_arrow_data(type='MESH', name="arrow", material=None,
                 e, v = bmesh.utils.edge_split(edge, edge.verts[0], 0.5)
                 new_verts.append(v)
         n_verts = len(new_verts)
-        #for i in range(n_verts):
-            #bm.edges.new((new_verts[i], new_verts[(i+1)%n_verts]))
         
-        # little hacky, but don't understand how bmesh.utils.face_split works
+        # bad hack, but don't understand how bmesh.utils.face_split works
         # remove faces with 6 verts
         for f in bm.faces:
             if len(f.verts) == 6:
                 bm.faces.remove(f)
         
         # now sort bm.verts
-        # v.co.y is either 0, 0.5, or 1.0. So multiply y with at least 4pi to sort by y value first
+        # v.co.y is either 0, 0.5, or 1.0.
+        # So multiply y with at least 4pi to sort by y value first
         key = lambda v: v.co.y * 15 + math.atan2(v.co.x, v.co.z)
-        verts_sorted = sorted((v for v in bm.verts if (0 < v.co.length and v.co.length != 1.0)), key=key)
-        #for i, v in enumerate(verts_sorted):
-        #    v.index = i
+        verts_sorted = sorted(
+            (v for v in bm.verts if (0 < v.co.length and v.co.length != 1.0)), 
+            key=key)
         
         # add new faces
         for i in range(2*n_verts):
@@ -1038,7 +953,7 @@ def get_arrow_data(type='MESH', name="arrow", material=None,
         data.name = name
         bpy.context.scene.objects.unlink(ob)
     return data
-#--- Driver setting functions -------------------------------------------------#
+#--- Driver setting functions ------------------------------------------------#
 
 def set_atom_drivers(context, atom, molecule):
     debug_print("mb_utils.set_atom_drivers", 6)
@@ -1056,7 +971,8 @@ def set_atom_drivers(context, atom, molecule):
         targ = var.targets[0]
         targ.id_type = 'SCENE'
         targ.id = context.scene
-        targ.data_path = 'mb.elements["{}"].{}'.format(atom.mb.element, molecule.radius_type)
+        targ.data_path = 'mb.elements["{}"].{}'.format(atom.mb.element, 
+                                                       molecule.radius_type)
         
         var = drv.variables.get('atom_scale')
         if not var:
@@ -1066,7 +982,8 @@ def set_atom_drivers(context, atom, molecule):
         targ = var.targets[0]
         targ.id_type = 'SCENE'
         targ.id = context.scene
-        targ.data_path = 'mb.molecules["{}"].atom_scales["{}"].val'.format(molecule.name, molecule.draw_style)
+        targ.data_path = 'mb.molecules["{}"].atom_scales["{}"].val'.format(
+                         molecule.name, molecule.draw_style)
         
         var = drv.variables.get('bond_radius')
         if not var:
@@ -1101,7 +1018,8 @@ def set_bond_drivers(context, bond, molecule, type='MESH'):
             targ = var.targets[0]
             targ.id_type = 'SCENE'
             targ.id = context.scene
-            targ.data_path = 'mb.molecules["{}"].bond_radius'.format(molecule.name)
+            targ.data_path = 'mb.molecules["{}"].bond_radius'.format(
+                             molecule.name)
 
     elif type == 'CURVE':
         bp = bond.data.splines[0].bezier_points
@@ -1125,16 +1043,15 @@ def set_bond_drivers(context, bond, molecule, type='MESH'):
                 targ.transform_space = 'TRANSFORM_SPACE'
 
 
-#--- Material functions -------------------------------------------------------#
+#--- Material functions ------------------------------------------------------#
 
 def new_material(name, color=(0.8, 0.8, 0.8), molecule=None):
     debug_print("mb_utils.new_material", 6)
     '''
-    creates new material. If molecule is given, the molecule.mb.bond_color property will be added as driver.
+    creates new material. If molecule is given, the molecule.mb.bond_color 
+    property will be added as driver.
     '''
     material = bpy.data.materials.new(name)
-    #scn_elements = bpy.context.scene.mb.elements
-    #color = scn_elements.get(element, scn_elements["Default"]).color
     if molecule == None:
         material.diffuse_color = color
     else:
@@ -1150,18 +1067,16 @@ def new_material(name, color=(0.8, 0.8, 0.8), molecule=None):
             targ = var.targets[0]
             targ.id_type = 'SCENE'
             targ.id = bpy.context.scene
-            targ.data_path = 'mb.molecules["{}"].bond_color[{}]'.format(molecule.name, i)
+            targ.data_path = 'mb.molecules["{}"].bond_color[{}]'.format(
+                             molecule.name, i)
     
     if bpy.context.scene.render.engine == 'CYCLES':
         material.use_nodes = True
-        # add alpha value to atom.color
-        #color_alpha = list(color) + [1.0]
-        #material.node_tree.nodes['Diffuse BSDF'].inputs[0].default_value = color_alpha
         
         # add driver to rendered color to be the same as display color
         nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
         for i in range(3): # not for alpha channel
-            fcurve =  nodesocketcolor.driver_add('default_value', i) # add new driver
+            fcurve =  nodesocketcolor.driver_add('default_value', i)
             drv = fcurve.driver
             drv.type = 'AVERAGE'
             drv.show_debug_info = True
@@ -1245,7 +1160,8 @@ def assign_bond_material(ob):
     elif bond_type == 'CURVE':
         # the bond_mol properties are used
         if bond_mol.bond_material == 'ATOMS':
-            debug_print("Atom colored bonds are not yet supported with Curve bonds.", level=2)
+            debug_print("Atom colored bonds are not yet supported with "
+                        "Curve bonds.", level=2)
             bond_mol.bond_material == 'GENERIC'
             # changing bond_material will call this function again
             return
@@ -1260,74 +1176,7 @@ def assign_bond_material(ob):
             ob.data.materials.append(None)
         ob.material_slots[0].link = 'OBJECT'
         ob.material_slots[0].material = mat
-        
-        
-        ### The following is the beginning of an attempt to create a cycles material that features both atom colors (or generic)
-            #material = bpy.data.materials.new(ob.name)
-            
-            #if molecule.bond_material == 'GENERIC':
-                #color = first_atom.mb.get_molecule().bond_color
-                #material.diffuse_color = color
-                #if bpy.context.scene.render.engine == 'CYCLES':
-                    #material.use_nodes = True
-                    ## add driver to rendered color to be the same as display color
-                    #nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
-                    #for i in range(3): # not for alpha channel
-                        #fcurve =  nodesocketcolor.driver_add('default_value', i) # add new driver
-                        #drv = fcurve.driver
-                        #drv.type = 'AVERAGE'
-                        #drv.show_debug_info = True
-                        
-                        #var = drv.variables.new()
-                        #var.name = 'diffuse_color' # name to use in scripting
-                        #var.type = 'SINGLE_PROP'
-                        #targ = var.targets[0]
-                        #targ.id_type = 'MATERIAL'
-                        #targ.id = material
-                        #targ.data_path = 'diffuse_color[{}]'.format(i)
-            #else:
-                #material.use_nodes = True
-                #tree = material.node_tree
-                #links = tree.links
-                #for n in tree.nodes:
-                    #tree.nodes.remove(n)
-                #coords = tree.nodes.new('ShaderNodeTexCoord')
-                #coords.location = 0, 200
-                #mapping = tree.nodes.new('ShaderNodeMapping')
-                #mapping.location = 200, 200
-                #script = tree.nodes.new('ShaderNodeScript')
-                #script.location = 600, 200
-                #script.mode = 'EXTERNAL'
-                #script.filepath = "//bond_shader.osl"
-                #script.shader_script_update()
-                #output = tree.nodes.new('ShaderNodeOutputMaterial')
-                #output.location = 800, 200
-                
-                #links.new(coords.outputs[3], mapping.inputs[0])
-                #links.new(mapping.outputs[0], script.inputs[0])
-                #links.new(script.outputs[0], output.inputs[0])
-                
-                ## add driver to mapping node to rotate texture coordinates
-                
-                ## add driver to colors 1 and 2
 
-        
-# TODO this could be a very central function, and needs a lot of time to think about
-#def add_object_to_molecule(context, ob, molecule):
-    debug_print("mb_utils.add_object_to_molecule", 6)
-    ## check if object is already part of molecule
-    #if ob.mb.molecule_name == molecule.name:
-        #return
-    #else:
-        ## update name, delete from old molecule and add to new one
-        #if ob.type == 'ATOM':
-            #old_name = ob.name
-        
-        #assign_atom_material(ob, molecule)
-        #set_atom_drivers(context, ob, molecule)
-
-
-    
 def update_radius_type(self, context):
     debug_print("mb_utils.update_radius_type", 6)
     for atom in self.objects.atoms:
@@ -1342,33 +1191,3 @@ def set_draw_style(self, context):
     for bond in self.objects.bonds:
         bond_ob = bond.get_object()
         bond_ob.hide = hide
-
-#******************************************************************************#
-#*** Import Export utils ******************************************************#
-#******************************************************************************#
-
-
-
-#--------------------------------------------------------------
-#import bpy
-#import time
-
-#bpy.ops.mesh.primitive_uv_sphere_add()
-#mesh = bpy.context.object.data
-
-#start = time.time()
-#with open('test_blender', 'w') as fin:
-    #for i in range(1000):
-        #last = time.time()
-        #print('\r{}'.format(i), end='')
-        
-        ##bpy.ops.object.add(type='MESH')
-        ##new_atom = bpy.context.object
-        ##new_atom.name = 'test{}'.format(i)
-        ##new_atom.data = mesh
-        
-        #new_atom = bpy.data.objects.new('test{}'.format(i), mesh)
-        #bpy.context.scene.objects.link(new_atom)
-        #fin.write('{}\t{}\n'.format(i, time.time()-last))
-#print()
-#print(time.time()-start)

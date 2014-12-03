@@ -24,7 +24,7 @@
 #  Acknowledgements 
 #  ================
 #  Fluid Designer scripts
-#
+#  pbd/xyz-import addons by Clemens Barth
 
 bl_info = {
     "name": "MolBlend",
@@ -33,7 +33,7 @@ bl_info = {
     "version": (0,1),
     "blender": (2,7),
     "location": "View3D > Tool Shelf > MolBlend",
-    "warning": "under development",
+    "warning": "under heavy development",
     "wiki_url": "",
     "tracker_url": "",
     "category": "Add Mesh"
@@ -70,8 +70,12 @@ from bpy.props import (StringProperty,
 # TODO When MolBlend is not running and the user deletes an atom/bond, it doesn't take care of deleting it from the molecules collections. So add a function that checks at each start of MolBlend if a molecule's objects still exist, and if not, delete the name from the collection. Also needs to update all bonds and bonded_atoms lists. => Very expensive!!!
 # TODO when switching draw styles, check that all molecule parts are on the same layer!
 # TODO Cycles material nodesocketcolor is not updated when diffuse_color is changed (driver issue). Call update_all_meshes before rendering!
+# TODO Geometries when adding atom
 
 ### FEATURES
+# TODO frame import
+# TODO export operator
+# TODO "charge" objects
 # TODO add frequencies to molecule, and think about plotting spectrum in blender
 # TODO Think about modes after atoms are moved
 # TODO Operator to combine molecule into mesh: apply and delete all drivers!
@@ -112,20 +116,10 @@ class MB_PT_tools(MolBlendPanel, Panel):
     
     def draw(self, context):
         layout = self.layout
-        if not context.window_manager.mb.is_running:
-            ### Start screen
-            layout.operator("mb.start")
-        else:
-            ### Stop screen
-            layout.operator("mb.stop")
        
-        #--- tools ------------------------------------------------------------#
-        #layout.label("Main tools")
-        row = layout.row()
-        row.active = context.window_manager.mb.is_running
-        row.prop(context.window_manager.mb.globals, "active_tool", expand=True)
-        #col = row.column()
-        #col.operator("view3d.select_border")
+        layout.operator("mb.initialize")
+        layout.operator("mb.modal_add")
+        #--- tools -----------------------------------------------------------#
         row = layout.row()
         col = row.column()
         col.label("Add")
@@ -134,20 +128,14 @@ class MB_PT_tools(MolBlendPanel, Panel):
         col.prop(context.window_manager.mb.globals, "element_to_add", text="")
         col.prop(context.window_manager.mb.globals, "geometry_to_add", text="")
         
-        #row = layout.row()
-        #row.operator("mb.group_selected", text="Group")
-        #row = layout.row()
-        #row.prop(context.window_manager.mb.globals, "group_selected_extend")
-        #row = layout.row()
-        #row.operator("mb.hover", text="Hover")
-
 class MB_PT_atom(MolBlendPanel, Panel):
     bl_label = "Atom properties"
     
     def draw(self, context):
         layout = self.layout
         active_ob = context.object
-        if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM':
+        if (active_ob and hasattr(active_ob, 'mb') 
+                      and active_ob.mb.type == 'ATOM'):
             active_ob.mb.draw_properties(context, layout, active_ob)
 
 class MB_PT_molecule_properties(MolBlendPanel, Panel):
@@ -156,7 +144,8 @@ class MB_PT_molecule_properties(MolBlendPanel, Panel):
     def draw(self, context):
         layout = self.layout
         active_ob = context.object
-        if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule():
+        if (active_ob and hasattr(active_ob, 'mb') 
+                      and active_ob.mb.get_molecule()):
             mol = active_ob.mb.get_molecule()
             mol.draw_properties(layout)
 
@@ -166,7 +155,8 @@ class MB_PT_molecule_draw_styles(MolBlendPanel, Panel):
     def draw(self, context):
         layout = self.layout
         active_ob = context.object
-        if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule():
+        if (active_ob and hasattr(active_ob, 'mb') 
+                      and active_ob.mb.get_molecule()):
             mol = active_ob.mb.get_molecule()
             mol.draw_styles(layout)
 
