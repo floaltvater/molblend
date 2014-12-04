@@ -412,7 +412,7 @@ class mb_scn_export(PropertyGroup):
         description="Enter unit of export file as Angstrom/unit")
         
 class mb_scn_globals(PropertyGroup):
-    draw_style = EnumProperty(name="Draw style", default='BAS'
+    draw_style = EnumProperty(name="Draw style", default='BAS',
         items=mb_utils.enums.molecule_styles,
         description="Style to draw atoms and bonds")
     radius_type = EnumProperty(name="Radius type", 
@@ -465,7 +465,7 @@ class mb_scene(PropertyGroup):
     
     def remove_molecule(self, mol):
         # Make sure all objects are deleted first
-        if (0 == len(mol.objects.atoms) == and
+        if (0 == len(mol.objects.atoms) and
             0 == len(mol.objects.other) == len(mol.objects.bonds)):
             # delete all meshes
             for me in mol.objects.meshes:
@@ -512,7 +512,7 @@ class mb_scene(PropertyGroup):
         bpy.context.scene.objects.unlink(ob)
         bpy.data.objects.remove(ob)
         # check if object was last object in molecule and delete molecule if so
-        if (mol and 0 == len(mol.objects.atoms) == and
+        if (mol and 0 == len(mol.objects.atoms) and
             0 == len(mol.objects.other) == len(mol.objects.bonds)):
             self.remove_molecule(mol)
     
@@ -548,7 +548,7 @@ class mb_scene(PropertyGroup):
                 mol.remove_objects(ob_list)
             [bpy.context.scene.objects.unlink(ob) for ob in ob_list]
             [bpy.data.objects.remove(ob) for ob in ob_list]
-        if (mol and 0 == len(mol.objects.atoms) == and
+        if (mol and 0 == len(mol.objects.atoms) and
             0 == len(mol.objects.other) == len(mol.objects.bonds)):
             self.remove_molecule(mol)
 

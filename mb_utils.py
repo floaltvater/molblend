@@ -680,8 +680,8 @@ def add_bond(context, first_atom, second_atom):
         return None
     for b in first_atom.mb.bonds:
         if second_atom.name in b.get_object().mb.bonded_atoms:
-            debug_print('WARNING: add_bond: Bond "
-                "{}-{} already exists'.format(
+            debug_print("WARNING: add_bond: Bond "
+                "{}-{} already exists".format(
                 first_atom.mb.index, second_atom.mb.index),
                 3)
             return None
