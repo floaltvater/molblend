@@ -45,11 +45,6 @@ import os
 from mathutils import Vector
 from .helper import debug_print
 
-#from operator import attrgetter
-#import time
-#from . import seqgen
-#import os
-#import blf
 
 class MB_OT_initialize(Operator):
     bl_idname = 'mb.initialize'
@@ -77,7 +72,7 @@ class MB_OT_initialize(Operator):
             self.report({'ERROR'}, "Python scripts auto execute not enabled")
             return {'CANCELLED'}
         
-        debug_print('Initialize MolBlend', 2)
+        debug_print('Initialize MolBlend', level=2)
         wm = context.window_manager
         
         # initialize elements
@@ -93,7 +88,8 @@ class MB_OT_initialize(Operator):
         # don't show parent lines
         context.space_data.show_relationship_lines = False
         return {'FINISHED'}
-    
+
+
 class MB_OT_modal_add(Operator):
     bl_idname = 'mb.modal_add'
     bl_label = 'test MolBlend'
@@ -112,38 +108,27 @@ class MB_OT_modal_add(Operator):
             if hover_ob is not None:
                 hover_ob.select = True
             context.scene.objects.active = hover_ob
-        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+        if (event.type == 'LEFTMOUSE' and event.value == 'PRESS' and
+                context.area.type == 'VIEW_3D'):
+            # TODO make sure we're in the 3D View window
             bpy.ops.mb.add_atom('INVOKE_DEFAULT',
                                 shift=event.shift,
                                 ctrl=event.ctrl,
                                 alt=event.alt)
             return {'RUNNING_MODAL'}
         elif event.type in ('RIGHTMOUSE', 'ESC'):
+            context.window.cursor_modal_restore()
             return {'CANCELLED'}
         return {'PASS_THROUGH'}
     
     def invoke(self, context, event):
-        if context.area.type == 'VIEW_3D': # and 'FINISHED' in init:
+        if context.area.type == 'VIEW_3D':
+            context.window.cursor_modal_set("CROSSHAIR")
             context.window_manager.modal_handler_add(self)
             return {'RUNNING_MODAL'}
         else:
             return {'CANCELLED'}
 
-class MB_OT_right_click(Operator):
-    bl_idname = 'mb.right_click'
-    bl_label = 'Right Mouse Click Operator'
-    bl_options = {'REGISTER'}
-    
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
-        bpy.ops.wm.call_menu(name="MB_MT_right_click_menu")
-        return {'FINISHED'}
 
 class MB_OT_add_atom(Operator):
     '''
@@ -154,10 +139,12 @@ class MB_OT_add_atom(Operator):
     bl_options = {'UNDO', 'REGISTER'}
     
     element = StringProperty(name="Element", default="C")
-    coord_3d = FloatVectorProperty(name="3D position of new atom", 
+    coord_3d = FloatVectorProperty(
+        name="3D position", description="3D position of new atom", 
         size=3, default=(0.0,0.0,0.0), subtype='XYZ')
-    depth_location = FloatVectorProperty(size=3, default=(0.0,0.0,0.0), 
-        subtype='XYZ')
+    depth_location = FloatVectorProperty(
+        name="Depth", description="Depth of the new atom",
+        size=3, default=(0.0,0.0,0.0), subtype='XYZ')
     
     new_bond_name = StringProperty()
     new_atom_name = StringProperty()
@@ -166,20 +153,23 @@ class MB_OT_add_atom(Operator):
     ctrl = BoolProperty(default=False)
     alt = BoolProperty(default=False)
     
-    geometry = EnumProperty(name="Geometry", default='SINGLE', 
-        items=mb_utils.enums.geometries,
+    geometry = EnumProperty(
+        name="Geometry",
         description="Geometry the new bond should be in relative to "
-                    "existing bonds. Press CTRL to activate.")
+                    "existing bonds. Press CTRL to activate.",
+        items=mb_utils.enums.geometries, default='SINGLE')
     
     def mb_atom_objects(self, context):
         items = [(" ", " ", "no bond")]
         items.extend(
             [(ob.name, ob.name, "") for ob in context.scene.objects 
-             if ob.mb.type == 'ATOM' and not ob.name == self.new_atom_name])
+             if ob.mb.type == 'ATOM' and not ob.name == self.new_atom_name]
+            )
         return items
     
-    first_atom_name = EnumProperty(items=mb_atom_objects,
-        description="Name of atom to bond the new atom to")
+    first_atom_name = EnumProperty(
+        name="Atom name", description="Name of atom to bond the new atom to",
+        items=mb_atom_objects)
     
     @classmethod
     def poll(cls, context):
@@ -191,14 +181,14 @@ class MB_OT_add_atom(Operator):
         row.prop(self, "element")
         col = layout.column()
         col.prop(self, "coord_3d", text="Location")
-        
         col = layout.column()
         col.prop(self, "first_atom_name", text="Bond to")
         
     def modal(self, context, event):
         mouse_2d = event.mouse_region_x, event.mouse_region_y
-        self.coord_3d = mb_utils.mouse_2d_to_location_3d(context, mouse_2d, 
-            depth=self.depth_location)
+        self.coord_3d = mb_utils.mouse_2d_to_location_3d(
+            context, mouse_2d, depth=self.depth_location)
+        
         if event.type == 'MOUSEMOVE':
             new_atom = context.scene.objects.get(self.new_atom_name)
             context.scene.objects.active = new_atom
@@ -207,8 +197,8 @@ class MB_OT_add_atom(Operator):
             first_atom = context.scene.objects.get(self.first_atom_name)
             
             if not event.ctrl and not event.alt:
-                hover_ob = mb_utils.return_cursor_object(context, event, 
-                    exclude=[new_atom], mb_type='ATOM')
+                hover_ob = mb_utils.return_cursor_object(
+                    context, event, exclude=[new_atom], mb_type='ATOM')
                 if hover_ob:
                     new_atom.draw_bounds_type = 'SPHERE'
                     new_atom.draw_type = 'BOUNDS'
@@ -224,13 +214,15 @@ class MB_OT_add_atom(Operator):
                     new_bond.constraints["stretch"].target = new_atom
                 if event.ctrl and new_bond:
                     # lock into certain angles
-                    self.coord_3d = mb_utils.get_fixed_geometry(context, 
-                        first_atom, new_atom, self.coord_3d, self.geometry)
+                    self.coord_3d = mb_utils.get_fixed_geometry(
+                        context, first_atom, new_atom, self.coord_3d,
+                        self.geometry)
                 if event.alt and new_bond:
                     # constrain length
                     length = 1.0
-                    self.coord_3d = mb_utils.get_fixed_length(context, 
-                        first_atom, new_atom, self.coord_3d, length=-1)
+                    self.coord_3d = mb_utils.get_fixed_length(
+                        context, first_atom, new_atom, self.coord_3d, 
+                        length=-1)
             
             new_atom.location = self.coord_3d
             # sometimes, when bond is exactly along axis, the dimension goes 
@@ -243,8 +235,8 @@ class MB_OT_add_atom(Operator):
             # check if new atom is above already existing atom
             new_atom = context.object
             first_atom = context.scene.objects.get(self.first_atom_name)
-            hover_ob = mb_utils.return_cursor_object(context, event, 
-                sexclude=[new_atom], mb_type='ATOM')
+            hover_ob = mb_utils.return_cursor_object(
+                context, event, exclude=[new_atom], mb_type='ATOM')
             if hover_ob:
                 mol = new_atom.mb.get_molecule()
                 mol.remove_object(new_atom)
@@ -254,9 +246,7 @@ class MB_OT_add_atom(Operator):
                 new_bond = context.scene.objects.get(self.new_bond_name)
                 if new_bond and hover_ob:
                     context.scene.mb.remove_object(new_bond)
-                    
                     mb_utils.add_bond(context, first_atom, hover_ob)
-                    
             return {'FINISHED'}
         
         return {'RUNNING_MODAL'}
@@ -274,8 +264,8 @@ class MB_OT_add_atom(Operator):
             self.first_atom_name = " "
             self.depth_location = context.scene.cursor_location.copy()
         mouse_2d = event.mouse_region_x, event.mouse_region_y
-        self.coord_3d = mb_utils.mouse_2d_to_location_3d(context, mouse_2d, 
-            depth=self.depth_location)
+        self.coord_3d = mb_utils.mouse_2d_to_location_3d(
+            context, mouse_2d, depth=self.depth_location)
         
         ret_exe = self.execute(context)
         
@@ -298,7 +288,7 @@ class MB_OT_add_atom(Operator):
         
         if self.first_atom_name.strip() and not first_atom:
             debug_print('Object "{}" not found.'.format(self.first_atom_name), 
-                        1)
+                        level=1)
             return {'CANCELLED'}
         
         if first_atom:
@@ -308,7 +298,7 @@ class MB_OT_add_atom(Operator):
         
         # create a new atom object with the molecule's properties
         new_atom = mb_utils.add_atom(context, self.coord_3d, self.element, 
-            self.element, molecule)
+                                     self.element, molecule)
         self.new_atom_name = new_atom.name
         
         # add a bond if atom is added to existing molecule
@@ -320,40 +310,6 @@ class MB_OT_add_atom(Operator):
         new_atom.select = True
         return {'FINISHED'}
 
-#class MB_OT_delete(Operator):
-    #bl_idname = "mb.delete"
-    #bl_label = "Delete"
-    #bl_options = {'UNDO', 'REGISTER'}
-    #bl_description = "Delete objects"
-    
-    #@classmethod
-    #def poll(cls, context):
-        #if context.selected_objects:
-            #return True
-        #else:
-            #False
-    
-    #def invoke(self, context, event):
-        #bpy.ops.wm.call_menu(name="MB_MT_confirm_delete_menu")
-        #return {'FINISHED'}
-        
-    #def execute(self, context):
-        #for ob in context.selected_objects:
-            ## If an atom gets deleted, delete all its bonds as well
-            #if ob.mb.type == 'ATOM' and len(ob.mb.bonds) > 0:
-                #for bond in ob.mb.bonds:
-                    #bond_ob = bond.get_object()
-                    #bond_ob.select = True
-        #context.scene.mb.remove_objects([o for o in context.selected_objects])
-        #return {'FINISHED'}
-
-#class MB_MT_confirm_delete_menu(Menu):
-    #bl_idname = "MB_MT_confirm_delete_menu"
-    #bl_label = "OK?"
-    
-    #def draw(self, context):
-        #layout = self.layout
-        #layout.operator("mb.delete", text="Delete")
 
 class MB_OT_center_mol_parent(Operator):
     '''
@@ -384,8 +340,10 @@ class MB_OT_center_mol_parent(Operator):
         if self.molecule_name:
             molecule = context.scene.mb.molecules.get(self.molecule_name)
             if not molecule:
-                debug_print("ERROR in mb.center_mol_parent: Molecule "
-                    "{} not found in scene.".format(self.molecule_name))
+                debug_print(
+                    "ERROR in mb.center_mol_parent: Molecule "
+                    "{} not found in scene.".format(self.molecule_name),
+                    level=0)
                 return {'CANCELLED'}
             else:
                 origin = Vector((0.0,0.0,0.0))
@@ -397,13 +355,15 @@ class MB_OT_center_mol_parent(Operator):
                 molecule.objects.parent.get_object().location = center
         return {'FINISHED'}
 
+
 class MB_OT_draw_dipole(Operator):
     bl_idname = "mb.draw_dipole"
     bl_label = "Draw dipole of molecule"
     bl_options = {'REGISTER', 'UNDO'}
     
     dipole_vec = FloatVectorProperty(name="Dipole vector", size=3)
-    molecule_id = StringProperty(name="Molecule identifier", 
+    molecule_id = StringProperty(
+        name="Molecule identifier", 
         update=mb_utils.update_molecule_selection)
     
     def draw(self, context):
@@ -422,8 +382,9 @@ class MB_OT_draw_dipole(Operator):
     def execute(self, context):
         mol = context.scene.mb.molecules.get(self.molecule_id)
         if not mol:
-            debug_print("ERROR: draw_dipole: "
-                "{} not found.".format(self.molecule_id))
+            debug_print(
+                "ERROR: draw_dipole: {} not found.".format(self.molecule_id),
+                level=0)
             return {'CANCELLED'}
         
         # add empty as stretch target
@@ -452,6 +413,7 @@ class MB_OT_draw_dipole(Operator):
         c.volume = 'NO_VOLUME'
         c.target = dipole_ob
         return {'FINISHED'}
+
 
 class MB_OT_hover(Operator):
     '''
@@ -486,6 +448,7 @@ class MB_OT_hover(Operator):
         else:
             return {'CANCELLED'}
 
+
 class MB_OT_import_molecule(Operator):
     bl_idname = "mb.import_molecule"
     bl_label  = "Import XYZ/PDB (*.xyz,*.pdb)"
@@ -493,42 +456,37 @@ class MB_OT_import_molecule(Operator):
     
     filename_ext = "*.pdb;*.xyz"
     filepath = StringProperty(
-        name="File Path",
-        description="Filepath used for importing one file",
-        maxlen=1024,
-        subtype='FILE_PATH',
-        )
+        name="File Path", description="Filepath used for importing one file",
+        maxlen=1024, subtype='FILE_PATH')
     directory = StringProperty(
-        name="Directory",
-        description="Directory used for importing the file",
-        maxlen=1024,
-        subtype='FILE_PATH',
-        )
+        name="Directory", description="Directory used for importing the file",
+        maxlen=1024, subtype='FILE_PATH')
     files = CollectionProperty(
         name="File Path",
         description="List with file names used for importing",
-        type=bpy.types.OperatorFileListElement,
-        )
+        type=bpy.types.OperatorFileListElement)
     
     #--- molecule properties -------------------------------------------------#
-    name_mol = StringProperty(name="Molecule Name", default="Molecule",
-        description="Name of imported molecule") # human readable name
-    bond_material = EnumProperty(name="Bond material",
-        description="Choose bond material",
+    name_mol = StringProperty(
+        name="Molecule Name", description="Name of imported molecule",
+        default="Molecule") # human readable name
+    bond_material = EnumProperty(
+        name="Bond material", description="Choose bond material",
         items=mb_utils.enums.bond_material, default='ATOMS')
-    bond_color = FloatVectorProperty(name='Bond color', 
+    bond_color = FloatVectorProperty(
+        name='Bond color', 
         default=(0.8, 0.8, 0.8), subtype='COLOR')
-    draw_style = EnumProperty(name="Display style", 
-        items=mb_utils.enums.molecule_styles,
-        description="Style to draw atoms and bonds",
-        default='BAS')
-    radius_type = EnumProperty(name="Radius type", 
-        items=mb_utils.enums.radius_types,
-        default='covalent')
-    bond_radius = FloatProperty(name="Bond radius", 
-        default=0.1, min=0.0, max=3.0,
-        description="Radius of bonds for Sticks, and Ball and Sticks")
-
+    draw_style = EnumProperty(
+        name="Display style", description="Style to draw atoms and bonds",
+        items=mb_utils.enums.molecule_styles, default='BAS')
+    radius_type = EnumProperty(
+        name="Radius type", 
+        items=mb_utils.enums.radius_types, default='covalent')
+    bond_radius = FloatProperty(
+        name="Bond radius", 
+        description="Radius of bonds for Sticks, and Ball and Sticks",
+        default=0.1, min=0.0, max=3.0)
+    
     # this is a duplicate class from mb_datastructure for 
     class atom_scale(PropertyGroup):
         name = StringProperty()
@@ -536,23 +494,27 @@ class MB_OT_import_molecule(Operator):
                             precision=2)
     
     atom_scales = CollectionProperty(type=atom_scale)
-    refine_atoms = IntProperty(name="Refine atoms", default=8, min=3, max=64,
-        description="Refine value for atom meshes")
-    refine_bonds = IntProperty(name="Refine bonds", default=8, min=3, max=64,
-        description="Refine value for atom meshes")
+    refine_atoms = IntProperty(
+        name="Refine atoms", description="Refine value for atom meshes", 
+        default=8, min=3, max=64)
+    refine_bonds = IntProperty(
+        name="Refine bonds", description="Refine value for atom meshes",
+        default=8, min=3, max=64)
     # TODO this might be handy for different units in files
     #scale_distances = FloatProperty (
         #name = "Distances", default=1.0, min=0.0001,
         #description = "Scale factor for all distances")
     length_unit = EnumProperty(
-        name="Unit", default='1.0', items=mb_utils.enums.angstrom_per_unit,
-        description="Unit in input file, will be converted to Angstrom")
+        name="Unit", 
+        description="Unit in input file, will be converted to Angstrom",
+        items=mb_utils.enums.angstrom_per_unit, default='1.0')
     length_unit_other = FloatProperty(
-        name="Custom Unit", default=1.0, min=0.000001,
-        description="Enter conversion factor in Angstrom/unit in file")
+        name="Custom Unit",
+        description="Enter conversion factor in Angstrom/unit in file",
+        default=1.0, min=0.000001)
     bond_guess = BoolProperty(
-       name="Guess bonds", default=True,
-       description="Guess bonds that are not in the file.")
+       name="Guess bonds", description="Guess bonds that are not in the file.",
+       default=True)
     use_mask = StringProperty(
         name="Masking object",
         description="Select object that sets boundaries to imported strucure.")
@@ -561,15 +523,16 @@ class MB_OT_import_molecule(Operator):
         description="Invert masking effect (only atoms outside of mask "
                     "object are imported).")
     draw_unit_cell = BoolProperty(
-       name="Draw unit cell", default=False,
-        description="Draw the unit cell if applicable.")
+       name="Draw unit cell", description="Draw the unit cell if applicable.",
+       default=False)
     supercell = IntVectorProperty(
-        name="Supercell", size=3, default=(1,1,1), min=1, subtype='XYZ',
-        description="Specify supercell dimensions")
+        name="Supercell", description="Specify supercell dimensions",
+        size=3, default=(1,1,1), min=1, subtype='XYZ')
     use_center = BoolProperty(
-        name="Object to origin (first frame)", default=False,
+        name="Object to origin (first frame)",
         description="Put the object into the global origin, "
-                      "the first frame only")    
+                    "the first frame only",
+        default=False)    
     
     def draw(self, context):
         layout = self.layout
@@ -590,11 +553,9 @@ class MB_OT_import_molecule(Operator):
         col = row.column()        
         col.prop(self, "refine_bonds")
         row = layout.row()
-        #row = layout.row()
         col.prop(self, "bond_radius")
         col.label(text="Bond material")
         col.prop(self, "bond_material", text="")
-        #row = col.row()
         col.prop(self, "bond_color")
         col.prop(self, "bond_guess")
         
@@ -653,7 +614,7 @@ class MB_OT_import_molecule(Operator):
         import_props = context.scene.mb.globals.import_props
         filepath = bpy.path.abspath(import_props.filepath)
         if not os.path.exists(filepath):
-            debug_print("ERROR: {} not found".format(filepath))
+            debug_print("ERROR: {} not found".format(filepath), level=0)
             return {'CANCELLED'}
         if import_props.modes:
             modes_path = import_props.modes_path

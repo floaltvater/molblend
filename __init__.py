@@ -64,6 +64,7 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
+# TODO Make PEP 8 compatible
 # TODO Duplication introduces lots of errors because all the properties are the same
 # TODO copy pasting from other files might make biiig problems!
 # TODO introduce better Error handling: when anything crashes, clean up afterwards! (Like on import)
@@ -106,11 +107,13 @@ from bpy.props import (StringProperty,
 # TODO maybe implement change of units within Blender
 # TODO maybe create a different mesh for refine value (maybe), allowing different molecule to have different refines
 
+
 class MolBlendPanel():
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
     bl_category = "MolBlend"
-    
+
+
 class MB_PT_tools(MolBlendPanel, Panel):
     bl_label = "Tools"
     
@@ -127,7 +130,8 @@ class MB_PT_tools(MolBlendPanel, Panel):
         col = row.column()
         col.prop(context.window_manager.mb.globals, "element_to_add", text="")
         col.prop(context.window_manager.mb.globals, "geometry_to_add", text="")
-        
+
+
 class MB_PT_atom(MolBlendPanel, Panel):
     bl_label = "Atom properties"
     
@@ -135,8 +139,9 @@ class MB_PT_atom(MolBlendPanel, Panel):
         layout = self.layout
         active_ob = context.object
         if (active_ob and hasattr(active_ob, 'mb') 
-                      and active_ob.mb.type == 'ATOM'):
+                and active_ob.mb.type == 'ATOM'):
             active_ob.mb.draw_properties(context, layout, active_ob)
+
 
 class MB_PT_molecule_properties(MolBlendPanel, Panel):
     bl_label = "Molecule properties"
@@ -145,9 +150,10 @@ class MB_PT_molecule_properties(MolBlendPanel, Panel):
         layout = self.layout
         active_ob = context.object
         if (active_ob and hasattr(active_ob, 'mb') 
-                      and active_ob.mb.get_molecule()):
+                and active_ob.mb.get_molecule()):
             mol = active_ob.mb.get_molecule()
             mol.draw_properties(layout)
+
 
 class MB_PT_molecule_draw_styles(MolBlendPanel, Panel):
     bl_label = "Molecule draw styles"
@@ -156,9 +162,10 @@ class MB_PT_molecule_draw_styles(MolBlendPanel, Panel):
         layout = self.layout
         active_ob = context.object
         if (active_ob and hasattr(active_ob, 'mb') 
-                      and active_ob.mb.get_molecule()):
+                and active_ob.mb.get_molecule()):
             mol = active_ob.mb.get_molecule()
             mol.draw_styles(layout)
+
 
 class MB_PT_import(MolBlendPanel, Panel):
     bl_label = "Import"
@@ -181,6 +188,7 @@ class MB_PT_import(MolBlendPanel, Panel):
         row.active = initialized
         row.operator("mb.import_molecule", text="Import")
 
+
 class MB_PT_export(MolBlendPanel, Panel):
     bl_label = "Export"
     
@@ -190,8 +198,6 @@ class MB_PT_export(MolBlendPanel, Panel):
         mb = context.scene.mb.globals
         layout = self.layout
         
-        #row = layout.row()
-        #row.label("Export")
         row = layout.row()
         row.prop(mb.export_props, "filepath")
         row = layout.row()
@@ -207,13 +213,7 @@ class MB_PT_export(MolBlendPanel, Panel):
         row.active = initialized
         row.operator("mb.export_molecule", text="Export")
 
-#class MB_PT_global(MolBlendPanel, Panel):
-    #bl_label = "Global Settings"
-    
-    #def draw(self, context):
-        #layout = self.layout
-        #layout.label("Global settings")
-        
+
 class MB_PT_view(MolBlendPanel, Panel):
     bl_label = "View"
     
@@ -235,44 +235,17 @@ class MB_PT_view(MolBlendPanel, Panel):
         row = layout.row()
         row.label(icon='MANIPUL')
         row.operator("screen.region_quadview", text="Quadview")
-    
-    
+
+
 def register():
     bpy.utils.register_module(__name__)
-    #mb_operators.register()
     mb_datastructure.register()
-    #bpy.types.INFO_MT_file_import.append(menu_func)
-    #bpy.types.INFO_MT_file_export.append(menu_func_export) 
-    
+
+
 def unregister():
     bpy.utils.unregister_module(__name__)
-    #mb_operators.unregister()
     mb_datastructure.unregister()
-    #bpy.types.INFO_MT_file_import.remove(menu_func)
-    #bpy.types.INFO_MT_file_export.remove(menu_func_export)
+
 
 if __name__ == "__main__":
     register()
-
-'''
-structure:
-
-add an atom:
-    if alone:
-        make new molecule
-    if attached:
-        add to molecule
-
-remove an atom:
-    if it breaks a molecule in two:
-        break a bond
-    delete from molecule
-
-make a bond between two atoms:
-    merge atoms into one molecule
-
-break a bond:
-    separate molecules
-
-
-'''
