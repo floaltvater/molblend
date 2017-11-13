@@ -68,8 +68,6 @@ class enums():
          "Angles are multiples of 30 and 45 deg. in the view plane"),
         ('LINEAR', "Linear", "Linear or sp"),
         ('TRIGONAL', "Trig. planar", "Trigonal planar or sp2"),
-        ('TETRAHEDRAL', "Tetrahedral", "Tetrahedral or sp3"),
-        ('OCTAHEDRAL', "Octahedral", "Octahedral"),
         ]
     angstrom_per_unit = [
         ('1.0', "Angstrom", "Angstrom"),

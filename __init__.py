@@ -232,9 +232,7 @@ class MB_PT_import(MolBlendPanel, Panel):
         row.active = initialized
         row.operator("mb.import_molecule", text="Import")
 
-#class MB_PT_analyze_QE_phonons(MolBlendPanel, Panel):
-    #bl_label = "Analyze QE phonons"
-
+#TODO implement export
 #class MB_PT_export(MolBlendPanel, Panel):
     #bl_label = "Export"
     
