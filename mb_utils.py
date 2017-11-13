@@ -42,6 +42,7 @@ class enums():
         ('NONE', "None", "None"),
         ('ATOM', "Atom", "Atom"),
         ('BOND', "Bond", "Bond"),
+        ('PARENT', "Parent", "Parent"),
         ]
     radius_types = [
         ('covalent', 'covalent', 'covalent'),
@@ -56,6 +57,10 @@ class enums():
     bond_material = [
         ('ATOMS', "Atoms", "Same as atoms"),
         ('GENERIC', "Generic" , "Single bond color"),
+        ]
+    bond_types = [
+        ('CONSTRAINT', "constraint", "constrained by the two bonded atoms"),
+        ('STATIC', "static", "independent bonds, don't move with atoms"),
         ]
     geometries = [
         ('SINGLE', "Single atom", 
@@ -90,15 +95,18 @@ def update_all_meshes(self, context):
 def update_active_mode(self, context):
     debug_print("mb_utils.update_active_mode", level=6)
     if self.max_mode == 0:
-        self.active_mode = 0
-        return
+        if self.active_mode == 0:
+            return
+        else:
+            self.active_mode = 0
+            return
     elif self.active_mode > self.max_mode:
         self.active_mode = self.max_mode
         return
     
     for atom in self.objects.atoms:
         atom_ob = atom.get_object()
-        atom_id = '{}.{}'.format(self.index, atom_ob.mb.index)
+        atom_id = get_atom_id(self.index, atom_ob.mb.index)
         anim_data = atom_ob.animation_data
         if anim_data:
             action = anim_data.action
@@ -113,7 +121,10 @@ def update_active_mode(self, context):
                     for p in range(3):
                         loc = middle + pow(-1, p) * avec[dim]
                         fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                        fcu.keyframe_points[p].interpolation = 'BEZIER'
+                        if self.active_mode == 0:
+                            fcu.keyframe_points[p].interpolation = 'LINEAR'
+                        else:
+                            fcu.keyframe_points[p].interpolation = 'BEZIER'
                     fcu.update()
             else:
                 debug_print("No action for atom '{}'.".format(atom_id),
@@ -257,6 +268,13 @@ def update_molecule_selection(self, context):
         parent.select = True
         context.scene.objects.active = parent
 
+def update_show_bond_lengths(self, context):
+    if self.show_bond_lengths:
+        bpy.ops.mb.show_bond_lengths()
+        
+def update_show_bond_angles(self, context):
+    if self.show_bond_lengths:
+        bpy.ops.mb.show_bond_angles()
 
 #--- General functions -------------------------------------------------------#
 
@@ -321,15 +339,44 @@ def is_initialized(context):
 
 #--- Viewport functions ------------------------------------------------------#
 
-def mouse_2d_to_location_3d(context, coord, depth=Vector((0, 0, 0))):
+def get_region_data(context, x, y):
+    
+    for area in context.screen.areas:
+        if area.type != 'VIEW_3D':
+            continue
+        is_quadview = len(area.spaces.active.region_quadviews) != 0
+        i = -1
+        for region in area.regions:
+            if region.type == 'WINDOW':
+                i += 1
+                if (x > region.x and
+                    y > region.y and
+                    x < region.width + region.x and
+                    y < region.height + region.y):
+                    
+                    if is_quadview:
+                        rv3d = area.spaces.active.region_quadviews[i]
+                    else:
+                        rv3d = area.spaces.active.region_3d
+                    return (region, rv3d)
+    return (None, None)
+
+def mouse_2d_to_location_3d(context, mouse2d, depth=Vector((0, 0, 0)),
+                            region=None, rv3d=None):
     debug_print("mb_utils.mouse_2d_to_location_3d", level=6)
-    region = context.region
-    rv3d = context.region_data
+    x, y = mouse2d
+    
+    # get region and region data from mouse position. If region is given, passed rv3d is ignored
+    if region == None:
+        region, rv3d = get_region_data(context, x, y)
+    
+    # mouse coordinates relative to region
+    coord2d = (x - region.x, y - region.y)
     if depth:
         depth_location = depth
     else:
         depth_location = context.scene.cursor_location.copy()
-    return view3d_utils.region_2d_to_location_3d(region, rv3d, coord, 
+    return view3d_utils.region_2d_to_location_3d(region, rv3d, coord2d, 
                                                  depth_location)
 
 
@@ -342,17 +389,17 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None,
     exclude = exclude or []
     # get the context arguments
     scene = context.scene
-    region = context.region
-    rv3d = context.region_data
+    x, y = event.mouse_x, event.mouse_y
+    region, rv3d = get_region_data(context, x, y)
     if not rv3d:
         return None
-    coord = event.mouse_region_x, event.mouse_region_y
+    coord2d = (x - region.x, y - region.y)
     # get the ray from the viewport and mouse
-    view_vector = view3d_utils.region_2d_to_vector_3d(region, rv3d, coord)
+    view_vector = view3d_utils.region_2d_to_vector_3d(region, rv3d, coord2d)
     
     # have ray origin a little in front of actual origin, otherwise it might 
     # not get all of the objects
-    ray_origin = (view3d_utils.region_2d_to_origin_3d(region, rv3d, coord) +
+    ray_origin = (view3d_utils.region_2d_to_origin_3d(region, rv3d, coord2d) +
                   0.5 * view_vector * ray_max)
     ray_target = ray_origin - (view_vector * ray_max)
     
@@ -380,15 +427,15 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None,
             ray_target_obj = matrix_inv * ray_target
             
             # cast the ray
-            hit, normal, face_index = obj.ray_cast(ray_origin_obj, 
-                                                   ray_target_obj)
-            
+            #print(obj.ray_cast(ray_origin_obj, ray_target_obj))
+            result, hit, normal, face_index = obj.ray_cast(ray_origin_obj, 
+                                                           ray_target_obj)
             if face_index != -1:
                 return hit, normal, face_index
             else:
                 return None, None, None
         except ValueError as e:
-            debug_print("ERROR: {}: {}".format(obj.name, e), level=1)
+            debug_print("ERROR in obj_ray_cast: {}: {}".format(obj.name, e), level=0)
             return None, None, None
         finally:
             pass
@@ -653,17 +700,19 @@ def check_ob_dimensions(ob):
     debug_print("mb_utils.check_ob_dimensions", level=6)
     if ob.dimensions.x < 0.0001: #< ob.mb.get_molecule().bond_radius:
         toggle = {'PLANE_X': 'PLANE_Z', 'PLANE_Z': 'PLANE_X'}
-        c = ob.constraints["stretch"]
+        c = ob.constraints.get("mb.stretch", None)
         if c:
             c.keep_axis = toggle[c.keep_axis]
 
 
 #--- Add object functions ----------------------------------------------------#
+def get_atom_id(mol_index, atom_index):
+    return "{:>02d}.{:>04d}".format(mol_index, atom_index)
 
 def add_atom(context, location, element, atom_name, molecule):
     debug_print("mb_utils.add_atom", level=6)
     # get new unique name for object
-    name = "atom_{}.{}".format(molecule.index, molecule.atom_index)
+    name = "atom_{}".format(get_atom_id(molecule.index, molecule.atom_index))
     
     mesh_data = get_atom_data(element, molecule, type='MESH', name="")
     new_atom = bpy.data.objects.new(name, mesh_data)
@@ -692,15 +741,15 @@ def add_atom(context, location, element, atom_name, molecule):
     return new_atom
 
 
-def add_bond(context, first_atom, second_atom):
-    bond_type = "constraint"
+def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
     
     debug_print("mb_utils.add_bond", level=6)
     if first_atom == second_atom:
         debug_print('WARNING: add_bond: first_atom == second_atom', level=3)
         return None
     for b in first_atom.mb.bonds:
-        if second_atom.name in b.get_object().mb.bonded_atoms:
+        bob = b.get_object()
+        if bob != None and second_atom.name in bob.mb.bonded_atoms:
             debug_print(
                 "WARNING: add_bond: Bond {}-{} already exists".format(
                     first_atom.mb.index, second_atom.mb.index), level=3)
@@ -708,8 +757,8 @@ def add_bond(context, first_atom, second_atom):
     # get new unique name for bond
     first_mol = first_atom.mb.get_molecule()
     second_mol = second_atom.mb.get_molecule()
-    name = "bond_{}.{}-{}.{}".format(first_mol.index, first_atom.mb.index, 
-                                     second_mol.index, second_atom.mb.index)
+    name = "bond_{}-{}".format(get_atom_id(first_mol.index, first_atom.mb.index), 
+                               get_atom_id(second_mol.index, second_atom.mb.index))
     bond_mesh = get_bond_data(first_mol, type='MESH')
     new_bond = bpy.data.objects.new(name, bond_mesh)
     context.scene.objects.link(new_bond)
@@ -729,14 +778,14 @@ def add_bond(context, first_atom, second_atom):
     # add it to first molecule collection
     first_mol.add_object(new_bond)
     
-    if bond_type == "constraint":
+    if bond_type == "CONSTRAINT":
         # don't parent, as parenting also affects the scale
         c = new_bond.constraints.new('COPY_LOCATION')
-        c.name = "parent"
+        c.name = "mb.parent"
         c.target = first_atom
         
         c = new_bond.constraints.new('STRETCH_TO')
-        c.name = "stretch"
+        c.name = "mb.stretch"
         c.rest_length = 1.0
         c.volume = 'NO_VOLUME'
         c.target = second_atom
@@ -752,6 +801,19 @@ def add_bond(context, first_atom, second_atom):
             bp.co = atom.location - molcenter
             bp.handle_left_type = "VECTOR"
             bp.handle_right_type = "VECTOR"
+    elif bond_type == "STATIC":
+        y_axis = Vector((0,1,0))
+        loc1 = first_atom.location
+        loc2 = second_atom.location
+        # Location
+        location = loc1
+        vec = (loc2 - loc1)
+        angle = vec.angle(y_axis, 0)
+        # vector of rotation
+        axis = y_axis.cross(vec)
+        new_bond.rotation_euler = Matrix.Rotation(angle, 4, axis).to_euler()
+        new_bond.location = loc1
+        new_bond.scale[1] = vec.length
         
     assign_bond_material(new_bond)
     set_bond_drivers(context, new_bond, new_bond.mb.get_molecule())
@@ -828,7 +890,7 @@ def get_bond_data(molecule, type='MESH', name=""):
             
             bpy.ops.mesh.primitive_cylinder_add(
                 location=(0,0,0), vertices=molecule.refine_bonds*2, 
-                depth=1, radius=1.0, end_fill_type="NOTHING")
+                depth=1, radius=1.0)#, end_fill_type="NOTHING")
             new_bond = bpy.context.object
             for i in range(2):
                 new_bond.data.materials.append(None)
@@ -849,6 +911,8 @@ def get_bond_data(molecule, type='MESH', name=""):
             new_verts = []
             for edge in bm.edges:
                 if len(edge.link_faces) == 2 and edge.calc_length() == 1.0:
+                    if hasattr(edge, "ensure_lookup_table"):
+                        edge.ensure_lookup_table()
                     e, v = bmesh.utils.edge_split(edge, edge.verts[0], 0.5)
                     new_verts.append(v)
             n_verts = len(new_verts)
@@ -926,6 +990,8 @@ def get_arrow_data(type='MESH', name="arrow", material=None,
         new_verts = []
         for edge in bm.edges:
             if edge.calc_length() == 1.0:
+                if hasattr(edge, "ensure_lookup_table"):
+                    edge.ensure_lookup_table()
                 e, v = bmesh.utils.edge_split(edge, edge.verts[0], 0.5)
                 new_verts.append(v)
         n_verts = len(new_verts)
@@ -1094,8 +1160,9 @@ def new_material(name, color=(0.8, 0.8, 0.8), molecule=None):
         material.use_nodes = True
         # add driver to rendered color to be the same as display color
         nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
+        nodesocketcolor.default_value[:3] = color
         for i in range(3): # not for alpha channel
-            fcurve =  nodesocketcolor.driver_add('default_value', i)
+            fcurve =  material.driver_add('diffuse_color', i)
             drv = fcurve.driver
             drv.type = 'AVERAGE'
             drv.show_debug_info = True
@@ -1106,7 +1173,7 @@ def new_material(name, color=(0.8, 0.8, 0.8), molecule=None):
             targ = var.targets[0]
             targ.id_type = 'MATERIAL'
             targ.id = material
-            targ.data_path = 'diffuse_color[{}]'.format(i)
+            targ.data_path = 'node_tree.nodes["Diffuse BSDF"].inputs[0].default_value[{}]'.format(i)
     return material
 
 

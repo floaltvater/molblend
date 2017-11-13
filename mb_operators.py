@@ -27,6 +27,7 @@ else:
     from molblend import mb_import_export
 
 import bpy
+import blf
 from bpy.types import (Operator,
                        PropertyGroup,
                        Menu)
@@ -42,6 +43,7 @@ from bpy.props import (StringProperty,
                        EnumProperty)
 from bpy_extras.io_utils import ImportHelper, ExportHelper
 import os
+import sys
 from mathutils import Vector
 from .helper import debug_print
 
@@ -92,43 +94,179 @@ class MB_OT_initialize(Operator):
 
 class MB_OT_modal_add(Operator):
     bl_idname = 'mb.modal_add'
-    bl_label = 'test MolBlend'
+    bl_label = 'activate MolBlend'
     bl_options = {'REGISTER'}
+    
+    is_running_bool = BoolProperty(
+        name="Modal_is_running", 
+        description="Knows if main modal operator is running",
+        default=False)
+    
+    @classmethod
+    def is_running(cls):
+        return cls.is_running_bool
+    
+    #@classmethod
+    #def kill_modal(cls):
+        #cls.is_running_bool = False
     
     @classmethod
     def poll(cls, context):
         return mb_utils.is_initialized(context)
     
     def modal(self, context, event):
+        if event.type in ('ESC', ) or not type(self).is_running_bool:
+            return self.cancel(context)
         #print("modal")
+        # get 3D Window region
+        
+        min_max_lst = []
+        for area in context.screen.areas:
+            if area.type == "VIEW_3D":
+                min_x, min_y = (10000, 10000)
+                max_x, max_y = (-10000, -10000)
+                for region in area.regions:
+                    if region.type == "WINDOW":
+                        if region.x < min_x:
+                            min_x = region.x
+                        if region.y < min_y:
+                            min_y = region.y
+                        if region.x+region.width > max_x:
+                            max_x = region.x+region.width
+                        if region.y+region.height > max_y:
+                            max_y = region.y+region.height
+                min_max_lst.append((min_x, min_y, max_x, max_y))
+        x, y = event.mouse_x, event.mouse_y
+        for min_max in min_max_lst:
+            if (min_max[0] < x < min_max[2] and
+                min_max[1] < y < min_max[3]):
+                break
+        else:
+            context.window.cursor_modal_restore()
+            return {'PASS_THROUGH'}
+        
+        # cursor in View3D Window, continue
+        if event.type in ('RIGHTMOUSE', 'ESC'):
+            self.cancel(context)
+        
+        context.window.cursor_modal_set("CROSSHAIR")
         if bpy.ops.object.select_all.poll():
             bpy.ops.object.select_all(action='DESELECT')
-            hover_ob = mb_utils.return_cursor_object(context, event, 
-                                                     mb_type='ATOM')
+            hover_ob = mb_utils.return_cursor_object(context, event,
+                                                    mb_type='ATOM')
             if hover_ob is not None:
                 hover_ob.select = True
             context.scene.objects.active = hover_ob
-        if (event.type == 'LEFTMOUSE' and event.value == 'PRESS' and
-                context.area.type == 'VIEW_3D'):
-            # TODO make sure we're in the 3D View window
+        if (event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
             bpy.ops.mb.add_atom('INVOKE_DEFAULT',
                                 shift=event.shift,
                                 ctrl=event.ctrl,
                                 alt=event.alt)
             return {'RUNNING_MODAL'}
-        elif event.type in ('RIGHTMOUSE', 'ESC'):
-            context.window.cursor_modal_restore()
-            return {'CANCELLED'}
         return {'PASS_THROUGH'}
-    
+        
+        
     def invoke(self, context, event):
         if context.area.type == 'VIEW_3D':
-            context.window.cursor_modal_set("CROSSHAIR")
+            
+            # to allow toggling
+            if type(self).is_running_bool == True:
+                type(self).is_running_bool = False
+            else:
+                type(self).is_running_bool = True
             context.window_manager.modal_handler_add(self)
             return {'RUNNING_MODAL'}
         else:
             return {'CANCELLED'}
 
+    def cancel(self, context):
+        print("cancel")
+        type(self).is_running_bool = False
+        context.window.cursor_modal_set('DEFAULT')
+        return {'CANCELLED'}
+
+class MB_OT_make_static(Operator):
+    '''
+    Apply and remove constraints of bonds
+    '''
+    bl_idname = "mb.make_static"
+    bl_label = "Make static"
+    bl_options = {'UNDO', 'REGISTER'}
+    bl_description = "apply and remove bond constraints"
+    
+    @classmethod
+    def poll(cls, context):
+        return True
+    
+    #def draw(self, context):
+        #layout = self.layout
+        #row = layout.row()
+        #row.prop(self, "element")
+        #col = layout.column()
+        #col.prop(self, "coord_3d", text="Location")
+        #col = layout.column()
+        #col.prop(self, "first_atom_name", text="Bond to")
+    
+    def invoke(self, context, event):
+        return self.execute(context)
+    
+    def execute(self, context):
+        #i = 0
+        for ob in context.selected_editable_objects:
+            if ob.mb.type == 'BOND':
+                # remove constraints
+                mat = ob.matrix_world.copy()
+                for cname in ("mb.stretch", "mb.parent"):
+                    c = ob.constraints.get(cname, None)
+                    if c:
+                        ob.constraints.remove(c)
+                        #i += 1
+                ob.parent = ob.mb.get_molecule().objects.parent.get_object()
+                ob.matrix_world = mat
+        #print("removed", i, "constraints")
+        return {'FINISHED'}
+
+class MB_OT_export_to_blend4web(Operator):
+    '''
+    
+    '''
+    bl_idname = "mb.export_to_blend4web"
+    bl_label = "Make static"
+    bl_options = {'UNDO', 'REGISTER'}
+    bl_description = "remove bond constraints"
+    
+    @classmethod
+    def poll(cls, context):
+        return True
+    
+    #def draw(self, context):
+        #layout = self.layout
+        #row = layout.row()
+        #row.prop(self, "element")
+        #col = layout.column()
+        #col.prop(self, "coord_3d", text="Location")
+        #col = layout.column()
+        #col.prop(self, "first_atom_name", text="Bond to")
+    
+    def invoke(self, context, event):
+        return self.execute(context)
+    
+    def execute(self, context):
+        #i = 0
+        for ob in context.selected_editable_objects:
+            if ob.mb.type == 'BOND':
+                mat = ob.matrix_world.copy()
+                for cname in ("mb.stretch", "mb.parent"):
+                    c = ob.constraints.get(cname, None)
+                    if c:
+                        ob.constraints.remove(c)
+                        #i += 1
+                ob.parent = ob.mb.get_molecule().objects.parent.get_object()
+                ob.matrix_world = mat
+                # now apply uniform scale, otherwise Blend4web complains
+                TODO
+        #print("removed", i, "constraints")
+        return {'FINISHED'}
 
 class MB_OT_add_atom(Operator):
     '''
@@ -140,7 +278,7 @@ class MB_OT_add_atom(Operator):
     
     element = StringProperty(name="Element", default="C")
     coord_3d = FloatVectorProperty(
-        name="3D position", description="3D position of new atom", 
+        name="3D position", description="3D position of new atom",
         size=3, default=(0.0,0.0,0.0), subtype='XYZ')
     depth_location = FloatVectorProperty(
         name="Depth", description="Depth of the new atom",
@@ -162,7 +300,7 @@ class MB_OT_add_atom(Operator):
     def mb_atom_objects(self, context):
         items = [(" ", " ", "no bond")]
         items.extend(
-            [(ob.name, ob.name, "") for ob in context.scene.objects 
+            [(ob.name, ob.name, "") for ob in context.scene.objects
              if ob.mb.type == 'ATOM' and not ob.name == self.new_atom_name]
             )
         return items
@@ -185,9 +323,9 @@ class MB_OT_add_atom(Operator):
         col.prop(self, "first_atom_name", text="Bond to")
         
     def modal(self, context, event):
-        mouse_2d = event.mouse_region_x, event.mouse_region_y
+        mouse_2d = event.mouse_x, event.mouse_y
         self.coord_3d = mb_utils.mouse_2d_to_location_3d(
-            context, mouse_2d, depth=self.depth_location)
+            context, mouse_2d, region=self.region, rv3d=self.rv3d, depth=self.depth_location)
         
         if event.type == 'MOUSEMOVE':
             new_atom = context.scene.objects.get(self.new_atom_name)
@@ -203,15 +341,15 @@ class MB_OT_add_atom(Operator):
                     new_atom.draw_bounds_type = 'SPHERE'
                     new_atom.draw_type = 'BOUNDS'
                     if new_bond:
-                        new_bond.constraints["stretch"].target = hover_ob
+                        new_bond.constraints["mb.stretch"].target = hover_ob
                 else:
                     new_atom.draw_type = 'SOLID'
                     if new_bond:
-                        new_bond.constraints["stretch"].target = new_atom
+                        new_bond.constraints["mb.stretch"].target = new_atom
             else:
                 new_atom.draw_type = 'SOLID'
                 if new_bond:
-                    new_bond.constraints["stretch"].target = new_atom
+                    new_bond.constraints["mb.stretch"].target = new_atom
                 if event.ctrl and new_bond:
                     # lock into certain angles
                     self.coord_3d = mb_utils.get_fixed_geometry(
@@ -221,12 +359,12 @@ class MB_OT_add_atom(Operator):
                     # constrain length
                     length = 1.0
                     self.coord_3d = mb_utils.get_fixed_length(
-                        context, first_atom, new_atom, self.coord_3d, 
+                        context, first_atom, new_atom, self.coord_3d,
                         length=-1)
             
             new_atom.location = self.coord_3d
-            # sometimes, when bond is exactly along axis, the dimension goes 
-            # to zero due to the stretch constraint 
+            # sometimes, when bond is exactly along axis, the dimension goes
+            # to zero due to the stretch constraint
             # check for this case and fix it
             if new_bond:
                 mb_utils.check_ob_dimensions(new_bond)
@@ -254,8 +392,10 @@ class MB_OT_add_atom(Operator):
     def invoke(self, context, event):
         self.element = context.window_manager.mb.globals.element_to_add
         self.geometry = context.window_manager.mb.globals.geometry_to_add
-        hover_ob = mb_utils.return_cursor_object(context, event, 
+        hover_ob = mb_utils.return_cursor_object(context, event,
                                                  mb_type='ATOM')
+        
+        self.region, self.rv3d = mb_utils.get_region_data(context, event.mouse_x, event.mouse_y)
         
         if hover_ob:
             self.first_atom_name = hover_ob.name
@@ -263,7 +403,7 @@ class MB_OT_add_atom(Operator):
         else:
             self.first_atom_name = " "
             self.depth_location = context.scene.cursor_location.copy()
-        mouse_2d = event.mouse_region_x, event.mouse_region_y
+        mouse_2d = event.mouse_x, event.mouse_y
         self.coord_3d = mb_utils.mouse_2d_to_location_3d(
             context, mouse_2d, depth=self.depth_location)
         
@@ -287,7 +427,7 @@ class MB_OT_add_atom(Operator):
             first_atom = None
         
         if self.first_atom_name.strip() and not first_atom:
-            debug_print('Object "{}" not found.'.format(self.first_atom_name), 
+            debug_print('Object "{}" not found.'.format(self.first_atom_name),
                         level=1)
             return {'CANCELLED'}
         
@@ -297,7 +437,7 @@ class MB_OT_add_atom(Operator):
             molecule = context.scene.mb.new_molecule()
         
         # create a new atom object with the molecule's properties
-        new_atom = mb_utils.add_atom(context, self.coord_3d, self.element, 
+        new_atom = mb_utils.add_atom(context, self.coord_3d, self.element,
                                      self.element, molecule)
         self.new_atom_name = new_atom.name
         
@@ -310,11 +450,55 @@ class MB_OT_add_atom(Operator):
         new_atom.select = True
         return {'FINISHED'}
 
+class MB_OT_select_bonded(Operator):
+    '''
+    Select connected molecule based on mb data
+    '''
+    bl_idname = "mb.select_bonded"
+    bl_description = "Select connected molecule based on atom bonds"
+    bl_label = "Select bonded"
+    bl_options = {'UNDO', 'REGISTER'}
+    
+    @classmethod
+    def poll(cls, context):
+        return context.object and context.object.mb.type in ('ATOM', 'BOND')
+    
+    def execute(self, context):
+        # recursive functions
+        def atom(ob):
+            for b in ob.mb.bonds:
+                bob = b.get_object()
+                if bob not in objects:
+                    objects.append(bob)
+                    bob.select = True
+                    bond(bob)
+            return {'FINISHED'}
+        
+        def bond(ob):
+            for a in ob.mb.bonded_atoms:
+                aob = a.get_object()
+                if aob not in objects:
+                    objects.append(aob)
+                    aob.select = True
+                    atom(aob)
+            return {'FINISHED'}
+        
+        objects = []
+        
+        ob = context.object
+        for ob in context.selected_objects:
+            if ob.mb.type in ('ATOM', 'BOND'):
+                if ob.mb.type == 'ATOM':
+                    return atom(ob)
+                elif ob.mb.type == 'BOND':
+                    return bond(ob)
+            else:
+               debug_print('mb.type {} not compatible'.format(ob.mb.type), level=2)
 
+    
 class MB_OT_center_mol_parent(Operator):
     '''
-    Custom delete function
-    find out what is deleted and update data accordingly
+    Set molecule parent into center of mass of atoms
     '''
     bl_idname = "mb.center_mol_parent"
     bl_description = "Put origin to geometric center"
@@ -353,7 +537,12 @@ class MB_OT_center_mol_parent(Operator):
                 for atom in molecule.objects.atoms:
                     atom.get_object().location -= center
                 molecule.objects.parent.get_object().location = center
-        return {'FINISHED'}
+            return {'FINISHED'}
+        else:
+            debug_print(
+                "ERROR in mb.center_mol_parent: No molecule_name set."
+                , level=0)
+            return {'CANCELLED'}
 
 
 class MB_OT_draw_dipole(Operator):
@@ -363,13 +552,13 @@ class MB_OT_draw_dipole(Operator):
     
     dipole_vec = FloatVectorProperty(name="Dipole vector", size=3)
     molecule_id = StringProperty(
-        name="Molecule identifier", 
+        name="Molecule identifier",
         update=mb_utils.update_molecule_selection)
     
     def draw(self, context):
         layout = self.layout
         row = layout.row()
-        row.prop_search(self, "molecule_id", context.scene.mb, 
+        row.prop_search(self, "molecule_id", context.scene.mb,
                         "molecules", text="")
         col = layout.column()
         col.prop(self, "dipole_vec")
@@ -400,7 +589,7 @@ class MB_OT_draw_dipole(Operator):
         
         # add arrow object
         arrow_mesh = mb_utils.get_arrow_data()
-        arrow_ob = bpy.data.objects.new("{}_dipole".format(mol.name_mol), 
+        arrow_ob = bpy.data.objects.new("{}_dipole".format(mol.name_mol),
                                         arrow_mesh)
         arrow_ob.parent = mol.objects.parent.get_object()
         bpy.context.scene.objects.link(arrow_ob)
@@ -408,7 +597,7 @@ class MB_OT_draw_dipole(Operator):
         arrow_ob.mb.molecule_name = mol.name
 
         c = arrow_ob.constraints.new('STRETCH_TO')
-        c.name = "stretch"
+        c.name = "mb.stretch"
         c.rest_length = 1.0
         c.volume = 'NO_VOLUME'
         c.target = dipole_ob
@@ -474,20 +663,20 @@ class MB_OT_import_molecule(Operator):
         name="Bond material", description="Choose bond material",
         items=mb_utils.enums.bond_material, default='ATOMS')
     bond_color = FloatVectorProperty(
-        name='Bond color', 
+        name='Bond color',
         default=(0.8, 0.8, 0.8), subtype='COLOR')
     draw_style = EnumProperty(
         name="Display style", description="Style to draw atoms and bonds",
         items=mb_utils.enums.molecule_styles, default='BAS')
     radius_type = EnumProperty(
-        name="Radius type", 
+        name="Radius type",
         items=mb_utils.enums.radius_types, default='covalent')
     bond_radius = FloatProperty(
-        name="Bond radius", 
+        name="Bond radius",
         description="Radius of bonds for Sticks, and Ball and Sticks",
         default=0.1, min=0.0, max=3.0)
     
-    # this is a duplicate class from mb_datastructure for 
+    # this is a duplicate class from mb_datastructure for
     class atom_scale(PropertyGroup):
         name = StringProperty()
         val = FloatProperty(name="Atom scale", default=0.4, min=0.0, max=5.0,
@@ -495,17 +684,20 @@ class MB_OT_import_molecule(Operator):
     
     atom_scales = CollectionProperty(type=atom_scale)
     refine_atoms = IntProperty(
-        name="Refine atoms", description="Refine value for atom meshes", 
+        name="Refine atoms", description="Refine value for atom meshes",
         default=8, min=3, max=64)
     refine_bonds = IntProperty(
         name="Refine bonds", description="Refine value for atom meshes",
         default=8, min=3, max=64)
+    bond_type = EnumProperty(
+        name="Bond type", description="Select how bonds should behave",
+        items=mb_utils.enums.bond_types, default='CONSTRAINT')
     # TODO this might be handy for different units in files
     #scale_distances = FloatProperty (
         #name = "Distances", default=1.0, min=0.0001,
         #description = "Scale factor for all distances")
     length_unit = EnumProperty(
-        name="Unit", 
+        name="Unit",
         description="Unit in input file, will be converted to Angstrom",
         items=mb_utils.enums.angstrom_per_unit, default='1.0')
     length_unit_other = FloatProperty(
@@ -532,7 +724,7 @@ class MB_OT_import_molecule(Operator):
         name="Object to origin (first frame)",
         description="Put the object into the global origin, "
                     "the first frame only",
-        default=False)    
+        default=False)
     
     def draw(self, context):
         layout = self.layout
@@ -550,7 +742,7 @@ class MB_OT_import_molecule(Operator):
         col.label(text="Atom radius")
         col.prop(self, "radius_type", text="")
         
-        col = row.column()        
+        col = row.column()
         col.prop(self, "refine_bonds")
         row = layout.row()
         col.prop(self, "bond_radius")
@@ -558,6 +750,7 @@ class MB_OT_import_molecule(Operator):
         col.prop(self, "bond_material", text="")
         col.prop(self, "bond_color")
         col.prop(self, "bond_guess")
+        col.prop(self, "bond_type")
         
         layout.separator()
         row = layout.row()
@@ -617,20 +810,21 @@ class MB_OT_import_molecule(Operator):
             debug_print("ERROR: {} not found".format(filepath), level=0)
             return {'CANCELLED'}
         if import_props.modes:
-            modes_path = import_props.modes_path
+            modes_path = bpy.path.abspath(import_props.modes_path)
+            if not os.path.exists(modes_path):
+                debug_print("ERROR: {} not found".format(modes_path), level=0)
+                return {'CANCELLED'}
         else:
             modes_path = ''
         
-        new_molecule = context.scene.mb.new_molecule()
-        
-        new_molecule.name_mol = self.name_mol
-        new_molecule.draw_style = self.draw_style
-        new_molecule.radius_type = self.radius_type
-        new_molecule.bond_radius = self.bond_radius
-        new_molecule.refine_atoms = self.refine_atoms
-        new_molecule.refine_bonds = self.refine_bonds
-        for scale in self.atom_scales:
-            new_molecule.atom_scales[scale.name].val = scale.val
+        new_molecule = context.scene.mb.new_molecule(
+                            name_mol=self.name_mol,
+                            draw_style=self.draw_style,
+                            radius_type=self.radius_type,
+                            bond_radius=self.bond_radius,
+                            refine_atoms=self.refine_atoms,
+                            refine_bonds=self.refine_bonds,
+                            atom_scales=self.atom_scales)
         
         ## check if select_frames is ok, otherwise import first frame only
         error_list = []
@@ -641,11 +835,12 @@ class MB_OT_import_molecule(Operator):
             error_list.append('Mask object not found. Not using mask.')
         elif mask:
             world_mat = mask.matrix_world
+            # only rotate normal vectors
+            rot = world_mat.to_3x3().normalized()
             # get all faces (normal vector, point on plane) from mask object
-            mask_planes = [(world_mat*pg.normal.copy(), 
-                            world_mat*mask.data.vertices[pg.vertices[0]].co) 
+            mask_planes = [(rot*pg.normal.copy(),
+                            world_mat*mask.data.vertices[pg.vertices[0]].co)
                             for pg in mask.data.polygons]
-        
         if error_list:
             debug_print('\n'.join(error_list), level=1)
         
@@ -654,94 +849,80 @@ class MB_OT_import_molecule(Operator):
         else:
             scale_distances = float(self.length_unit)
         # Execute main routine
-        worked = mb_import_export.import_molecule(
-                                filepath,
-                                modes_path,
-                                new_molecule,
-                                self.refine_atoms,
-                                self.refine_bonds,
-                                scale_distances,
-                                self.bond_guess,
-                                self.use_center,
-                                mask_planes,
-                                self.mask_flip,
-                                self.draw_unit_cell,
-                                self.supercell,
-                                )
-        if not worked:
-            context.scene.mb.remove_molecule(new_molecule)
+        try:
+            worked = mb_import_export.import_molecule(
+                        self.report,
+                        filepath,
+                        modes_path,
+                        import_props.n_q,
+                        new_molecule,
+                        self.refine_atoms,
+                        self.refine_bonds,
+                        self.bond_type,
+                        scale_distances,
+                        self.bond_guess,
+                        self.use_center,
+                        mask_planes,
+                        self.mask_flip,
+                        self.draw_unit_cell,
+                        self.supercell,
+                        )
+        except:
+            worked = False
+            raise
+        finally:
+            if not worked:
+                context.scene.mb.remove_molecule(new_molecule)
         return {'FINISHED'}
 
-#class ExportMolecule(Operator):
-    #bl_idname = "mb.export_molecule"
-    #bl_label  = "Export"
-    ##filename_ext = "*.pdb;*.xyz"
-    ##filter_glob  = StringProperty(default=filename_ext, options={'HIDDEN'},)
-    #bl_description = "Export molecule structure to file (*.pdb, *.xyz)"
-    
-    ##atom_pdb_export_type = EnumProperty(
-        ##name="Type of Objects",
-        ##description="Choose type of objects",
-        ##items=(('0', "All", "Export all active objects"),
-               ##('1', "Elements", "Export only those active objects which have"
-                                 ##" a proper element name")),
-               ##default='1',) 
-    ##file_type = EnumProperty(
-        ##name="File type", default="XYZ", items=mb_utils.enums.file_types,
-        ##description="File format to export to")
-    ##length_unit = EnumProperty(
-        ##name="Unit", default='1.0', items=mb_utils.enums.angstrom_per_unit,
-        ##description="Unit in output file (to convert to from Angstrom)")
-    ##length_unit_other = FloatProperty(
-        ##name="Custom Unit", default=1.0, min=0.000001,
-        ##description="Enter unit of export file as Angstrom/unit")
-    ##selection_only = BoolProperty(name="Selected Objects", default=True,
-        ##description="Only export selected objects")
-    
-    ##def draw(self, context):
-        ##layout = self.layout
-        ##row = layout.row()
-        ##row.prop(self, "file_type")
-        ##row = layout.row()
-        ##row.prop(self, "selection_only")
-        ##row = layout.row()
-        ##row.prop(self, "length_unit")
-        ##row = layout.row()
-        ##row.active = (self.length_unit == 'OTHER')
-        ##row.prop(self, "length_unit")
-    
-    ##def invoke(self, context, event):
-        ##active_ob = context.object
-        ##if active_ob and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule():
-            ##self.filepath = active_ob.mb.get_molecule().name_mol
+
+def draw_callback_px(self, context):
+    try:
+        font_id = 0
+        blf.size(font_id, 12, 72)
+        offset = 0
         
+        rv3d = context.space_data.region_3d
+        width = context.region.width
+        height = context.region.height
+        persp_mat = rv3d.perspective_matrix
+        persinv = persp_mat.inverted()
+        
+        for ob in context.selected_objects:
+            if ob.mb.type == "BOND":
+                locs = [o.get_object().matrix_world.decompose()[0] for o in ob.mb.bonded_atoms]
+                co_3d = (locs[0] + locs[1]) / 2.
+                prj = persp_mat * co_3d.to_4d()
+                x = width/2 + width/2 * (prj.x / prj.w)
+                y = height/2 + height/2 * (prj.y / prj.w)
+                blf.position(font_id, x, y, 0)
+                blf.draw(font_id, "{:6.4f}".format((locs[1]-locs[0]).length))
+    except:
+        print(sys.exc_info()[0])
+        context.scene.mb.globals.show_bond_lengths = False
+
+class MB_OT_draw_bond_lengths(bpy.types.Operator):
+    """Draw a line with the mouse"""
+    bl_idname = "mb.show_bond_lengths"
+    bl_label = "Show bond lengths"
     
-    #def execute(self, context):
-        #export_props = context.scene.mb.globals.export_props
-        #if export_props.length_unit == 'OTHER':
-            #scale_distances = export_props.length_unit_other
-        #else:
-            #scale_distances = float(export_props.length_unit)
-        
-        ## convert into relative path if only filename is given (otherwise writes to homedirectory)
-        #filepath = export_props.filepath
-        #if not os.path.isabs(filepath) and not filepath.startswith("//"):
-            #filepath = "//" + filepath
-        
-        #if export_props.file_type == 'PDB':
-            #if not export_props.filepath[-4:] == ".pdb":
-                #export_props.filepath += ".pdb"
-            #mb_import_export.export_pdb(bpy.path.abspath(export_props.filepath),
-                                        #export_props.selection_only,
-                                        #scale_distances)
-        #elif export_props.file_type == 'XYZ':
-            #if not export_props.filepath[-4:] == ".xyz":
-                #export_props.filepath += ".xyz"
-            #mb_import_export.export_xyz(bpy.path.abspath(export_props.filepath),
-                                        #export_props.selection_only,
-                                        #scale_distances)
-        #elif export_props.file_type == 'B4W':
-            #if not export_props.filepath[-4:] == ".xyz":
-                #export_props.filepath += ".xyz"
-            #mb_import_export.export_b4w(bpy.path.abspath(export_props.filepath))
-        #return {'FINISHED'}
+    def modal(self, context, event):
+        context.area.tag_redraw()
+        if not context.scene.mb.globals.show_bond_lengths:
+            bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+            return {'CANCELLED'}
+        return {'PASS_THROUGH'}
+    
+    def execute(self, context):
+        if context.area.type == 'VIEW_3D':
+            # the arguments we pass to the callback
+            args = (self, context)
+            # Add the region OpenGL drawing callback
+            # draw in view space with 'POST_VIEW' and 'PRE_VIEW'
+            self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback_px, args, 'WINDOW', 'POST_PIXEL')
+
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        else:
+            self.report({'WARNING'}, "View3D not found, cannot run operator")
+            return {'CANCELLED'}
