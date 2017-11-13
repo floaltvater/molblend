@@ -21,9 +21,11 @@
 if "bpy" in locals():
     import imp
     imp.reload(mb_utils)
+    imp.reload(mb_geometry)
     imp.reload(mb_import_export)
 else:
     from molblend import mb_utils
+    from molblend import mb_geometry
     from molblend import mb_import_export
 
 import bpy
@@ -295,7 +297,7 @@ class MB_OT_add_atom(Operator):
         name="Geometry",
         description="Geometry the new bond should be in relative to "
                     "existing bonds. Press CTRL to activate.",
-        items=mb_utils.enums.geometries, default='SINGLE')
+        items=mb_utils.enums.geometries, default='NONE')
     
     def mb_atom_objects(self, context):
         items = [(" ", " ", "no bond")]
@@ -327,6 +329,51 @@ class MB_OT_add_atom(Operator):
         self.coord_3d = mb_utils.mouse_2d_to_location_3d(
             context, mouse_2d, region=self.region, rv3d=self.rv3d, depth=self.depth_location)
         
+#### old ##################################################################
+        #if event.type == 'MOUSEMOVE':
+            #new_atom = context.scene.objects.get(self.new_atom_name)
+            #context.scene.objects.active = new_atom
+            #new_atom.select = True
+            #new_bond = context.scene.objects.get(self.new_bond_name)
+            #first_atom = context.scene.objects.get(self.first_atom_name)
+            
+            #if not event.ctrl and not event.alt:
+                #hover_ob = mb_utils.return_cursor_object(
+                    #context, event, exclude=[new_atom], mb_type='ATOM')
+                #if hover_ob:
+                    #new_atom.draw_bounds_type = 'SPHERE'
+                    #new_atom.draw_type = 'BOUNDS'
+                    #if new_bond:
+                        #new_bond.constraints["mb.stretch"].target = hover_ob
+                #else:
+                    #new_atom.draw_type = 'SOLID'
+                    #if new_bond:
+                        #new_bond.constraints["mb.stretch"].target = new_atom
+            #else:
+                #new_atom.draw_type = 'SOLID'
+                #if new_bond:
+                    #new_bond.constraints["mb.stretch"].target = new_atom
+                #if event.ctrl and new_bond:
+                    ## lock into certain angles
+                    #self.coord_3d = mb_utils.get_fixed_geometry(
+                        #context, first_atom, new_atom, self.coord_3d,
+                        #self.geometry)
+                #if event.alt and new_bond:
+                    ## constrain length
+                    #length = 1.0
+                    #self.coord_3d = mb_utils.get_fixed_length(
+                        #context, first_atom, new_atom, self.coord_3d,
+                        #length=-1)
+            
+            #new_atom.location = self.coord_3d
+            ## sometimes, when bond is exactly along axis, the dimension goes
+            ## to zero due to the stretch constraint
+            ## check for this case and fix it
+            #if new_bond:
+                #mb_utils.check_ob_dimensions(new_bond)
+#### old ######################################################################
+        
+        
         if event.type == 'MOUSEMOVE':
             new_atom = context.scene.objects.get(self.new_atom_name)
             context.scene.objects.active = new_atom
@@ -334,33 +381,27 @@ class MB_OT_add_atom(Operator):
             new_bond = context.scene.objects.get(self.new_bond_name)
             first_atom = context.scene.objects.get(self.first_atom_name)
             
-            if not event.ctrl and not event.alt:
-                hover_ob = mb_utils.return_cursor_object(
-                    context, event, exclude=[new_atom], mb_type='ATOM')
-                if hover_ob:
-                    new_atom.draw_bounds_type = 'SPHERE'
-                    new_atom.draw_type = 'BOUNDS'
-                    if new_bond:
-                        new_bond.constraints["mb.stretch"].target = hover_ob
-                else:
-                    new_atom.draw_type = 'SOLID'
-                    if new_bond:
-                        new_bond.constraints["mb.stretch"].target = new_atom
+            hover_ob = mb_utils.return_cursor_object(
+                context, event, exclude=[new_atom], mb_type='ATOM')
+            if hover_ob:
+                new_atom.draw_bounds_type = 'SPHERE'
+                new_atom.draw_type = 'BOUNDS'
+                if new_bond:
+                    new_bond.constraints["mb.stretch"].target = hover_ob
             else:
                 new_atom.draw_type = 'SOLID'
                 if new_bond:
                     new_bond.constraints["mb.stretch"].target = new_atom
-                if event.ctrl and new_bond:
-                    # lock into certain angles
-                    self.coord_3d = mb_utils.get_fixed_geometry(
-                        context, first_atom, new_atom, self.coord_3d,
-                        self.geometry)
-                if event.alt and new_bond:
-                    # constrain length
-                    length = 1.0
-                    self.coord_3d = mb_utils.get_fixed_length(
-                        context, first_atom, new_atom, self.coord_3d,
-                        length=-1)
+                    if not event.alt:
+                        self.coord_3d = mb_geometry.get_fixed_geometry(
+                            context, first_atom, new_atom, self.coord_3d,
+                            self.geometry)
+                    
+                    if event.ctrl:
+                         # constrain length
+                        self.coord_3d = mb_geometry.get_fixed_length(
+                            context, first_atom, new_atom, self.coord_3d,
+                            length=-1)
             
             new_atom.location = self.coord_3d
             # sometimes, when bond is exactly along axis, the dimension goes

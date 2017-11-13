@@ -636,8 +636,8 @@ class mb_wm_globals(PropertyGroup):
     geometry_to_add = EnumProperty(
         name="Geometry",
         description="Geometry the new bond should be in relative to "
-                    "existing bonds. Press ALT to activate.", 
-        items=mb_utils.enums.geometries, default='SINGLE')
+                    "existing bonds.", 
+        items=mb_utils.enums.geometries, default='NONE')
 
 
 class mb_window_manager(PropertyGroup):
