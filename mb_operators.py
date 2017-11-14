@@ -28,6 +28,9 @@ else:
     from molblend import mb_geometry
     from molblend import mb_import_export
 
+import os
+import sys
+
 import bpy
 import blf
 from bpy.types import (Operator,
@@ -44,10 +47,9 @@ from bpy.props import (StringProperty,
                        CollectionProperty,
                        EnumProperty)
 from bpy_extras.io_utils import ImportHelper, ExportHelper
-import os
-import sys
 from mathutils import Vector
-from .helper import debug_print
+
+from molblend.mb_helper import debug_print
 
 
 class MB_OT_initialize(Operator):
@@ -327,52 +329,8 @@ class MB_OT_add_atom(Operator):
     def modal(self, context, event):
         mouse_2d = event.mouse_x, event.mouse_y
         self.coord_3d = mb_utils.mouse_2d_to_location_3d(
-            context, mouse_2d, region=self.region, rv3d=self.rv3d, depth=self.depth_location)
-        
-#### old ##################################################################
-        #if event.type == 'MOUSEMOVE':
-            #new_atom = context.scene.objects.get(self.new_atom_name)
-            #context.scene.objects.active = new_atom
-            #new_atom.select = True
-            #new_bond = context.scene.objects.get(self.new_bond_name)
-            #first_atom = context.scene.objects.get(self.first_atom_name)
-            
-            #if not event.ctrl and not event.alt:
-                #hover_ob = mb_utils.return_cursor_object(
-                    #context, event, exclude=[new_atom], mb_type='ATOM')
-                #if hover_ob:
-                    #new_atom.draw_bounds_type = 'SPHERE'
-                    #new_atom.draw_type = 'BOUNDS'
-                    #if new_bond:
-                        #new_bond.constraints["mb.stretch"].target = hover_ob
-                #else:
-                    #new_atom.draw_type = 'SOLID'
-                    #if new_bond:
-                        #new_bond.constraints["mb.stretch"].target = new_atom
-            #else:
-                #new_atom.draw_type = 'SOLID'
-                #if new_bond:
-                    #new_bond.constraints["mb.stretch"].target = new_atom
-                #if event.ctrl and new_bond:
-                    ## lock into certain angles
-                    #self.coord_3d = mb_utils.get_fixed_geometry(
-                        #context, first_atom, new_atom, self.coord_3d,
-                        #self.geometry)
-                #if event.alt and new_bond:
-                    ## constrain length
-                    #length = 1.0
-                    #self.coord_3d = mb_utils.get_fixed_length(
-                        #context, first_atom, new_atom, self.coord_3d,
-                        #length=-1)
-            
-            #new_atom.location = self.coord_3d
-            ## sometimes, when bond is exactly along axis, the dimension goes
-            ## to zero due to the stretch constraint
-            ## check for this case and fix it
-            #if new_bond:
-                #mb_utils.check_ob_dimensions(new_bond)
-#### old ######################################################################
-        
+            context, mouse_2d, region=self.region, 
+            rv3d=self.rv3d, depth=self.depth_location)
         
         if event.type == 'MOUSEMOVE':
             new_atom = context.scene.objects.get(self.new_atom_name)
@@ -436,7 +394,9 @@ class MB_OT_add_atom(Operator):
         hover_ob = mb_utils.return_cursor_object(context, event,
                                                  mb_type='ATOM')
         
-        self.region, self.rv3d = mb_utils.get_region_data(context, event.mouse_x, event.mouse_y)
+        self.region, self.rv3d = mb_utils.get_region_data(
+            context, event.mouse_x, event.mouse_y
+            )
         
         if hover_ob:
             self.first_atom_name = hover_ob.name
@@ -534,7 +494,8 @@ class MB_OT_select_bonded(Operator):
                 elif ob.mb.type == 'BOND':
                     return bond(ob)
             else:
-               debug_print('mb.type {} not compatible'.format(ob.mb.type), level=2)
+               debug_print('mb.type {} not compatible'.format(ob.mb.type),
+                           level=2)
 
     
 class MB_OT_center_mol_parent(Operator):
@@ -931,7 +892,8 @@ def draw_callback_px(self, context):
         
         for ob in context.selected_objects:
             if ob.mb.type == "BOND":
-                locs = [o.get_object().matrix_world.decompose()[0] for o in ob.mb.bonded_atoms]
+                locs = [o.get_object().matrix_world.decompose()[0] 
+                        for o in ob.mb.bonded_atoms]
                 co_3d = (locs[0] + locs[1]) / 2.
                 prj = persp_mat * co_3d.to_4d()
                 x = width/2 + width/2 * (prj.x / prj.w)
@@ -960,7 +922,9 @@ class MB_OT_draw_bond_lengths(bpy.types.Operator):
             args = (self, context)
             # Add the region OpenGL drawing callback
             # draw in view space with 'POST_VIEW' and 'PRE_VIEW'
-            self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback_px, args, 'WINDOW', 'POST_PIXEL')
+            self._handle = bpy.types.SpaceView3D.draw_handler_add(
+                draw_callback_px, args, 'WINDOW', 'POST_PIXEL'
+                )
 
             context.window_manager.modal_handler_add(self)
             return {'RUNNING_MODAL'}

@@ -16,9 +16,11 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
+import math
+from bisect import bisect_left
+
 import bpy
 import bmesh
-import math
 from bpy.types import Operator
 from bpy.props import (StringProperty,
                        BoolProperty,
@@ -31,11 +33,9 @@ from bpy.props import (StringProperty,
                        EnumProperty)
 from bpy_extras import view3d_utils
 from mathutils import Vector, Matrix
-from bisect import bisect_left
-from .elements_default import ELEMENTS as ELEMENTS_DEFAULT
-from .helper import debug_print
-import time
 
+from molblend.elements_default import ELEMENTS as ELEMENTS_DEFAULT
+from molblend.mb_helper import debug_print
 
 class enums():
     object_types = [
@@ -365,7 +365,8 @@ def mouse_2d_to_location_3d(context, mouse2d, depth=Vector((0, 0, 0)),
     debug_print("mb_utils.mouse_2d_to_location_3d", level=6)
     x, y = mouse2d
     
-    # get region and region data from mouse position. If region is given, passed rv3d is ignored
+    # Get region and region data from mouse position.
+    # If region is given, passed rv3d is ignored.
     if region == None:
         region, rv3d = get_region_data(context, x, y)
     
@@ -434,7 +435,8 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None,
             else:
                 return None, None, None
         except ValueError as e:
-            debug_print("ERROR in obj_ray_cast: {}: {}".format(obj.name, e), level=0)
+            debug_print("ERROR in obj_ray_cast: {}: {}".format(obj.name, e), 
+                        level=0)
             return None, None, None
         finally:
             pass
@@ -520,8 +522,10 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
     # get new unique name for bond
     first_mol = first_atom.mb.get_molecule()
     second_mol = second_atom.mb.get_molecule()
-    name = "bond_{}-{}".format(get_atom_id(first_mol.index, first_atom.mb.index), 
-                               get_atom_id(second_mol.index, second_atom.mb.index))
+    name = "bond_{}-{}".format(
+        get_atom_id(first_mol.index, first_atom.mb.index), 
+        get_atom_id(second_mol.index, second_atom.mb.index)
+        )
     bond_mesh = get_bond_data(first_mol, type='MESH')
     new_bond = bpy.data.objects.new(name, bond_mesh)
     context.scene.objects.link(new_bond)
@@ -936,7 +940,8 @@ def new_material(name, color=(0.8, 0.8, 0.8), molecule=None):
             targ = var.targets[0]
             targ.id_type = 'MATERIAL'
             targ.id = material
-            targ.data_path = 'node_tree.nodes["Diffuse BSDF"].inputs[0].default_value[{}]'.format(i)
+            targ.data_path = ('node_tree.nodes["Diffuse BSDF"].inputs[0]'
+                              + '.default_value[{}]'.format(i))
     return material
 
 

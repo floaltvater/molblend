@@ -17,7 +17,6 @@
 #
 # ***** END GPL LICENCE BLOCK *****
 
-
 # 0: print only errors
 # 1: print warnings
 # should clean up the rest

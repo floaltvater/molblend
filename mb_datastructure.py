@@ -22,11 +22,10 @@ if "bpy" in locals():
 else:
     from molblend import mb_utils
 
-import bpy
 import os
 
+import bpy
 from bpy.types import PropertyGroup
-
 from bpy.props import (StringProperty,
                        BoolProperty,
                        IntProperty,
@@ -37,7 +36,7 @@ from bpy.props import (StringProperty,
                        CollectionProperty,
                        EnumProperty)
 
-from .helper import debug_print
+from molblend.mb_helper import debug_print
 
 class mb_object_pointer(PropertyGroup):
     name = StringProperty(name="Object name")
@@ -173,7 +172,8 @@ class mb_object(PropertyGroup):
         element = context.scene.mb.elements[self.element]
         mat = ob.material_slots[0].material
         if context.scene.render.engine == 'CYCLES':
-            atom_color = [mat.node_tree.nodes['Diffuse BSDF'].inputs[0], "default_value", 40]
+            atom_color = [mat.node_tree.nodes['Diffuse BSDF'].inputs[0],
+                          "default_value", 40]
         else:
             atom_color = [mat, "diffuse_color", 40]
             
@@ -272,7 +272,8 @@ class mb_molecule(PropertyGroup):
         row = layout.row()
         row.prop(self, "active_mode")
         row = layout.row()
-        row.label("Frequency: {:>7.2f} cm^-1".format(self.modes_col["mode_{}".format(self.active_mode)].freq))
+        row.label("Frequency: {:>7.2f} cm^-1".format(
+                  self.modes_col["mode_{}".format(self.active_mode)].freq))
         row = layout.row()
         row.prop(self.modes_col["mode_{}".format(self.active_mode)],
                  "symmetry", text="Symmetry")
@@ -505,7 +506,7 @@ class mb_scene(PropertyGroup):
         
         mol.index = self.molecule_index
         self.molecule_index += 1
-        mol.name = "{}_{}".format(name_mol, mol.index) if name_mol else "molecule_{}".format(mol.index)
+        mol.name = "{}_{}".format(name_mol or "molecule", mol.index)
         mol.name_mol = name_mol or "Molecule {}".format(mol.index)
         mol.draw_style = draw_style or self.globals.draw_style
         mol.radius_type = radius_type or self.globals.radius_type
@@ -543,8 +544,9 @@ class mb_scene(PropertyGroup):
                     bpy.data.objects.remove(parent)
                 except RuntimeError:
                     debug_print(
-                        "Object {} can not be deleted from bpy.data.objects.".format(
-                        parent.name), level=1)
+                        "Object {} ".format(parent.name)
+                        + "can not be deleted from bpy.data.objects.",
+                        level=1)
             # Finally delete molecule from scene collection
             for i, mol_item in enumerate(self.molecules):
                 if mol == mol_item:

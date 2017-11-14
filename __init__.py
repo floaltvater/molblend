@@ -29,7 +29,7 @@
 bl_info = {
     "name": "MolBlend",
     "description": "Work with chemical structures",
-    "author": "Florian Altvater",
+    "author": "Florian Brown-Altvater",
     "version": (0,1),
     "blender": (2,7),
     "location": "View3D > Tool Shelf > MolBlend",
@@ -39,7 +39,6 @@ bl_info = {
     "category": "Add Mesh"
 }
 
-
 if "bpy" in locals():
     import imp
     imp.reload(mb_datastructure)
@@ -48,7 +47,6 @@ else:
     from molblend import mb_datastructure
     from molblend import mb_operators
 
-#import os
 import bpy
 from bpy.types import Panel
 #from bpy_extras.io_utils import ImportHelper, ExportHelper
