@@ -59,11 +59,19 @@ from bpy.props import (StringProperty,
                        PointerProperty,
                        CollectionProperty)
 
+#-- Known Problems -----------------------------------------------------------#
+# I/O:
+# - Reading input files is not the most stable. Mainly because some input files
+#   don't follow strict formatting (for example XYZ files).
+# - PDB files only support < 100k atoms.
+
+
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
 # TODO Make PEP 8 compatible
 # TODO Go over comments
+# TODO Make debug_print more consistent (and add more for higher level verbosity)
 # TODO Clean up import_export
 # TODO Let user select multiple files to import
 # TODO Duplication introduces lots of errors because all the properties are the same
