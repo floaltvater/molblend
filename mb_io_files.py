@@ -17,10 +17,18 @@
 #
 # ***** END GPL LICENCE BLOCK *****
 
+import re
+import math
+import itertools
+
+from mathutils import Vector, Matrix
+
 from molblend.mb_helper import debug_print
 from molblend.elements_default import ELEMENTS
 
-class MB_Molecule():
+A_per_Bohr = 0.529177249
+
+class MB_Structure():
     
     def __init__(self):
         self.nframes = 0
@@ -29,19 +37,85 @@ class MB_Molecule():
         self.axes = []
         self.modes = {}
     
+    def guess_bonds(self, tol=0.2):
+        '''
+        loops through all atoms and adds list of bonds to structure in the 
+        format {index1: [index2, index3], index2: [index4, index5], ...}
+        If bond argument is given, only additional bonds are added
+        TODO for now, this only checks in the unit of Angstroms!
+        '''
+        
+        for index1, atom1 in self.all_atoms.items():
+            for index2, atom2 in self.all_atoms.items():
+                if (index1 < index2 and not
+                        (index1 in self.bonds
+                         and index2 in self.bonds[index1])):
+                    distance = (atom1["coords"][0] - atom2["coords"][0]).length
+                    try:
+                        cov1 = ELEMENTS[atom1["element"]]['covalent']
+                    except KeyError:
+                        cov1 = 1
+                    try:
+                        cov2 = ELEMENTS[atom1["element"]]['covalent']
+                    except KeyError:
+                        cov2 = 1
+                    # the bond length should just be the sum of covalent radii 
+                    # (plus some extra just to make sure)
+                    max_dist = cov1 + cov2 + tol
+                    if distance < max_dist:
+                        try:
+                            self.bonds[index1].append(index2)
+                        except KeyError:
+                            self.bonds[index1] = [index2]
+            if not self.bonds:
+                debug_print("WARNING: No bonds found.", level=1)
+    
+    def create_supercell(self, supercell):
+        if self.axes:
+            debug_print("Creating supercell.", level=4)
+            max_atom_index = max(self.all_atoms) + 1
+            
+            n_unit_cell = 0
+            iter_3d = itertools.product(range(supercell[0]),
+                                        range(supercell[1]),
+                                        range(supercell[2]))
+            single_cell = list(self.all_atoms.items())
+            for i, j, k in iter_3d:
+                for index, atom in single_cell:
+                    sc_coords = []
+                    for loc, uc in zip(atom["coords"], self.axes):
+                        sc_coords.append(
+                            loc.copy() + i*uc[0] + j*uc[1] + k*uc[2]
+                            )
+                    #d = [element, atom_name, location, mode_vec]
+                    new_index = index + max_atom_index*n_unit_cell
+                    self.all_atoms[new_index] = {
+                        "element": atom["element"],
+                        "name": atom["name"],
+                        "coords": sc_coords,
+                        "id": index, # keep old index for reference
+                        }
+                n_unit_cell += 1
+        else:
+            debug_print("ERROR: Supercell requested, but no unit cell vectors"
+                        + " read.", level=0)
+    
+    def get_center_of_mass(self):
+        origin = Vector((0.0,0.0,0.0))
+        coords = [atom["coords"][0] for atom in self.all_atoms.values()]
+        center_of_mass = sum(coords, origin) / len(coords)
+        return center_of_mass
+    
     @classmethod
-    def from_file(cls, filepath, modefilepath=""):
-        
-        mol = MB_Molecule()
-        
+    def from_file(cls, filepath, modefilepath="", unit_fac=1.0):
         read_funcs = {
-            "xyz": _read_xyz_file,
-            "pdb": _read_pdb_file,
-            "vasp": _read_vasp_file,
-            "guo": _read_guo_file,
-            "abinit": _read_abinit_output_file,
-            "qe_input": _read_qe_input_file,
-            "qe_output": _read_qe_rlx_output_file
+            "xyz": cls._read_xyz_file,
+            "pdb": cls._read_pdb_file,
+            "vasp": cls._read_vasp_file,
+            "guo": cls._read_guo_file,
+            "abinit": cls._read_abinit_output_file,
+            "qe_input": cls._read_qe_input_file,
+            "qe_output": cls._read_qe_rlx_output_file
             }
         
         fmt = filepath.rsplit('.')[-1]
@@ -57,41 +131,56 @@ class MB_Molecule():
                 elif "BFGS Geometry Optimization" in lines:
                     fmt = "qe_output"
         
-        mol.read_funcs[fmt]
+        structure = read_funcs[fmt](filepath)
+        
+        if unit_fac != 1.0:
+            for atom in structure.all_atoms.values():
+                atom["coords"] = [loc*unit_fac for loc in atom["coords"]]
+
         #if modefilepath:
             #mol.read_modes_funcs[fmt]
+        return structure
     
-    def _read_guo_file(self, filepath_guo):
-        mask_planes = mask_planes or []
+    @classmethod
+    def _read_guo_file(cls, filepath_guo):
+        
+        strc = cls()
+        
         # Open the file ...
         with open(filepath_guo, "r") as fin:
             # first line is name or comment
             #next(fin)
             molname = next(fin).strip()
             next(fin)
-            self.axes = [Vector(list(map(float, next(fin).split()))) for i in range(3)]
+            strc.axes = [Vector(list(map(float, next(fin).split()))) for i in range(3)]
             element_list = next(fin).split()
             n_atoms = list(map(int, next(fin).split()))
             elements = [element_list[i] for i, n in enumerate(n_atoms) for j in range(n)]
             nat = sum(n_atoms)
             coord_type = next(fin).strip()
             if coord_type[0] in "dD":
-                cell_matrix = Matrix(self.axes).transposed()
+                cell_matrix = Matrix(strc.axes).transposed()
             elif coord_type[0] in "cCkK":
                 cell_matrix = Matrix.Identity(3)
             pos = [cell_matrix*Vector(list(map(float, next(fin).split()))) for i in range(nat)]
                 
             for i, (element, location) in enumerate(zip(elements, pos)):
                 atom_name = "{}{}".format(element.capitalize(), i)
-                self.all_atoms[i] = {"element": element,
+                strc.all_atoms[i] = {"element": element,
                                      "name": atom_name,
                                      "coords": [location],
                                      "id": i}
-        if not self.all_atoms:
+        if not strc.all_atoms:
             raise IOError("No atoms found in {}".format(filepath_guo))
-        self.axes = [self.axes]
+        strc.axes = [strc.axes]
+        strc.nframes += 1
+        return strc
 
-    def _read_vasp_file(self, filepath_vasp):
+    @classmethod
+    def _read_vasp_file(cls, filepath_vasp):
+        
+        strc = cls()
+        
         with open(filepath_vasp, "r") as fin:
             # first line is name or comment
             next(fin)
@@ -103,7 +192,7 @@ class MB_Molecule():
             for i in range(3):
                 line = next(fin)
                 coords = list(map(float, line.split()))
-                self.axes.append(Vector(coords) * scale)
+                strc.axes.append(Vector(coords) * scale)
             # probably elements
             elements_list = next(fin).split()
             try:
@@ -122,7 +211,7 @@ class MB_Molecule():
                 cell_matrix = Matrix.Identity(3)
             # - fractional coordinates
             elif line[0] in "Dd":
-                cell_matrix = Matrix(self.axes).transposed()
+                cell_matrix = Matrix(strc.axes).transposed()
             
             for i, element in enumerate(elements):
                 line = next(fin)
@@ -130,14 +219,19 @@ class MB_Molecule():
                 location = cell_matrix * Vector(coords)
                 
                 atom_name = "{}{}".format(element.capitalize(), i)
-                self.all_atoms[i] = {"element": element,
+                strc.all_atoms[i] = {"element": element,
                                      "name": atom_name,
                                      "coords": [location],
                                      "id": i}
-        self.axes = [self.axes]
-
-    def _read_xyz_file(self, filepath_xyz):
-        mask_planes = mask_planes or []
+        strc.axes = [strc.axes]
+        strc.nframes += 1
+        return strc
+    
+    @classmethod
+    def _read_xyz_file(cls, filepath_xyz):
+        
+        strc = cls()
+        
         all_frames = []
         
         element_by_number = dict(
@@ -191,35 +285,40 @@ class MB_Molecule():
                         all_atoms.append([element, atom_name, location, i])
                     
                     all_frames.append(all_atoms)
-                    self.nframes += 1
+                    strc.nframes += 1
                     number_atoms = -1
         
         for element, atom_name, location, i in all_frames[0]:
-            self.all_atoms[i] = {"element": element,
+            strc.all_atoms[i] = {"element": element,
                                  "name": atom_name,
                                  "coords": [location],
                                  "id": index}
         # Add other frames to coordinate lists
         for frame in all_frames[1:]:
             for el, an, loc, i in frame:
-                if self.all_atoms[i]["element"] == el:
-                    self.all_atoms[i]["coords"].append(loc)
+                if strc.all_atoms[i]["element"] == el:
+                    strc.all_atoms[i]["coords"].append(loc)
                 else:
                     raise ValueError(
                         "ERROR: Mismatch across frames in file {}.\n".format(
                             filepath_pdb
                             )
                         + "atom {}: {} (frame 0)".format(
-                            i, self.all_atoms[i]["element"]
+                            i, strc.all_atoms[i]["element"]
                             )
                         + "vs {} (frame {})".format(el, nf+1),
                         level=0
                         )
+        return strc
     
-    def read_abinit_output_file(filepath_abi):
+    @classmethod
+    def _read_abinit_output_file(cls, filepath_abi):
         '''
         read abinit output file
         '''
+        
+        strc = cls()
+        
         all_unit_vectors = []
         
         truncate_manually = False
@@ -267,7 +366,7 @@ class MB_Molecule():
                     rprim.append(acell[0]*Vector([float(f) for f in ls[1:4]]))
                     rprim.append(acell[1]*Vector([float(f) for f in next(fin).split()]))
                     rprim.append(acell[2]*Vector([float(f) for f in next(fin).split()]))
-                    self.axes.append(rprim)
+                    strc.axes.append(rprim)
                 
                 elif "typat" in line and re.search(" typat +( [0-9]+)+ *", line):
                     try:
@@ -299,9 +398,10 @@ class MB_Molecule():
                 
                 elif "== DATASET" in line:
                     # compile all information
+                    strc.nframes += 1
                     for i, (element, location) in enumerate(zip(elements, xangst)):
                         atom_name = "{}{}".format(element.capitalize(), i)
-                        self.all_atoms[i] = {"element": element,
+                        strc.all_atoms[i] = {"element": element,
                                              "name": atom_name,
                                              "coords": [location],
                                              "id": i}
@@ -309,14 +409,14 @@ class MB_Molecule():
             if ionmov > 0:
                 for line in fin:
                     if "Iteration" in line:
-                        self.nframe += 1
+                        strc.nframes += 1
                         while "---OUTPUT" not in line:
                             line = next(fin)
                         next(fin)
                         next(fin)
                         for i in range(natom):
                             coords = Vector([float(f) for f in next(fin).split()]) * A_per_Bohr
-                            self.all_atoms[i]["coords"].append(coords)
+                            strc.all_atoms[i]["coords"].append(coords)
                         
                         # now find cell
                         if optcell > 0:
@@ -335,23 +435,25 @@ class MB_Molecule():
                             rprimd = []
                             for i in range(3):
                                 rprimd.append(Vector([float(f) for f in next(fin).split()]) * fac)
-                            self.axes.append(rprimd)
+                            strc.axes.append(rprimd)
                     elif "== DATASET" in line:
                         break
-        if self.nframe > 1 and len(self.axes) == 1:
-            self.axes = [self.axes for i in range(self.nframe)]
-
-    def read_pdb_file(filepath_pdb):
+        if strc.nframes > 1 and len(strc.axes) == 1:
+            strc.axes = [strc.axes for i in range(strc.nframe)]
+        
+        return strc
+        
+    @classmethod
+    def _read_pdb_file(cls, filepath_pdb):
         '''
         read pdb file (only supports the old standard with < 100k atoms)
         '''
         
+        strc = cls()
+        
+        
         all_frames = []
         all_atoms = {}
-        atoms_by_index = {}
-        bonds = {}
-        # TODO include as GUI option
-        # if double == False: exclude double bonds
         double = False
         with open(filepath_pdb, "r") as fin:
             i = -1
@@ -369,9 +471,8 @@ class MB_Molecule():
                     cy = c*(math.cos(alpha) - math.cos(beta)*math.cos(gamma))
                     cz = math.sqrt(c*c - cx*cx - cy*cy)
                     cvec = Vector((cx,cy,cz))
-                    self.axes.append([avec, bvec, cvec])
+                    strc.axes.append([avec, bvec, cvec])
                 
-                # get atom information
                 elif line[:6] == 'HETATM' or line[:4] == 'ATOM':
                     i += 1
                     coords = list(map(float,
@@ -393,39 +494,33 @@ class MB_Molecule():
                             )
                     all_atoms[index] = [element, atom_name, location, index]
                     
-                # get bond information
                 elif line[:6] == 'CONECT':
-                    # make sure index is greater than 0
+                    # Need to make sure index is greater than 0
                     if int(line[6:11]) > 0:
-                        # base atom
                         atomID1 = int(line[6:11])
-                        if not atomID1 in bonds:
-                            bonds[atomID1] = []
-                        # loop over conect entries
+                        if not atomID1 in strc.bonds:
+                            strc.bonds[atomID1] = []
                         for i in range((len(line) - 11) // 5):
-                            # get connected atomID
                             atomID2 = int(line[11 + i*5 : 16 + i*5])
-                            # only store bond once
                             if atomID2 > 0 and atomID2 > atomID1:
-                                if double or not atomID2 in bonds[atomID1]:
-                                    # append to list
-                                    bonds[atomID1].append(atomID2)
+                                if atomID2 not in strc.bonds[atomID1]:
+                                    strc.bonds[atomID1].append(atomID2)
                 
-                # if the model ends
                 elif line[:6] == 'ENDMDL':
                     debug_print("ENDMDL found.", level=6)
                     
                     all_frames.append(all_atoms)
-                    self.nframes += 1
+                    strc.nframes += 1
                     all_atoms = {}
             
             # If there was only one model and no 'ENDMDL' present in file
             if all_atoms:
                 all_frames.append(all_atoms)
+                strc.nframes += 1
         
         for i in all_frames[0]:
             element, atom_name, location, index = all_frames[0][i]
-            self.all_atoms[i] = {"element": element,
+            strc.all_atoms[i] = {"element": element,
                                  "name": atom_name,
                                  "coords": [location],
                                  "id": i}
@@ -433,25 +528,31 @@ class MB_Molecule():
         for nf, frame in enumerate(all_frames[1:]):
             for i in frame:
                 el, an, loc, index = frame[i]
-                if self.all_atoms[i]["name"] == an:
-                    self.all_atoms[i]["coords"].append(loc)
+                if strc.all_atoms[i]["name"] == an:
+                    strc.all_atoms[i]["coords"].append(loc)
                 else:
                     raise ValueError(
                         "ERROR: Mismatch across frames in file {}.\n".format(
                             filepath_pdb
                             )
                         + "atom {}: {}, {} (frame 0)".format(
-                            i, self.all_atoms[i]["element"],
-                            self.all_atoms[i]["name"]
+                            i, strc.all_atoms[i]["element"],
+                            strc.all_atoms[i]["name"]
                             )
                         + "vs {}, {} (frame {})".format(el, an, nf+1),
                         level=0
                         )
         
-        if self.nframe > 1 and len(self.axes) == 1:
-            self.axes = [self.axes for i in range(self.nframe)]
-
-    def read_qe_input_file(filepath):
+        if strc.nframes > 1 and len(strc.axes) == 1:
+            strc.axes = [strc.axes for i in range(strc.nframe)]
+        
+        return strc
+    
+    @classmethod
+    def _read_qe_input_file(cls, filepath):
+        
+        strc = cls()
+        
         crystal_units = False
         with open(filepath, 'r') as fin:
             # Read all parameters
@@ -466,22 +567,22 @@ class MB_Molecule():
                         for i in range(3):
                             line = next(fin)
                             coords = list(map(float, line.split()))
-                            self.axes.append(Vector(coords) * unit)
+                            strc.axes.append(Vector(coords) * unit)
                     elif "ATOMIC_POSITIONS" in keyval.upper():
                         # set correct conversion matrix
                         cell_matrix = Matrix.Identity(3)
                         if "angstrom" in line.lower():
-                            # Identity is already correct
-                            if scale_distances != 1.0:
-                                debug_print(
-                                    "Found coordinates in Angstrom. Overriding unit.",
-                                    level=1)
+                            cell_matrix = 1.0
+                            #if scale_distances != 1.0:
+                                #debug_print(
+                                    #"Found coordinates in Angstrom. Overriding unit.",
+                                    #level=1)
                         elif "bohr" in line.lower():
                             cell_matrix = A_per_Bohr * cell_matrix
-                            if scale_distances != A_per_Bohr:
-                                debug_print(
-                                    "Found coordinates in Bohr. Overriding unit.", 
-                                    level=1)
+                            #if scale_distances != A_per_Bohr:
+                                #debug_print(
+                                    #"Found coordinates in Bohr. Overriding unit.", 
+                                    #level=1)
                         elif "crystal" in line.lower():
                             # process at the end when both atomic coordinates and 
                             # vectors are read for certain
@@ -509,19 +610,24 @@ class MB_Molecule():
                                 element = "Vac"
                                 atom_name = "Vacancy"
                             
-                            self.all_atoms[i] = {"element": element,
+                            strc.all_atoms[i] = {"element": element,
                                                  "name": atom_name,
                                                  "coords": [location],
                                                  "id": i}
             if crystal_units:
-                cell_matrix = Matrix(self.axes).transposed()
-                for i in self.all_atoms:
-                    location = cell_matrix * self.all_atoms[i]["coords"][0]
-                    self.all_atoms[i]["coords"][0] = location
+                cell_matrix = Matrix(strc.axes).transposed()
+                for i in strc.all_atoms:
+                    location = cell_matrix * strc.all_atoms[i]["coords"][0]
+                    strc.all_atoms[i]["coords"][0] = location
 
-        self.axes = [self.axes]
-
-    def read_qe_rlx_output_file(filepath):
+        strc.axes = [strc.axes]
+        strc.nframes += 1
+        return strc
+    
+    @classmethod
+    def _read_qe_rlx_output_file(cls, filepath):
+        
+        strc = cls()
         
         all_atoms = {}
         all_frames = []
@@ -554,6 +660,7 @@ class MB_Molecule():
             next(fin) # column headers
             cell_matrix = alat * Matrix.Identity(3)
             # read coordinates
+            strc.nframes += 1
             for i in range(n_atoms):
                 line = next(fin)
                 line = line.strip()
@@ -568,7 +675,7 @@ class MB_Molecule():
                     element = "Vac"
                     atom_name = "Vacancy"
                 
-                self.all_atoms[i] = {"element": element,
+                strc.all_atoms[i] = {"element": element,
                                      "name": atom_name,
                                      "coords": [location],
                                      "id": i}
@@ -590,19 +697,20 @@ class MB_Molecule():
                     all_unit_vectors.append(unit_vectors)
                 
                 if "ATOMIC_POSITIONS" in line:
+                    strc.nframes += 1
                     # double check units and set correct conversion matrix
                     if "angstrom" in line.lower():
                         cell_matrix = 1.0 #Matrix.Identity(3)
-                        if scale_distances != 1.0:
-                            debug_print(
-                                "Found coordinates in Angstrom. Overriding unit.", 
-                                level=1)
+                        #if scale_distances != 1.0:
+                            #debug_print(
+                                #"Found coordinates in Angstrom. Overriding unit.", 
+                                #level=1)
                     elif "bohr" in line.lower():
                         cell_matrix = A_per_Bohr #* Matrix.Identity(3)
-                        if scale_distances != A_per_Bohr:
-                            debug_print(
-                                "Found coordinates in Bohr. Overriding unit.",
-                                level=1)
+                        #if scale_distances != A_per_Bohr:
+                            #debug_print(
+                                #"Found coordinates in Bohr. Overriding unit.",
+                                #level=1)
                     elif "crystal" in line.lower():
                         # get unit vectors
                         cell_matrix = Matrix(all_unit_vectors[-1]).transposed()
@@ -614,7 +722,6 @@ class MB_Molecule():
                     
                     # read coordinates
                     for i in range(n_atoms):
-                        self.nframes += 1
                         line = next(fin)
                         line = line.strip()
                         split_list = line.split()
@@ -628,22 +735,21 @@ class MB_Molecule():
                             element = "Vac"
                             atom_name = "Vacancy"
                         
-                        if self.all_atoms[i]["element"] == element:
-                            self.all_atoms[i]["coords"].append(location)
+                        if strc.all_atoms[i]["element"] == element:
+                            strc.all_atoms[i]["coords"].append(location)
                         else:
                             raise ValueError(
                                 "ERROR: Mismatch across frames in file "
                                 + "{}.\n".format(filepath)
                                 + "atom {}: {} (frame 0)".format(
-                                    i, self.all_atoms[i]["element"]
+                                    i, strc.all_atoms[i]["element"]
                                     )
                                 + "vs {} (frame {})".format(element,
-                                                            self.nframes),
+                                                            strc.nframes),
                                 level=0
                                 )
-
-        debug_print("Found {} frames".format(len(all_frames)), level=6)
-        return all_frames, all_unit_vectors
+        
+        return strc
 
     #def read_guo_modes(self, filepath):
         #all_evecs = []
@@ -681,192 +787,192 @@ class MB_Molecule():
                     #break
         #return freqs, all_evecs
     
-    def read_phonopy_mode(filepath, all_frames):
-        mass_dict = {
-            "H": 1.008,
-            "C": 12.011,
-            "N": 14.007,
-            "O": 15.999,
-            "Si": 28.085,
-            "S": 32.06,
-            }
-        masses = [mass_dict[all_frames[0][i][0]] for i in sorted(all_frames[0])]
-        print(masses)
-        print(len(masses))
-        all_evecs = []
-        freqs = []
-        with open(filepath, "r") as fin:
-            nqpt = int(next(fin).split()[-1])
-            nat = int(next(fin).split()[-1])
+    #def read_phonopy_mode(filepath, all_frames):
+        #mass_dict = {
+            #"H": 1.008,
+            #"C": 12.011,
+            #"N": 14.007,
+            #"O": 15.999,
+            #"Si": 28.085,
+            #"S": 32.06,
+            #}
+        #masses = [mass_dict[all_frames[0][i][0]] for i in sorted(all_frames[0])]
+        #print(masses)
+        #print(len(masses))
+        #all_evecs = []
+        #freqs = []
+        #with open(filepath, "r") as fin:
+            #nqpt = int(next(fin).split()[-1])
+            #nat = int(next(fin).split()[-1])
             
-            # reciprocal lattice
-            next(fin)
-            #recip_unit_vectors = []
-            for i in range(3):
-                line = next(fin)
-                #p = "\[([- .0-9]+),([- .0-9]+),([- .0-9]+)\]"
-                #coords = list(map(float, re.search(p, line).group(1,2,3)))
-                #recip_unit_vectors.append(Vector(coords) * alat)
-            # phonon
-            next(fin)
-            for nq in range(nqpt):
-                q = next(fin)
-                next(fin) #band
-                modes = []
-                for nm in range(3*nat):
-                    nmode = int(next(fin).split()[-1])
-                    freq = float(next(fin).split()[-1])
-                    next(fin) # eigenvector
-                    mode = []
-                    for na in range(nat):
-                        next(fin)
-                        coords = []
-                        try:
-                            for i in range(3):
-                                line = next(fin)
-                                p = "\[([- .0-9]+),([- .0-9]+)\]"
-                                real, im = list(map(float, re.search(p, line).group(1,2)))
-                                coords.append(real/math.sqrt(masses[na]))
-                        except AttributeError:
-                            print(line)
-                            raise
-                        mode.append(coords)
-                    freqs.append(freq)
-                    all_evecs.append(mode)
-        for i in range(3):
-            for c in all_evecs[i]:
-                print("{:>8.5f} {:>8.5f} {:>8.5f}".format(*c))
-        return freqs, all_evecs
+            ## reciprocal lattice
+            #next(fin)
+            ##recip_unit_vectors = []
+            #for i in range(3):
+                #line = next(fin)
+                ##p = "\[([- .0-9]+),([- .0-9]+),([- .0-9]+)\]"
+                ##coords = list(map(float, re.search(p, line).group(1,2,3)))
+                ##recip_unit_vectors.append(Vector(coords) * alat)
+            ## phonon
+            #next(fin)
+            #for nq in range(nqpt):
+                #q = next(fin)
+                #next(fin) #band
+                #modes = []
+                #for nm in range(3*nat):
+                    #nmode = int(next(fin).split()[-1])
+                    #freq = float(next(fin).split()[-1])
+                    #next(fin) # eigenvector
+                    #mode = []
+                    #for na in range(nat):
+                        #next(fin)
+                        #coords = []
+                        #try:
+                            #for i in range(3):
+                                #line = next(fin)
+                                #p = "\[([- .0-9]+),([- .0-9]+)\]"
+                                #real, im = list(map(float, re.search(p, line).group(1,2)))
+                                #coords.append(real/math.sqrt(masses[na]))
+                        #except AttributeError:
+                            #print(line)
+                            #raise
+                        #mode.append(coords)
+                    #freqs.append(freq)
+                    #all_evecs.append(mode)
+        #for i in range(3):
+            #for c in all_evecs[i]:
+                #print("{:>8.5f} {:>8.5f} {:>8.5f}".format(*c))
+        #return freqs, all_evecs
 
-    def read_manual_modes(filepath):
-        all_evecs = []
-        with open(filepath, 'r') as fin:
-            for line in fin:
-                ls = list(map(float, line.split()))
-                all_evecs.append([[ls[i], ls[i+1], ls[i+2]] for i in range(0, len(ls), 3)])
-        with open(filepath.rsplit(".",1)[0] + ".freqs", "r") as fin:
-            freqs = [float(line) for line in fin]
+    #def read_manual_modes(filepath):
+        #all_evecs = []
+        #with open(filepath, 'r') as fin:
+            #for line in fin:
+                #ls = list(map(float, line.split()))
+                #all_evecs.append([[ls[i], ls[i+1], ls[i+2]] for i in range(0, len(ls), 3)])
+        #with open(filepath.rsplit(".",1)[0] + ".freqs", "r") as fin:
+            #freqs = [float(line) for line in fin]
                 
-        return freqs, all_evecs
+        #return freqs, all_evecs
 
-    def read_modes(filepath, n_q=1):
-        # read mode file, modes need to be in same order as atoms in input file
-        # currently only supports dynmat.out
-        with open(filepath, 'r') as fin:
-            line = next(fin)
-            q_count = 0
-            while line and q_count != n_q:
-                if 'q =' in line:
-                    q_count += 1
-                    q = list(map(float, line.split()[-3:]))
-                line = next(fin)
-            debug_print("Reading q-point {}: ({}, {}, {})".format(n_q, *q), level=2)
-            all_evecs = []
-            freqs = []
-            for line in fin:
-                lstrip = line.strip()
-                # new mode
-                if lstrip.startswith('omega(') or lstrip.startswith('freq ('):
-                    m = re.search(
-                        '(omega|freq )\(([ 0-9*]+)\).+ ([-.0-9]+)(?= \[cm-1\])', 
-                        lstrip)
-                    freq = float(m.group(3))
-                    freqs.append(freq)
-                    current = []
-                    all_evecs.append(current) # links current to all_evecs
-                elif lstrip.startswith('('):
-                    lsplit = lstrip[1:-1].split()
-                    current.append(list(map(float, lsplit[::2])))
-                elif 'q = ' in line:
-                    break
+    #def read_modes(filepath, n_q=1):
+        ## read mode file, modes need to be in same order as atoms in input file
+        ## currently only supports dynmat.out
+        #with open(filepath, 'r') as fin:
+            #line = next(fin)
+            #q_count = 0
+            #while line and q_count != n_q:
+                #if 'q =' in line:
+                    #q_count += 1
+                    #q = list(map(float, line.split()[-3:]))
+                #line = next(fin)
+            #debug_print("Reading q-point {}: ({}, {}, {})".format(n_q, *q), level=2)
+            #all_evecs = []
+            #freqs = []
+            #for line in fin:
+                #lstrip = line.strip()
+                ## new mode
+                #if lstrip.startswith('omega(') or lstrip.startswith('freq ('):
+                    #m = re.search(
+                        #'(omega|freq )\(([ 0-9*]+)\).+ ([-.0-9]+)(?= \[cm-1\])', 
+                        #lstrip)
+                    #freq = float(m.group(3))
+                    #freqs.append(freq)
+                    #current = []
+                    #all_evecs.append(current) # links current to all_evecs
+                #elif lstrip.startswith('('):
+                    #lsplit = lstrip[1:-1].split()
+                    #current.append(list(map(float, lsplit[::2])))
+                #elif 'q = ' in line:
+                    #break
         
-        return freqs, all_evecs
+        #return freqs, all_evecs
 
-# TODO combine export functions into one and split different fileformats into
-# write functions
-def export_xyz(filepath, selection_only, scale_distances):
-    debug_print("Write to file {}.".format(filepath), level=1)
-    all_atoms = {}
-    if selection_only:
-        objects = bpy.context.selected_objects
-    else:
-        objects = bpy.context.scene.objects
+## TODO combine export functions into one and split different fileformats into
+## write functions
+#def export_xyz(filepath, selection_only, scale_distances):
+    #debug_print("Write to file {}.".format(filepath), level=1)
+    #all_atoms = {}
+    #if selection_only:
+        #objects = bpy.context.selected_objects
+    #else:
+        #objects = bpy.context.scene.objects
     
-    n_atoms = 0
-    for ob in objects:
-        if ob.mb.type == 'ATOM':
-            try:
-                all_atoms[ob.mb.molecule_name].append(
-                    (ob.mb.index, ob.mb.element, get_world_coordinates(ob)))
-            except KeyError:
-                all_atoms[ob.mb.molecule_name] = [(ob.mb.index, ob.mb.element, 
-                                                  get_world_coordinates(ob))]
-            n_atoms += 1
+    #n_atoms = 0
+    #for ob in objects:
+        #if ob.mb.type == 'ATOM':
+            #try:
+                #all_atoms[ob.mb.molecule_name].append(
+                    #(ob.mb.index, ob.mb.element, get_world_coordinates(ob)))
+            #except KeyError:
+                #all_atoms[ob.mb.molecule_name] = [(ob.mb.index, ob.mb.element, 
+                                                  #get_world_coordinates(ob))]
+            #n_atoms += 1
     
-    with open(filepath, "w") as fout:
-        fout.write("{}\n".format(n_atoms))
-        fout.write("This file has been created with Blender "
-                   "and the MolBlend addon.\n")
+    #with open(filepath, "w") as fout:
+        #fout.write("{}\n".format(n_atoms))
+        #fout.write("This file has been created with Blender "
+                   #"and the MolBlend addon.\n")
     
-        for mol_id in sorted(all_atoms):
-            for i, element, location in sorted(all_atoms[mol_id]):
-                l = "{}   {:>10.5f}   {:>10.5f}   {:>10.5f}\n"
-                fout.write(l.format(element, *location))
-        debug_print("Exported {} atoms.".format(n_atoms), level=1)
-    return True
+        #for mol_id in sorted(all_atoms):
+            #for i, element, location in sorted(all_atoms[mol_id]):
+                #l = "{}   {:>10.5f}   {:>10.5f}   {:>10.5f}\n"
+                #fout.write(l.format(element, *location))
+        #debug_print("Exported {} atoms.".format(n_atoms), level=1)
+    #return True
 
 
-def export_pdb(filepath, selection_only, scale_distances):
-    debug_print("Write to file {}.".format(filepath), level=1)
-    all_atoms = {}
-    if selection_only:
-        objects = bpy.context.selected_objects
-    else:
-        objects = bpy.context.scene.objects
+#def export_pdb(filepath, selection_only, scale_distances):
+    #debug_print("Write to file {}.".format(filepath), level=1)
+    #all_atoms = {}
+    #if selection_only:
+        #objects = bpy.context.selected_objects
+    #else:
+        #objects = bpy.context.scene.objects
     
-    n_atoms = 0
-    for ob in objects:
-        if ob.mb.type == 'ATOM':
-            atom_name = ob.mb.atom_name
-            info = (
-                ob.mb.index,
-                atom_name if len(ob.mb.element) != 1 else " " + atom_name,
-                ob.mb.get_molecule().name[:3].upper(),
-                get_world_coordinates(ob),
-                ob.mb.element,
-                )
-            try:
-                all_atoms[ob.mb.molecule_name].append(info)
-            except KeyError:
-                all_atoms[ob.mb.molecule_name] = [info]
-            n_atoms += 1
+    #n_atoms = 0
+    #for ob in objects:
+        #if ob.mb.type == 'ATOM':
+            #atom_name = ob.mb.atom_name
+            #info = (
+                #ob.mb.index,
+                #atom_name if len(ob.mb.element) != 1 else " " + atom_name,
+                #ob.mb.get_molecule().name[:3].upper(),
+                #get_world_coordinates(ob),
+                #ob.mb.element,
+                #)
+            #try:
+                #all_atoms[ob.mb.molecule_name].append(info)
+            #except KeyError:
+                #all_atoms[ob.mb.molecule_name] = [info]
+            #n_atoms += 1
         
-    with open(filepath, "w") as fout:
-        fout.write("REMARK This pdb file has been created with Blender "
-                  "and the addon MolBlend\n"
-                  "REMARK\n"
-                  "REMARK\n")
-        index = 1
-        for mol_id in sorted(all_atoms):
-            for data in sorted(all_atoms[mol_id]):
-                i, name, res_name, coords, element = data
-                l = ("HETATM{ID:>5} {name:<4} {res}     1    {c[0]:8.3f}" 
-                     "{c[1]:8.3f}{c[2]:8.3f}  1.00  0.00          "
-                     "{element:>2}\n")
-                fout.write(l.format(ID=index, name=name[:4], res=res_name, 
-                                    c=coords, element=element))
-                index += 1
-                if index > 99999:
-                    index = 1
-    debug_print("Exported {} atoms.".format(n_atoms), level=1)
-    return True
+    #with open(filepath, "w") as fout:
+        #fout.write("REMARK This pdb file has been created with Blender "
+                  #"and the addon MolBlend\n"
+                  #"REMARK\n"
+                  #"REMARK\n")
+        #index = 1
+        #for mol_id in sorted(all_atoms):
+            #for data in sorted(all_atoms[mol_id]):
+                #i, name, res_name, coords, element = data
+                #l = ("HETATM{ID:>5} {name:<4} {res}     1    {c[0]:8.3f}" 
+                     #"{c[1]:8.3f}{c[2]:8.3f}  1.00  0.00          "
+                     #"{element:>2}\n")
+                #fout.write(l.format(ID=index, name=name[:4], res=res_name, 
+                                    #c=coords, element=element))
+                #index += 1
+                #if index > 99999:
+                    #index = 1
+    #debug_print("Exported {} atoms.".format(n_atoms), level=1)
+    #return True
 
 
-def export_b4w(filepath):
-    # need to link all materials to meshes instead of objects
-    # so first make each mesh single user
-    # then link the material slots to data
-    # export to b4w without autosaving blend file
-    # undo all the changes and revert to state before (or alternatively copy
-    # selection to new file and do everything there)
-    debug_print("Blend4Web export not implemented yet.", level=1)
+#def export_b4w(filepath):
+    ## need to link all materials to meshes instead of objects
+    ## so first make each mesh single user
+    ## then link the material slots to data
+    ## export to b4w without autosaving blend file
+    ## undo all the changes and revert to state before (or alternatively copy
+    ## selection to new file and do everything there)
+    #debug_print("Blend4Web export not implemented yet.", level=1)

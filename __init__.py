@@ -59,12 +59,22 @@ from bpy.props import (StringProperty,
                        PointerProperty,
                        CollectionProperty)
 
-#-- Known Problems -----------------------------------------------------------#
+# TODO BEFORE PUBLISHING
+# - test all file formats, with multiple frames etc.
+
+#-- Known Problems/Missing Features ------------------------------------------#
 # I/O:
 # - Reading input files is not the most stable. Mainly because some input files
 #   don't follow strict formatting (for example XYZ files).
 # - PDB files only support < 100k atoms.
-
+# - Ignores double bonds in PDB files
+# - Bond guessing can get slow for big structures (or large supercells)
+# - QE input files are read in Angstrom, and scale_distances can screw that up
+#
+# Structures:
+# - No double/triple bond drawing.
+# - For bond guessing to work (reasonably), the atomic coordinates must be in
+#   Angstrom
 
 # -----------------------------------------------------------------------------
 #                               GUI
@@ -83,6 +93,9 @@ from bpy.props import (StringProperty,
 # TODO Geometries when adding atom
 
 ### FEATURES
+# TODO add option to work in different unit in Blender (so that bond guessing works as well)
+# TODO add GUI option to adjust bond tolerance and update bondlist/create new bonds automatically
+# TODO add GUI option to ignore hydrogen atoms (or custom set of atoms)
 # TODO add unit cell transforms (shift by lattice parameter, add unit cell, remove unit cell, modify super cell size)
 # TODO frame import
 # TODO export operator
@@ -108,6 +121,7 @@ from bpy.props import (StringProperty,
 # TODO display list of atoms of a molecule and allow changing the order (will affect how it is exported)
 
 ### MAYBES
+# TODO make bond guessing more efficient
 # TODO each new molecule is drawn with default values. Get values from last active object? Or from last changed values?
 # TODO Haven't included Scene management (like delete globally etc.)
 # TODO maybe add driver to vertex group that scales their radius, so that one bond can transition between two "molecules"
