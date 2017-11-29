@@ -152,17 +152,20 @@ class MB_Structure():
             #next(fin)
             molname = next(fin).strip()
             next(fin)
-            strc.axes = [Vector(list(map(float, next(fin).split()))) for i in range(3)]
+            strc.axes = [Vector(list(map(float, next(fin).split())))
+                         for i in range(3)]
             element_list = next(fin).split()
             n_atoms = list(map(int, next(fin).split()))
-            elements = [element_list[i] for i, n in enumerate(n_atoms) for j in range(n)]
+            elements = [element_list[i] 
+                        for i, n in enumerate(n_atoms) for j in range(n)]
             nat = sum(n_atoms)
             coord_type = next(fin).strip()
             if coord_type[0] in "dD":
                 cell_matrix = Matrix(strc.axes).transposed()
             elif coord_type[0] in "cCkK":
                 cell_matrix = Matrix.Identity(3)
-            pos = [cell_matrix*Vector(list(map(float, next(fin).split()))) for i in range(nat)]
+            pos = [cell_matrix*Vector(list(map(float, next(fin).split())))
+                   for i in range(nat)]
                 
             for i, (element, location) in enumerate(zip(elements, pos)):
                 atom_name = "{}{}".format(element.capitalize(), i)
@@ -200,7 +203,8 @@ class MB_Structure():
                 elements = ["Default"] * sum(n_atoms)
             except ValueError:
                 n_atoms = map(int, next(fin).split())
-                elements = [elements_list[i] for i, n in enumerate(n_atoms) for j in range(n)]
+                elements = [elements_list[i] for i, n in enumerate(n_atoms)
+                            for j in range(n)]
             line = next(fin).strip()
             # dynamical switch that is ignored here
             if line[0] in "Ss":
@@ -321,14 +325,6 @@ class MB_Structure():
         
         all_unit_vectors = []
         
-        truncate_manually = False
-        if truncate_manually:
-            print("WARNING: Truncating structure!")
-            xlim = (0, 100)
-            ylim = (0, 100)
-            zlim = (0, 15.5)
-        # Open the file ...
-        
         # some default variables
         optcell = 0
         ionmov = 0
@@ -337,7 +333,8 @@ class MB_Structure():
             for line in fin:
                 if "ionmov" in line and re.search("ionmov +[0-9]+", line):
                     ionmov = int(line.split()[-1])
-                elif "acell" in line and re.search("acell +( [ .0-9E+-]+){3}.*", line):
+                elif ("acell" in line
+                      and re.search("acell +( [ .0-9E+-]+){3}.*", line)):
                     acell_split = line.split()
                     acell = Vector([float(f) for f in acell_split[1:4]])
                     acell_unit = A_per_Bohr
@@ -347,9 +344,10 @@ class MB_Structure():
                         elif acell_split[-1] == "Bohr":
                             acell_unit = A_per_Bohr
                         else:
-                            debug_print("WARNING: Didn't understand acell unit in " 
-                                        "{} ({})".format(filepath_abi, acell_split[-1]),
-                                        level=1)
+                            msg = ("WARNING: Didn't understand acell unit in "
+                                   + "{} ({})".format(filepath_abi,
+                                                      acell_split[-1]))
+                            debug_print(msg, level=1)
                     acell *= acell_unit
                 elif "natom" in line and re.search("natom +[0-9]+", line):
                     natom = int(line.split()[-1])
@@ -357,18 +355,23 @@ class MB_Structure():
                     ndtset = int(line.split()[-1])
                     if ndtset > 1:
                         debug_print("WARNING: More than one dataset present. "
-                            "Will probably result in unwanted behavior.", level=1)
+                            "Will probably result in unwanted behavior.",
+                            level=1)
                 elif "optcell" in line and re.search("optcell +[0-9]+", line):
                     optcell = int(line.split()[-1])
-                elif "rprim" in line and re.search("rprim +( [ .0-9E+-]+){3} *", line):
+                elif ("rprim" in line
+                      and re.search("rprim +( [ .0-9E+-]+){3} *", line)):
                     rprim = []
                     ls = line.split()
                     rprim.append(acell[0]*Vector([float(f) for f in ls[1:4]]))
-                    rprim.append(acell[1]*Vector([float(f) for f in next(fin).split()]))
-                    rprim.append(acell[2]*Vector([float(f) for f in next(fin).split()]))
+                    rprim.append(acell[1]*Vector([float(f)
+                                                  for f in next(fin).split()]))
+                    rprim.append(acell[2]*Vector([float(f)
+                                                  for f in next(fin).split()]))
                     strc.axes.append(rprim)
                 
-                elif "typat" in line and re.search(" typat +( [0-9]+)+ *", line):
+                elif ("typat" in line
+                      and re.search(" typat +( [0-9]+)+ *", line)):
                     try:
                         typat = []
                         ls = line.split()
@@ -376,32 +379,36 @@ class MB_Structure():
                         while len(typat) < natom:
                             typat.extend([int(i) for i in next(fin).split()])
                     except NameError as e:
-                        debug_print("ERROR: natom should be defined before typat", level=1)
+                        msg = "ERROR: natom should be defined before typat"
+                        debug_print(msg, level=1)
                         debug_print(e, level=1)
-                elif "xangst" in line and re.search("xangst +( [ .0-9E+-]+){3} *", line):
+                elif ("xangst" in line
+                      and re.search("xangst +( [ .0-9E+-]+){3} *", line)):
                     try:
                         xangst = []
                         ls = line.split()
                         xangst.append(Vector([float(f) for f in ls[1:4]]))
                         while len(xangst) < natom:
-                            xangst.append(Vector([float(f) for f in next(fin).split()]))
+                            xangst.append(Vector([float(f) 
+                                                  for f in next(fin).split()]))
                     except NameError:
-                        debug_print("ERROR: natom should be defined before xangst")
+                        msg = "ERROR: natom should be defined before xangst"
+                        debug_print(msg, level=1)
                         debug_print(e, level=1)
                 elif "znucl" in line and re.search("znucl +( [.0-9]+)+", line):
                     znucl = [int(i.split('.')[0]) for i in line.split()[1:]]
                     znucl_str = [""] * len(znucl)
-                    for element, vals in ELEMENTS_DEFAULT.items():
+                    for el, vals in ELEMENTS_DEFAULT.items():
                         if vals["atomic number"] in znucl:
-                            znucl_str[znucl.index(vals["atomic number"])] = element
+                            znucl_str[znucl.index(vals["atomic number"])] = el
                     elements = [znucl_str[i-1] for i in typat]
                 
                 elif "== DATASET" in line:
                     # compile all information
                     strc.nframes += 1
-                    for i, (element, location) in enumerate(zip(elements, xangst)):
-                        atom_name = "{}{}".format(element.capitalize(), i)
-                        strc.all_atoms[i] = {"element": element,
+                    for i, (el, location) in enumerate(zip(elements, xangst)):
+                        atom_name = "{}{}".format(el.capitalize(), i)
+                        strc.all_atoms[i] = {"element": el,
                                              "name": atom_name,
                                              "coords": [location],
                                              "id": i}
@@ -415,26 +422,30 @@ class MB_Structure():
                         next(fin)
                         next(fin)
                         for i in range(natom):
-                            coords = Vector([float(f) for f in next(fin).split()]) * A_per_Bohr
-                            strc.all_atoms[i]["coords"].append(coords)
+                            ls = next(fin).split()
+                            coord = Vector([float(f) for f in ls]) * A_per_Bohr
+                            strc.all_atoms[i]["coords"].append(coord)
                         
                         # now find cell
                         if optcell > 0:
-                            while "Real space primitive translations (rprimd)" not in line:
+                            stop = "Real space primitive translations (rprimd)"
+                            while stop not in line:
                                 line = next(fin)
-                                
-                            unit = re.search("\(rprimd\) \[([a-z]+)\]", line).group(1)
+                            pattern = "\(rprimd\) \[([a-z]+)\]"
+                            unit = re.search(pattern, line).group(1)
                             if unit.lower() == "bohr":
                                 fac = A_per_Bohr
                             elif unit.lower().startswith("ang"):
                                 fac = 1.0
                             else:
-                                debug_print("WARNING: Scale of Primitive Cell unit not recognized"
-                                    " ({})".format(unit), level=1)
+                                msg = ("WARNING: Scale of Primitive Cell unit"
+                                       + " not recognized ({})".format(unit))
+                                debug_print(msg, level=1)
                                 fac = 1.0
                             rprimd = []
                             for i in range(3):
-                                rprimd.append(Vector([float(f) for f in next(fin).split()]) * fac)
+                                xyz = [float(f) for f in next(fin).split()]
+                                rprimd.append(Vector(xyz) * fac)
                             strc.axes.append(rprimd)
                     elif "== DATASET" in line:
                         break
@@ -464,7 +475,8 @@ class MB_Structure():
                 
                 if line[:6] == "CRYST1":
                     a, b, c, alpha, beta, gamma = map(float, line.split()[1:7])
-                    alpha, beta, gamma = map(math.radians, (alpha, beta, gamma))
+                    alpha, beta, gamma = map(math.radians, 
+                                             (alpha, beta, gamma))
                     avec = Vector((a, 0., 0.))
                     bvec = Vector((b*math.cos(gamma), b*math.sin(gamma), 0.))
                     cx = c*math.cos(beta)
@@ -559,11 +571,16 @@ class MB_Structure():
             for line in fin:
                 for keyval in line.split(","):
                     if "nat" in keyval.lower():
-                        n_atoms = int(keyval.split('=')[-1].strip().strip(",").strip())
+                        na = keyval.split('=')[-1].strip().strip(",").strip()
+                        n_atoms = int(na)
                     elif "celldm(1)" in keyval.lower():
-                        alat = float(keyval.split('=')[-1].strip().strip(",").strip())
+                        al = keyval.split('=')[-1].strip().strip(",").strip()
+                        alat = float(al)
                     elif "CELL_PARAMETERS" in keyval.upper():
-                        unit = A_per_Bohr if re.search("bohr|cubic", line) else 1.0
+                        if re.search("bohr|cubic", line):
+                            unit = A_per_Bohr
+                        else:
+                            unit = 1.0
                         for i in range(3):
                             line = next(fin)
                             coords = list(map(float, line.split()))
@@ -589,11 +606,16 @@ class MB_Structure():
                             crystal_units = True
                             # get unit vectors
                         elif "alat" in line.lower():
-                            raise ValueError("Unit of ATOMIC_POSITIONS in {} is alat. Implement!".format(filepath))
+                            msg = ("Unit of ATOMIC_POSITIONS in "
+                                   + "{} is alat. Implement!".format(filepath))
+                            raise ValueError(msg)
                             #alat = int(line.split('=')[-1].strip().strip(",").strip())
                             #cell_matrix = alat * A_per_Bohr * cell_matrix
                         else:
-                            raise ValueError("Unit of ATOMIC_POSITIONS in {} unclear.\nLine:\n'{}'".format(filepath, line))
+                            msg = ("Unit of ATOMIC_POSITIONS in "
+                                   + "{} unclear.\n".format(filepath)
+                                   + "Line:\n'{}'".format(line))
+                            raise ValueError(msg)
                         
                         # read coordinates
                         for i in range(n_atoms):
@@ -685,7 +707,8 @@ class MB_Structure():
                 if "CELL_PARAMETERS" in line:
                     # vc-relax calculation
                     if "alat" in line:
-                        alat = float(re.match(r"CELL_PARAMETERS \(alat=(.+)\)$", 
+                        pattern = r"CELL_PARAMETERS \(alat=(.+)\)$"
+                        alat = float(re.match(pattern,
                                             line).group(1)) * A_per_Bohr
                     elif "angstrom" in line:
                         alat = 1.0
@@ -718,7 +741,10 @@ class MB_Structure():
                         #alat = float(line.split('=')[-1].strip().strip(",").strip()) 
                         cell_matrix = alat #* Matrix.Identity(3)
                     else:
-                        raise ValueError("Unit of ATOMIC_POSITIONS in {} unclear.\nLine:\n'{}'".format(filepath, line))
+                        msg = ("Unit of ATOMIC_POSITIONS in "
+                               + "{} unclear.\n".format(filepath)
+                               + "Line:\n'{}'".format(line))
+                        raise ValueError(msg)
                     
                     # read coordinates
                     for i in range(n_atoms):
