@@ -1,1 +1,0 @@
-BOND_RADIUS = 0.15
