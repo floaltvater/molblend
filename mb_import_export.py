@@ -181,6 +181,7 @@ def import_molecule(report,
                     filepath,
                     modepath,
                     n_q,
+                    qvec,
                     molecule,
                     refine_atoms,
                     refine_bonds,
@@ -203,7 +204,9 @@ def import_molecule(report,
         structure = mb_io_files.MB_Structure.from_file(
             filepath,
             unit_fac=scale_distances,
-            modepath=modepath,
+            modefilepath=modepath,
+            n_q=n_q,
+            qvec=qvec,
             )
         
         # some sanity checks

@@ -525,7 +525,7 @@ class mb_scene(PropertyGroup):
             # delete parent
             parent = mol.objects.parent.object
             if parent:
-                if parent in bpy.context.scene.objects:
+                if parent.name in bpy.context.scene.objects:
                     bpy.context.scene.objects.unlink(parent)
                 else:
                     debug_print("Object {} not in scene {}.".format(
@@ -540,7 +540,7 @@ class mb_scene(PropertyGroup):
             # delete dipole
             dipole = mol.objects.dipole.object
             if dipole:
-                if dipole in bpy.context.scene.objects:
+                if dipole.name in bpy.context.scene.objects:
                     bpy.context.scene.objects.unlink(dipole)
                 else:
                     debug_print("Object {} not in scene {}.".format(

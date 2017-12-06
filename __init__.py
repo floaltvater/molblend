@@ -94,6 +94,7 @@ from bpy.props import (StringProperty,
 # TODO Geometries when adding atom
 
 ### FEATURES
+# TODO implement masking objects again
 # TODO import q!=0 modes with phase
 # TODO display bond angles/dihedrals?
 # TODO add option to work in different unit in Blender (so that bond guessing works as well)
@@ -178,6 +179,9 @@ class MB_PT_import(MolBlendPanel, Panel):
         layout = self.layout
         #row = layout.row()
         #row.label("Import")
+        
+        row = layout.row()
+        row.operator("mb.new_import")
         row = layout.row()
         row.prop(mb.import_props, "filepath")
         row = layout.row()

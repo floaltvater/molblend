@@ -109,7 +109,8 @@ class MB_Structure():
         return center_of_mass
     
     @classmethod
-    def from_file(cls, filepath, modefilepath="", unit_fac=1.0):
+    def from_file(cls, filepath, modefilepath="", n_q=1, qvec=(0,0,0),
+                  unit_fac=1.0):
         read_funcs = {
             "xyz": cls._read_xyz_file,
             "pdb": cls._read_pdb_file,
@@ -142,21 +143,22 @@ class MB_Structure():
         
         if modefilepath:
             read_funcs = {
-                "qe_dynmat": self._read_qe_dynmat_out,
-                "yaml": self._read_phonopy_modes,
-                "real": self._read_real_modes,
-                "complex": self._read_complex_modes,
+                "qe_dynmat": structure._read_qe_dynmat_out,
+                "yaml": structure._read_phonopy_modes,
+                "real": structure._read_real_modes,
+                "complex": structure._read_complex_modes,
             }
-            fmt = modepath.rsplit('.')[-1]
+            fmt = modefilepath.rsplit('.')[-1]
             # Determine file format
             #TODO open file and check for QE output
             if not fmt in read_funcs:
                 fmt = "real"
-            if not read_modes_funcs[fmt] == True:
+            ret = read_modes_funcs[fmt](modefilepath, n_q=n_q, qvec=qvec)
+            if not ret == True:
                 debug_print("Problem when reading modes")
                 structure.modes = []
                 structure.freqs = []
-        
+            
     
     @classmethod
     def _read_guo_file(cls, filepath_guo):
@@ -794,7 +796,7 @@ class MB_Structure():
         
         return strc
 
-    def read_complex_modes(self, filepath):
+    def _read_complex_modes(self, filepath):
         #TODO add phase to complex part!!!
         all_evecs = []
         with open(filepath, 'r') as fin:
@@ -808,7 +810,7 @@ class MB_Structure():
         self.freqs = [0.0]*len(all_evecs)
         return True
     
-    def read_real_modes(self, filepath):
+    def _read_real_modes(self, filepath):
         all_evecs = []
         with open(filepath, 'r') as fin:
             for line in fin:

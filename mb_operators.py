@@ -569,6 +569,270 @@ class MB_OT_draw_dipole(Operator):
         mb_utils.check_ob_dimensions(arrow_ob)
         return {'FINISHED'}
 
+class OBJECT_OT_custompath(bpy.types.Operator):
+    bl_idname = "mb.new_import"
+    bl_label = "Import files"
+    __doc__ = ""
+
+
+    #filename_ext = ".txt"
+    #filter_glob = StringProperty(default="*.txt", options={'HIDDEN'})
+
+
+    #this can be look into the one of the export or import python file.
+    #need to set a path so so we can get the file name and path
+    #filepath = StringProperty(name="File Path", description="Filepath used for importing txt files", maxlen= 1024, default= "")
+    #files = CollectionProperty(
+        #name="File Path",
+        #type=bpy.types.OperatorFileListElement,
+        #)
+    directory = StringProperty(
+        name="Directory", description="Directory used for importing the file",
+        maxlen=1024, subtype='FILE_PATH')
+    #filename_ext = "*.pdb;*.xyz"
+    filepath = StringProperty(
+        name="File Path", description="Filepath used for importing one file",
+        maxlen=1024, subtype='FILE_PATH')
+    #directory = StringProperty(
+        #name="Directory", description="Directory used for importing the file",
+        #maxlen=1024, subtype='FILE_PATH')
+    files = CollectionProperty(
+        name="File Path",
+        description="List with file names used for importing",
+        type=bpy.types.OperatorFileListElement)
+    
+    #--- molecule properties -------------------------------------------------#
+    name_mol = StringProperty(
+        name="Molecule Name", description="Name of imported molecule",
+        default="Molecule") # human readable name
+    bond_material = EnumProperty(
+        name="Bond material", description="Choose bond material",
+        items=mb_utils.enums.bond_material, default='ATOMS')
+    bond_color = FloatVectorProperty(
+        name='Bond color',
+        default=(0.8, 0.8, 0.8), subtype='COLOR')
+    draw_style = EnumProperty(
+        name="Display style", description="Style to draw atoms and bonds",
+        items=mb_utils.enums.molecule_styles, default='BAS')
+    radius_type = EnumProperty(
+        name="Radius type",
+        items=mb_utils.enums.radius_types, default='covalent')
+    bond_radius = FloatProperty(
+        name="Bond radius",
+        description="Radius of bonds for Sticks, and Ball and Sticks",
+        default=0.1, min=0.0, max=3.0)
+    
+    # this is a duplicate class from mb_datastructure for
+    class atom_scale(PropertyGroup):
+        name = StringProperty()
+        val = FloatProperty(name="Atom scale", default=0.4, min=0.0, max=5.0,
+                            precision=2)
+    
+    atom_scales = CollectionProperty(type=atom_scale)
+    refine_atoms = IntProperty(
+        name="Refine atoms", description="Refine value for atom meshes",
+        default=8, min=3, max=64)
+    refine_bonds = IntProperty(
+        name="Refine bonds", description="Refine value for atom meshes",
+        default=8, min=3, max=64)
+    bond_type = EnumProperty(
+        name="Bond type", description="Select how bonds should behave",
+        items=mb_utils.enums.bond_types, default='CONSTRAINT')
+    # TODO this might be handy for different units in files
+    #scale_distances = FloatProperty (
+        #name = "Distances", default=1.0, min=0.0001,
+        #description = "Scale factor for all distances")
+    length_unit = EnumProperty(
+        name="Unit",
+        description="Unit in input file, will be converted to Angstrom",
+        items=mb_utils.enums.angstrom_per_unit, default='1.0')
+    length_unit_other = FloatProperty(
+        name="Custom Unit",
+        description="Enter conversion factor in Angstrom/unit in file",
+        default=1.0, min=0.000001)
+    bond_guess = BoolProperty(
+       name="Guess bonds", description="Guess bonds that are not in the file.",
+       default=True)
+    use_mask = StringProperty(
+        name="Masking object",
+        description="Select object that sets boundaries to imported strucure.")
+    mask_flip = BoolProperty(
+        name="Mask flip",
+        description="Invert masking effect (only atoms outside of mask "
+                    "object are imported).")
+    draw_unit_cell = BoolProperty(
+       name="Draw unit cell", description="Draw the unit cell if applicable.",
+       default=False)
+    supercell = IntVectorProperty(
+        name="Supercell", description="Specify supercell dimensions",
+        size=3, default=(1,1,1), min=1, subtype='XYZ')
+    use_center = BoolProperty(
+        name="Object to origin (first frame)",
+        description="Put the object into the global origin, "
+                    "the first frame only",
+        default=False)
+    
+    def execute(self, context):
+        if not len(self.atom_scales):
+            if not len(context.scene.mb.globals.atom_scales):
+                default_scales = {'BALLS': 1.0, 'BAS': 0.4, 'STICKS': 0.001}
+            else:
+                default_scales = {}
+                for style in ('BALLS', 'BAS', 'STICKS'):
+                    val = context.scene.mb.globals.atom_scales[style].val
+                    default_scales[style] = val
+            for style in default_scales:
+                atom_scale = self.atom_scales.add()
+                atom_scale.name = style
+                atom_scale.val = default_scales[style]
+        
+        #import_props = context.scene.mb.globals.import_props
+        #filepath = bpy.path.abspath(import_props.filepath)
+        files = set([os.path.join(self.directory, f.name) for f in self.files])
+        files.add(bpy.path.abspath(self.filepath))
+        
+        for filepath in files:
+            print(filepath)
+            continue
+            if not os.path.exists(filepath):
+                debug_print("ERROR: {} not found".format(filepath), level=0)
+                return {'CANCELLED'}
+            if import_props.modes:
+                modes_path = bpy.path.abspath(import_props.modes_path)
+                if not os.path.exists(modes_path):
+                    debug_print("ERROR: {} not found".format(modes_path), level=0)
+                    return {'CANCELLED'}
+            else:
+                modes_path = ''
+        
+            new_molecule = context.scene.mb.new_molecule(
+                                name_mol=self.name_mol,
+                                draw_style=self.draw_style,
+                                radius_type=self.radius_type,
+                                bond_radius=self.bond_radius,
+                                refine_atoms=self.refine_atoms,
+                                refine_bonds=self.refine_bonds,
+                                atom_scales=self.atom_scales)
+            
+            ## check if select_frames is ok, otherwise import first frame only
+            error_list = []
+            
+            mask = bpy.data.objects.get(self.use_mask)
+            mask_planes = []
+            if not mask and self.use_mask:
+                error_list.append('Mask object not found. Not using mask.')
+            elif mask:
+                world_mat = mask.matrix_world
+                # only rotate normal vectors
+                rot = world_mat.to_3x3().normalized()
+                # get all faces (normal vector, point on plane) from mask object
+                mask_planes = [(rot*pg.normal.copy(),
+                                world_mat*mask.data.vertices[pg.vertices[0]].co)
+                                for pg in mask.data.polygons]
+            if error_list:
+                debug_print('\n'.join(error_list), level=1)
+            
+            if self.length_unit == 'OTHER':
+                scale_distances = self.length_unit_other
+            else:
+                scale_distances = float(self.length_unit)
+            # Execute main routine
+            try:
+                worked = mb_import_export.import_molecule(
+                            self.report,
+                            filepath,
+                            modes_path,
+                            import_props.n_q,
+                            (0,0,0), # qvec
+                            new_molecule,
+                            self.refine_atoms,
+                            self.refine_bonds,
+                            self.bond_type,
+                            scale_distances,
+                            self.bond_guess,
+                            self.use_center,
+                            mask_planes,
+                            self.mask_flip,
+                            self.draw_unit_cell,
+                            self.supercell,
+                            )
+            except:
+                worked = False
+                raise
+            finally:
+                if not worked:
+                    context.scene.mb.remove_molecule(new_molecule)
+        return {'FINISHED'}
+
+
+
+    def draw(self, context):
+        print(dir(self))
+        layout = self.layout
+        row = layout.row()
+        row.prop(self, "name_mol")
+        
+        layout.separator()
+        row = layout.row()
+        row.prop(self, "draw_style")
+        row = layout.row()
+        # Atom props
+        col = row.column()
+        col.prop(self, "refine_atoms")
+        col.prop(self.atom_scales[self.draw_style], "val", text="Atom scaling")
+        col.label(text="Atom radius")
+        col.prop(self, "radius_type", text="")
+        
+        col = row.column()
+        col.prop(self, "refine_bonds")
+        row = layout.row()
+        col.prop(self, "bond_radius")
+        col.label(text="Bond material")
+        col.prop(self, "bond_material", text="")
+        col.prop(self, "bond_color")
+        col.prop(self, "bond_guess")
+        col.prop(self, "bond_type")
+        
+        layout.separator()
+        row = layout.row()
+        row.label(text="Masking object")
+        row.prop_search(self, "use_mask", bpy.data, "objects", text="")
+        row = layout.row()
+        row.prop(self, "mask_flip")
+        
+        layout.separator()
+        row = layout.row()
+        row.prop(self, "use_center")
+        
+        row = layout.row()
+        row.prop(self, "length_unit")
+        row = layout.row()
+        row.active = (self.length_unit == 'OTHER')
+        row.prop(self, "length_unit_other")
+        row = layout.row()
+        row.prop(self, "draw_unit_cell")
+        row = layout.row()
+        row.prop(self, "supercell")
+        
+    def invoke(self, context, event):
+        # before import dialog is opened, initialize atom scales
+        if not len(self.atom_scales):
+            if not len(context.scene.mb.globals.atom_scales):
+                default_scales = {'BALLS': 1.0, 'BAS': 0.4, 'STICKS': 0.001}
+            else:
+                default_scales = {}
+                for style in ('BALLS', 'BAS', 'STICKS'):
+                    val = context.scene.mb.globals.atom_scales[style].val
+                    default_scales[style] = val
+            for style in default_scales:
+                atom_scale = self.atom_scales.add()
+                atom_scale.name = style
+                atom_scale.val = default_scales[style]
+        
+        wm = context.window_manager
+        wm.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
 class MB_OT_import_molecule(Operator):
     bl_idname = "mb.import_molecule"
     bl_label  = "Import XYZ/PDB (*.xyz,*.pdb)"
@@ -786,6 +1050,7 @@ class MB_OT_import_molecule(Operator):
                         filepath,
                         modes_path,
                         import_props.n_q,
+                        (0,0,0), # qvec
                         new_molecule,
                         self.refine_atoms,
                         self.refine_bonds,
