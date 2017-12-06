@@ -104,7 +104,7 @@ def update_active_mode(self, context):
         return
     
     for atom in self.objects.atoms:
-        atom_ob = atom.get_object()
+        atom_ob = atom.object
         atom_id = get_atom_id(self.index, atom_ob.mb.index)
         anim_data = atom_ob.animation_data
         if anim_data:
@@ -167,9 +167,9 @@ def update_atom_element(self, context):
         self.element = elements_map[self.element.lower()]
         # because this assignment calls this function again, just return
         return
-        
+    
     # get object and molecule to change all element specific properties
-    atom_ob = self.get_object()
+    atom_ob = self.object
     molecule = self.get_molecule()
     
     # update mesh and material
@@ -181,7 +181,7 @@ def update_atom_element(self, context):
     
     # update bond materials
     for bond in self.bonds:
-        assign_bond_material(bond.get_object())
+        assign_bond_material(bond.object)
     
     # assign type last, to be able to check if element is newly assigned or
     # just updated
@@ -191,7 +191,7 @@ def update_atom_element(self, context):
 def update_bond_material(self, context):
     debug_print("mb_utils.update_bond_material", level=6)
     for bond in self.objects.bonds:
-        assign_bond_material(bond.get_object())
+        assign_bond_material(bond.object)
 
 
 def update_refine_atoms(self, context):
@@ -206,7 +206,7 @@ def update_refine_atoms(self, context):
                 data = mesh.get_data()
                 # get new temporary atom mesh with new refine value
                 new_data = get_atom_data(element, self, type='MESH', 
-                                         name="tmp_mesh")
+                                         mesh_name="tmp_mesh")
                 # replace mesh data
                 bm = bmesh.new()
                 bm.from_mesh(new_data)
@@ -226,7 +226,7 @@ def update_refine_bonds(self, context):
         data = mesh.get_data()
         # get new temporary bond mesh with new refine value
         name = "tmp_mesh"
-        new_data = get_bond_data(self, type='MESH', name="tmp_mesh")
+        new_data = get_bond_data(self, type='MESH', mesh_name="tmp_mesh")
         # replace mesh data
         bm = bmesh.new()
         bm.from_mesh(new_data)
@@ -261,18 +261,21 @@ def update_molecule_selection(self, context):
         for ob in context.selected_objects:
             ob.select = False
         for col in (mol.objects.atoms, mol.objects.bonds, mol.objects.other):
-            for ob in col:
-                ob.get_object().select = True
-        parent = mol.objects.parent.get_object()
+            for item in col:
+                item.object.select = True
+        parent = mol.objects.parent.object
         parent.select = True
         context.scene.objects.active = parent
+
+def update_molecule_name(self, context):
+    self.objects.parent.object.name = self.name_mol
 
 def update_show_bond_lengths(self, context):
     if self.show_bond_lengths:
         bpy.ops.mb.show_bond_lengths()
         
 def update_show_bond_angles(self, context):
-    if self.show_bond_lengths:
+    if self.show_bond_angles:
         bpy.ops.mb.show_bond_angles()
 
 #--- General functions -------------------------------------------------------#
@@ -458,9 +461,6 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None,
     # we could do lots of stuff but for the example just select.
     return best_obj
 
-
-
-
 def check_ob_dimensions(ob):
     debug_print("mb_utils.check_ob_dimensions", level=6)
     if ob.dimensions.x < 0.0001: #< ob.mb.get_molecule().bond_radius:
@@ -479,29 +479,24 @@ def add_atom(context, location, element, atom_name, molecule):
     # get new unique name for object
     name = "atom_{}".format(get_atom_id(molecule.index, molecule.atom_index))
     
-    mesh_data = get_atom_data(element, molecule, type='MESH', name="")
+    mesh_data = get_atom_data(element, molecule)
     new_atom = bpy.data.objects.new(name, mesh_data)
     context.scene.objects.link(new_atom)
     new_atom.location = location
     
     # set mb properties
     new_atom.mb.name = new_atom.name
-    new_atom.mb.molecule_name = molecule.name
-    new_atom.mb.index = molecule.atom_index
+    new_atom.mb.molecule_ident = molecule.name
     new_atom.mb.atom_name = atom_name
     
-    # add to molecule
-    molecule.atom_index += 1
-    
     # parent to molecule origin
-    new_atom.parent = molecule.objects.parent.get_object()
+    new_atom.parent = molecule.objects.parent.object
     
     # updating the element will call update_atom_element, which assigns a mesh,
     # and sets all the drivers
     new_atom.mb.element = element
     # add atom object and mesh to molecule collections
     molecule.add_object(new_atom)
-    molecule.add_object(new_atom.data)
     
     return new_atom
 
@@ -513,12 +508,15 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
         debug_print('WARNING: add_bond: first_atom == second_atom', level=3)
         return None
     for b in first_atom.mb.bonds:
-        bob = b.get_object()
-        if bob != None and second_atom.name in bob.mb.bonded_atoms:
-            debug_print(
-                "WARNING: add_bond: Bond {}-{} already exists".format(
-                    first_atom.mb.index, second_atom.mb.index), level=3)
-            return None
+        bob = b.object
+        if bob != None:
+            for ba in bob.mb.bonded_atoms:
+                if ba.object == second_atom:
+                    debug_print(
+                        "WARNING: add_bond: Bond {}-{} already exists".format(
+                            first_atom.mb.index, second_atom.mb.index),
+                        level=3)
+                    return None
     # get new unique name for bond
     first_mol = first_atom.mb.get_molecule()
     second_mol = second_atom.mb.get_molecule()
@@ -526,7 +524,7 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
         get_atom_id(first_mol.index, first_atom.mb.index), 
         get_atom_id(second_mol.index, second_atom.mb.index)
         )
-    bond_mesh = get_bond_data(first_mol, type='MESH')
+    bond_mesh = get_bond_data(first_mol)
     new_bond = bpy.data.objects.new(name, bond_mesh)
     context.scene.objects.link(new_bond)
     new_bond.hide = (first_mol.draw_style == 'BALLS')
@@ -534,7 +532,7 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
     # set mb properties
     new_bond.mb.type = 'BOND'
     new_bond.mb.name = new_bond.name
-    new_bond.mb.molecule_name = first_mol.name
+    new_bond.mb.molecule_ident = first_mol.name
     new_bond.mb.add_bonded_atom(first_atom)
     new_bond.mb.add_bonded_atom(second_atom)
     
@@ -556,18 +554,7 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
         c.rest_length = 1.0
         c.volume = 'NO_VOLUME'
         c.target = second_atom
-    elif bond_type == "curve_modifier":
-        # get new bezier curve that hooks two first and second atom
-        curve_ob = first_mol.objects.bond_curve.get_object()
-        molcenter = first_mol.objects.parent.get_object().location
-        bc_data = curve_ob.data
-        # add spline to curve
-        sp = bc_data.splines.new('BEZIER')
-        sp.bezier_points.add(2)
-        for bp, atom in zip(sp.bezier_points[-2:], (first_atom, second_atom)):
-            bp.co = atom.location - molcenter
-            bp.handle_left_type = "VECTOR"
-            bp.handle_right_type = "VECTOR"
+
     elif bond_type == "STATIC":
         y_axis = Vector((0,1,0))
         loc1 = first_atom.location
@@ -584,22 +571,31 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
         
     assign_bond_material(new_bond)
     set_bond_drivers(context, new_bond, new_bond.mb.get_molecule())
-    new_bond.parent = first_mol.objects.parent.get_object()
+    new_bond.parent = first_mol.objects.parent.object
     
     return new_bond
 
 
 #--- Get Mesh functions ------------------------------------------------------#
 
-def get_atom_data(element, molecule, type='MESH', name=""):
+def get_atom_data(element, molecule, type='MESH', mesh_name=""):
+    """
+    Retrieve mesh for a certain element. If mesh_name is given, the mesh is 
+    retrieved from bpy.data.meshes if it exists, or created and assigned that
+    name. Otherwise the mesh is retrieved from molecule.meshes.
+    """
     debug_print("mb_utils.get_atom_data", level=6)
     if type == 'MESH':
-        if name:
-            mesh_name = name
+        if mesh_name:
+            me = bpy.context.blend_data.meshes.get(mesh_name)
         else:
+            element = element.capitalize()
             mesh_name = "atom_mesh_{}.{}".format(molecule.index, element)
-            debug_print("Create {}.".format(mesh_name), level=5)
-        me = bpy.context.blend_data.meshes.get(mesh_name)
+            item = molecule.meshes.get(element)
+            if item:
+                me = item.data
+            else:
+                me = None
         if not me:
             # save last selection to restore later
             selected = bpy.context.selected_objects
@@ -614,6 +610,9 @@ def get_atom_data(element, molecule, type='MESH', name=""):
             me = new_atom.data
             me.name = mesh_name
             
+            item = molecule.meshes.add()
+            item.name = element
+            item.data = me
             # adds material slot to mesh, but don't assign material yet
             new_atom.data.materials.append(None)
             
@@ -627,30 +626,20 @@ def get_atom_data(element, molecule, type='MESH', name=""):
             bpy.context.scene.objects.active = last_active
         return me
 
-
-def get_bond_curve(molecule, name=""):
-    debug_print("mb_utils.get_bond_curve", level=6)
-    if name:
-        curve_name = name
-    else:
-        curve_name = "bond_curve_{}".format(molecule.index)
-    curve = bpy.context.blend_data.curves.get(curve_name)
-    if not curve:
-        curve = bpy.data.curves.new(curve_name, "CURVE")
-        curve.show_handles = False
-
-
-def get_bond_data(molecule, type='MESH', name=""):
+def get_bond_data(molecule, type='MESH', mesh_name=""):
     debug_print("mb_utils.get_bond_data", level=6)
     new_bond = None
     if type == 'MESH':
-        if name:
-            data_name = name
+        if mesh_name:
+            me = bpy.context.blend_data.meshes.get(mesh_name)
         else:
-            data_name = "bond_mesh_{}".format(molecule.index)
-            debug_print("Create {}.".format(data_name), level=5)
-        data = bpy.context.blend_data.meshes.get(data_name)
-        if not data:
+            bond_name = "bond"
+            item = molecule.meshes.get(bond_name)
+            if item:
+                me = item.data
+            else:
+                me = None
+        if not me:
             # save last selection to restore later
             selected = bpy.context.selected_objects
             last_active = bpy.context.object
@@ -662,10 +651,10 @@ def get_bond_data(molecule, type='MESH', name=""):
             for i in range(2):
                 new_bond.data.materials.append(None)
             
-            data = new_bond.data
-            data.name = data_name
+            me = new_bond.data
+            me.name = mesh_name or "bond_mesh_{}".format(molecule.index)
             bm = bmesh.new()
-            bm.from_mesh(data)
+            bm.from_mesh(me)
             
             # rotate and shrink first, then add another row of vertices
             for vert in bm.verts:
@@ -713,20 +702,21 @@ def get_bond_data(molecule, type='MESH', name=""):
             for i, f in enumerate(sorted((f for f in bm.faces), key=key)):
                 f.index = i
             
-            bm.to_mesh(data)
+            bm.to_mesh(me)
             bm.free()
-            data.update()
+            me.update()
     
-    if new_bond:
-        # finally delete object and reselect old selection
-        bpy.context.scene.objects.unlink(new_bond)
-        bpy.data.objects.remove(new_bond)
-        for o in selected:
-            o.select = True
-        bpy.context.scene.objects.active = last_active
+            # finally delete object and reselect old selection
+            bpy.context.scene.objects.unlink(new_bond)
+            bpy.data.objects.remove(new_bond)
+            for o in selected:
+                o.select = True
+            bpy.context.scene.objects.active = last_active
     
-    molecule.add_object(data)
-    return data
+            item = molecule.meshes.add()
+            item.name = mesh_name or bond_name
+            item.data = me
+    return me
 
 
 def get_arrow_data(type='MESH', name="arrow", material=None, 
@@ -855,46 +845,26 @@ def set_atom_drivers(context, atom, molecule):
             drv.expression = "bond_radius"
 
 
-def set_bond_drivers(context, bond, molecule, type='MESH'):
+def set_bond_drivers(context, bond, molecule):
     debug_print("mb_utils.set_bond_drivers", level=6)
-    if type == 'MESH':
-        fc_x = bond.driver_add('scale', 0)
-        fc_z = bond.driver_add('scale', 2)
-        for fcurve in (fc_x, fc_z):
-            drv = fcurve.driver
-            drv.type = 'AVERAGE'
-            drv.show_debug_info = True
-            
-            var = drv.variables.get('bond_radius')
-            if not var:
-                var = drv.variables.new()
-                var.name = 'bond_radius' # name to use in scripting
-                var.type = 'SINGLE_PROP'
-            targ = var.targets[0]
-            targ.id_type = 'SCENE'
-            targ.id = context.scene
-            targ.data_path = 'mb.molecules["{}"].bond_radius'.format(
-                             molecule.name)
 
-    elif type == 'CURVE':
-        bp = bond.data.splines[0].bezier_points
-        for i in range(2):
-            fc_list = bp[i].driver_add('co', -1)
-            for dim, fcurve in zip(('X', 'Y', 'Z'), fc_list):
-                drv = fcurve.driver
-                drv.type = 'AVERAGE'
-                drv.show_debug_info = True
-            
-                var = drv.variables.get('atom_location')
-                if not var:
-                    var = drv.variables.new()
-                    var.name = 'atom_location' # name to use in scripting
-                    var.type = 'TRANSFORMS'
-                targ = var.targets[0]
-                targ.id = bond.mb.bonded_atoms[i].get_object()
-                targ.transform_type = 'LOC_{}'.format(dim)
-                targ.transform_space = 'TRANSFORM_SPACE'
-
+    fc_x = bond.driver_add('scale', 0)
+    fc_z = bond.driver_add('scale', 2)
+    for fcurve in (fc_x, fc_z):
+        drv = fcurve.driver
+        drv.type = 'AVERAGE'
+        drv.show_debug_info = True
+        
+        var = drv.variables.get('bond_radius')
+        if not var:
+            var = drv.variables.new()
+            var.name = 'bond_radius' # name to use in scripting
+            var.type = 'SINGLE_PROP'
+        targ = var.targets[0]
+        targ.id_type = 'SCENE'
+        targ.id = context.scene
+        targ.data_path = 'mb.molecules["{}"].bond_radius'.format(
+                            molecule.name)
 
 #--- Material functions ------------------------------------------------------#
 
@@ -975,8 +945,8 @@ def assign_bond_material(ob):
     
     bond_mol = ob.mb.get_molecule()
     
-    first_atom = ob.mb.bonded_atoms[0].get_object()
-    second_atom = ob.mb.bonded_atoms[1].get_object()
+    first_atom = ob.mb.bonded_atoms[0].object
+    second_atom = ob.mb.bonded_atoms[1].object
     
     first_mol = first_atom.mb.get_molecule()
     second_mol = second_atom.mb.get_molecule()
@@ -984,67 +954,46 @@ def assign_bond_material(ob):
     first_mat = None
     second_mat = None
     
-    if bond_type != 'CURVE':
-        # the molecule properties of the two bonded atoms are used.
-        # to use the bond_mol properties change accordingly
-        if first_mol.bond_material == 'ATOMS':
-            first_mat = first_atom.material_slots[0].material
-        elif first_mol.bond_material == 'GENERIC':
-            first_mat_name = "mat_bond_{}".format(first_mol.index)
-            first_mat = bpy.data.materials.get(first_mat_name)
-            if not first_mat:
-                first_mat = new_material(first_mat_name, molecule=first_mol)
-        
-        if second_mol.bond_material == 'ATOMS':
-            second_mat = second_atom.material_slots[0].material
-        elif second_mol.bond_material == 'GENERIC':
-            second_mat_name = "mat_bond_{}".format(second_mol.index)
-            second_mat = bpy.data.materials.get(second_mat_name)
-            if not second_mat:
-                second_mat = new_material(second_mat_name, molecule=second_mol)
-                
-        # make sure to have at least two material slots
-        for i in range(2 - len(ob.material_slots)):
-            ob.data.materials.append(None)
-        
-        ob.material_slots[0].link = 'OBJECT'
-        ob.material_slots[1].link = 'OBJECT'
-        ob.material_slots[0].material = first_mat
-        ob.material_slots[1].material = second_mat
-
-    elif bond_type == 'CURVE':
-        # the bond_mol properties are used
-        if bond_mol.bond_material == 'ATOMS':
-            debug_print("Atom colored bonds are not yet supported with "
-                        "Curve bonds.", level=2)
-            bond_mol.bond_material == 'GENERIC'
-            # changing bond_material will call this function again
-            return
-        elif bond_mol.bond_material == 'GENERIC':
-            mat_name = "mat_bond_{}".format(bond_mol.index)
-            mat = bpy.data.materials.get(mat_name)
-            if not mat:
-                mat = new_material(mat_name, molecule=bond_mol)
-        
-        # make sure to have at least one material slot
-        if len(ob.material_slots) == 0:
-            ob.data.materials.append(None)
-        ob.material_slots[0].link = 'OBJECT'
-        ob.material_slots[0].material = mat
+    # the molecule properties of the two bonded atoms are used.
+    # to use the bond_mol properties change accordingly
+    if first_mol.bond_material == 'ATOMS':
+        first_mat = first_atom.material_slots[0].material
+    elif first_mol.bond_material == 'GENERIC':
+        first_mat_name = "mat_bond_{}".format(first_mol.index)
+        first_mat = bpy.data.materials.get(first_mat_name)
+        if not first_mat:
+            first_mat = new_material(first_mat_name, molecule=first_mol)
+    
+    if second_mol.bond_material == 'ATOMS':
+        second_mat = second_atom.material_slots[0].material
+    elif second_mol.bond_material == 'GENERIC':
+        second_mat_name = "mat_bond_{}".format(second_mol.index)
+        second_mat = bpy.data.materials.get(second_mat_name)
+        if not second_mat:
+            second_mat = new_material(second_mat_name, molecule=second_mol)
+            
+    # make sure to have at least two material slots
+    for i in range(2 - len(ob.material_slots)):
+        ob.data.materials.append(None)
+    
+    ob.material_slots[0].link = 'OBJECT'
+    ob.material_slots[1].link = 'OBJECT'
+    ob.material_slots[0].material = first_mat
+    ob.material_slots[1].material = second_mat
 
 
 def update_radius_type(self, context):
     debug_print("mb_utils.update_radius_type", level=6)
     for atom in self.objects.atoms:
-        set_atom_drivers(context, atom.get_object(), self)
+        set_atom_drivers(context, atom.object, self)
 
 
 def set_draw_style(self, context):
     debug_print("mb_utils.set_draw_style", level=6)
     for atom in self.objects.atoms:
-        set_atom_drivers(context, atom.get_object(), self)
+        set_atom_drivers(context, atom.object, self)
     
     hide = (self.draw_style == 'BALLS')
     for bond in self.objects.bonds:
-        bond_ob = bond.get_object()
+        bond_ob = bond.object
         bond_ob.hide = hide

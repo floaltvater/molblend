@@ -197,16 +197,13 @@ def import_molecule(report,
     try:
         start = time.time()
         
-        all_frames = []
-        bonds = {}
-        axes = []
-        unit_cell_obs = []
         all_obs = []
-        all_obs.append(molecule.objects.parent.get_object())
+        all_obs.append(molecule.objects.parent.object)
         
         structure = mb_io_files.MB_Structure.from_file(
             filepath,
             unit_fac=scale_distances,
+            modepath=modepath,
             )
         
         # some sanity checks
@@ -220,8 +217,8 @@ def import_molecule(report,
         
         if structure.axes and not len(structure.axes) == structure.nframes:
             raise IOError(("Number of unit vectors ({}) and frames ({})"
-                            " does not match").format(len(axes), 
-                                                        len(all_frames)))
+                            " does not match").format(len(structure.axes), 
+                                                      len(structure.nframes)))
         
         if draw_uc and structure.axes:
             # read unit cell and create cube
@@ -296,7 +293,7 @@ def import_molecule(report,
         
         # Create parent empty at center of mass
         center_of_mass = structure.get_center_of_mass()
-        molecule.objects.parent.get_object().location = center_of_mass
+        molecule.objects.parent.object.location = center_of_mass
         debug_print("center", level=4)
         debug_print(time.time() - start, level=5)
         
@@ -304,7 +301,7 @@ def import_molecule(report,
         atom_obs = {}
         error = set()
         debug_print("", level=4)
-        for index, atom in structure.all_atoms.items():
+        for index, atom in sorted(structure.all_atoms.items()):
             debug_print("\ratom {}".format(index), level=4, end='')
             new_atom = mb_utils.add_atom(bpy.context, 
                                          atom["coords"][0]-center_of_mass, 
@@ -320,7 +317,6 @@ def import_molecule(report,
                 error.add("WARNING: Indeces will not be the same as imported.")
             
             atom_obs[index] = new_atom
-            
             
             #if modes and frequencies and len(modes) == len(frequencies):
             ## bpy.data.actions.new is very slow. Only make one action per atom
@@ -405,14 +401,14 @@ def import_molecule(report,
             debug_print('\n'.join(error), level=1)
         
         if use_center:
-            molecule.objects.parent.get_object().location -= center_of_mass
+            molecule.objects.parent.object.location -= center_of_mass
         
         for ob in unit_cell_obs[-3:]:
             mb_utils.check_ob_dimensions(ob)
         
         # select all objects and make parent active
         bpy.ops.object.select_all(action="DESELECT")
-        bpy.context.scene.objects.active = molecule.objects.parent.get_object()
+        bpy.context.scene.objects.active = molecule.objects.parent.object
         for ob in all_obs:
             ob.select = True
     except:

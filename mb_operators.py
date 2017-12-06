@@ -119,10 +119,15 @@ class MB_OT_modal_add(Operator):
         return mb_utils.is_initialized(context)
     
     def modal(self, context, event):
-        if event.type in ('ESC', ) or not type(self).is_running_bool:
+        if event.type in ('ESC',) or not type(self).is_running_bool:
             return self.cancel(context)
         #print("modal")
         # get 3D Window region
+        
+        if context.active_object and context.active_object.mode == "EDIT":
+            self.report({'ERROR'}, 
+                        "MolBlend modal operator doesn't work in edit mode.")
+            return self.cancel(context)
         
         min_max_lst = []
         for area in context.screen.areas:
@@ -150,32 +155,30 @@ class MB_OT_modal_add(Operator):
             return {'PASS_THROUGH'}
         
         # cursor in View3D Window, continue
-        if event.type in ('RIGHTMOUSE', 'ESC'):
-            self.cancel(context)
-        
         context.window.cursor_modal_set("CROSSHAIR")
-        if bpy.ops.object.select_all.poll():
-            bpy.ops.object.select_all(action='DESELECT')
-            hover_ob = mb_utils.return_cursor_object(context, event,
-                                                    mb_type='ATOM')
-            if hover_ob is not None:
-                hover_ob.select = True
-            context.scene.objects.active = hover_ob
+        
+        bpy.ops.object.select_all(action='DESELECT')
+        hover_ob = mb_utils.return_cursor_object(context, event,
+                                                mb_type='ATOM')
+        if hover_ob is not None:
+            hover_ob.select = True
+            context.scene.mb.modal_last_active = hover_ob
+        context.scene.objects.active = hover_ob
+    
         if (event.type == 'LEFTMOUSE' and event.value == 'PRESS'):
             bpy.ops.mb.add_atom('INVOKE_DEFAULT',
                                 shift=event.shift,
                                 ctrl=event.ctrl,
                                 alt=event.alt)
+            context.scene.mb.modal_last_active = context.scene.objects.active
             return {'RUNNING_MODAL'}
         return {'PASS_THROUGH'}
         
         
     def invoke(self, context, event):
         if context.area.type == 'VIEW_3D':
-            
-            # to allow toggling
             if type(self).is_running_bool == True:
-                type(self).is_running_bool = False
+                self.cancel(context)
             else:
                 type(self).is_running_bool = True
             context.window_manager.modal_handler_add(self)
@@ -184,9 +187,11 @@ class MB_OT_modal_add(Operator):
             return {'CANCELLED'}
 
     def cancel(self, context):
-        print("cancel")
+        debug_print("cancel modal", level=6)
         type(self).is_running_bool = False
         context.window.cursor_modal_set('DEFAULT')
+        context.scene.objects.active = context.scene.mb.modal_last_active
+        context.scene.mb.modal_last_active = None
         return {'CANCELLED'}
 
 class MB_OT_make_static(Operator):
@@ -201,75 +206,27 @@ class MB_OT_make_static(Operator):
     @classmethod
     def poll(cls, context):
         return True
-    
-    #def draw(self, context):
-        #layout = self.layout
-        #row = layout.row()
-        #row.prop(self, "element")
-        #col = layout.column()
-        #col.prop(self, "coord_3d", text="Location")
-        #col = layout.column()
-        #col.prop(self, "first_atom_name", text="Bond to")
-    
-    def invoke(self, context, event):
-        return self.execute(context)
-    
-    def execute(self, context):
-        #i = 0
-        for ob in context.selected_editable_objects:
-            if ob.mb.type == 'BOND':
-                # remove constraints
-                mat = ob.matrix_world.copy()
-                for cname in ("mb.stretch", "mb.parent"):
-                    c = ob.constraints.get(cname, None)
-                    if c:
-                        ob.constraints.remove(c)
-                        #i += 1
-                ob.parent = ob.mb.get_molecule().objects.parent.get_object()
-                ob.matrix_world = mat
-        #print("removed", i, "constraints")
-        return {'FINISHED'}
 
-class MB_OT_export_to_blend4web(Operator):
-    '''
-    
-    '''
-    bl_idname = "mb.export_to_blend4web"
-    bl_label = "Make static"
-    bl_options = {'UNDO', 'REGISTER'}
-    bl_description = "remove bond constraints"
-    
-    @classmethod
-    def poll(cls, context):
-        return True
-    
-    #def draw(self, context):
-        #layout = self.layout
-        #row = layout.row()
-        #row.prop(self, "element")
-        #col = layout.column()
-        #col.prop(self, "coord_3d", text="Location")
-        #col = layout.column()
-        #col.prop(self, "first_atom_name", text="Bond to")
-    
     def invoke(self, context, event):
         return self.execute(context)
     
+    def remove_constraints(self, ob):
+        mat = ob.matrix_world.copy()
+        for cname in ("mb.stretch", "mb.parent"):
+            c = ob.constraints.get(cname, None)
+            if c:
+                ob.constraints.remove(c)
+        ob.parent = ob.mb.get_molecule().objects.parent.object
+        ob.matrix_world = mat
+    
     def execute(self, context):
-        #i = 0
         for ob in context.selected_editable_objects:
             if ob.mb.type == 'BOND':
-                mat = ob.matrix_world.copy()
-                for cname in ("mb.stretch", "mb.parent"):
-                    c = ob.constraints.get(cname, None)
-                    if c:
-                        ob.constraints.remove(c)
-                        #i += 1
-                ob.parent = ob.mb.get_molecule().objects.parent.get_object()
-                ob.matrix_world = mat
-                # now apply uniform scale, otherwise Blend4web complains
-                TODO
-        #print("removed", i, "constraints")
+                self.remove_constraints(ob)
+            elif ob.mb.type == 'ATOM':
+                for bond in ob.mb.bonds:
+                    self.remove_constraints(bond.object)
+                
         return {'FINISHED'}
 
 class MB_OT_add_atom(Operator):
@@ -283,6 +240,9 @@ class MB_OT_add_atom(Operator):
     element = StringProperty(name="Element", default="C")
     coord_3d = FloatVectorProperty(
         name="3D position", description="3D position of new atom",
+        size=3, default=(0.0,0.0,0.0), subtype='XYZ')
+    parent_coord_3d = FloatVectorProperty(
+        name="3D position", description="3D position of parent molecule",
         size=3, default=(0.0,0.0,0.0), subtype='XYZ')
     depth_location = FloatVectorProperty(
         name="Depth", description="Depth of the new atom",
@@ -361,7 +321,7 @@ class MB_OT_add_atom(Operator):
                             context, first_atom, new_atom, self.coord_3d,
                             length=-1)
             
-            new_atom.location = self.coord_3d
+            new_atom.location = self.coord_3d - self.parent_coord_3d
             # sometimes, when bond is exactly along axis, the dimension goes
             # to zero due to the stretch constraint
             # check for this case and fix it
@@ -381,7 +341,7 @@ class MB_OT_add_atom(Operator):
                 context.scene.objects.unlink(new_atom)
                 bpy.data.objects.remove(new_atom)
                 new_bond = context.scene.objects.get(self.new_bond_name)
-                if new_bond and hover_ob:
+                if new_bond:
                     context.scene.mb.remove_object(new_bond)
                     mb_utils.add_bond(context, first_atom, hover_ob)
             return {'FINISHED'}
@@ -400,13 +360,16 @@ class MB_OT_add_atom(Operator):
         
         if hover_ob:
             self.first_atom_name = hover_ob.name
-            self.depth_location = hover_ob.location
+            molecule = hover_ob.mb.get_molecule()
+            self.parent_coord_3d = molecule.objects.parent.object.location
+            self.depth_location = hover_ob.location + self.parent_coord_3d
         else:
             self.first_atom_name = " "
             self.depth_location = context.scene.cursor_location.copy()
         mouse_2d = event.mouse_x, event.mouse_y
         self.coord_3d = mb_utils.mouse_2d_to_location_3d(
             context, mouse_2d, depth=self.depth_location)
+        self.coord_3d -= self.parent_coord_3d
         
         ret_exe = self.execute(context)
         
@@ -421,8 +384,7 @@ class MB_OT_add_atom(Operator):
     
     def execute(self, context):
         first_atom = context.scene.objects.get(self.first_atom_name)
-        # first_atom is only a non-atom if it was manually selected by user.
-        # so throw a warning and stop operator
+
         if first_atom and first_atom.mb.type != 'ATOM':
             self.first_atom_name = " "
             first_atom = None
@@ -446,6 +408,7 @@ class MB_OT_add_atom(Operator):
         if first_atom:
             new_bond = mb_utils.add_bond(context, first_atom, new_atom)
             self.new_bond_name = new_bond.name
+            new_bond.select = True
         
         context.scene.objects.active = new_atom
         new_atom.select = True
@@ -468,7 +431,7 @@ class MB_OT_select_bonded(Operator):
         # recursive functions
         def atom(ob):
             for b in ob.mb.bonds:
-                bob = b.get_object()
+                bob = b.object
                 if bob not in objects:
                     objects.append(bob)
                     bob.select = True
@@ -477,7 +440,7 @@ class MB_OT_select_bonded(Operator):
         
         def bond(ob):
             for a in ob.mb.bonded_atoms:
-                aob = a.get_object()
+                aob = a.object
                 if aob not in objects:
                     objects.append(aob)
                     aob.select = True
@@ -486,7 +449,6 @@ class MB_OT_select_bonded(Operator):
         
         objects = []
         
-        ob = context.object
         for ob in context.selected_objects:
             if ob.mb.type in ('ATOM', 'BOND'):
                 if ob.mb.type == 'ATOM':
@@ -507,7 +469,7 @@ class MB_OT_center_mol_parent(Operator):
     bl_label = "Center"
     bl_options = {'UNDO', 'REGISTER'}
     
-    molecule_name = StringProperty()
+    molecule_ident = StringProperty()
     
     @classmethod
     def poll(cls, context):
@@ -519,30 +481,30 @@ class MB_OT_center_mol_parent(Operator):
     
     def invoke(self, context, event):
         # get molecule from active object
-        self.molecule_name = context.object.mb.get_molecule().name
+        self.molecule_ident = context.object.mb.get_molecule().name
         return self.execute(context)
         
     def execute(self, context):
-        if self.molecule_name:
-            molecule = context.scene.mb.molecules.get(self.molecule_name)
+        if self.molecule_ident:
+            molecule = context.scene.mb.molecules.get(self.molecule_ident)
             if not molecule:
                 debug_print(
                     "ERROR in mb.center_mol_parent: Molecule "
-                    "{} not found in scene.".format(self.molecule_name),
+                    "{} not found in scene.".format(self.molecule_ident),
                     level=0)
                 return {'CANCELLED'}
             else:
                 origin = Vector((0.0,0.0,0.0))
                 atoms = molecule.objects.atoms
-                locs = [atom.get_object().location for atom in atoms]
+                locs = [atom.object.location for atom in atoms]
                 center = sum(locs, origin) / len(molecule.objects.atoms)
                 for atom in molecule.objects.atoms:
-                    atom.get_object().location -= center
-                molecule.objects.parent.get_object().location = center
+                    atom.object.location -= center
+                molecule.objects.parent.object.location = center
             return {'FINISHED'}
         else:
             debug_print(
-                "ERROR in mb.center_mol_parent: No molecule_name set."
+                "ERROR in mb.center_mol_parent: No molecule_ident set."
                 , level=0)
             return {'CANCELLED'}
 
@@ -584,61 +546,28 @@ class MB_OT_draw_dipole(Operator):
         dipole_ob.empty_draw_type = 'SINGLE_ARROW'
         dipole_ob.empty_draw_size = 0.5
         bpy.context.scene.objects.link(dipole_ob)
-        mol.objects.dipole.name = dipole_ob.name
+        mol.objects.dipole = dipole_ob
         dipole_ob.location = self.dipole_vec
-        dipole_ob.parent = mol.objects.parent.get_object()
-        dipole_ob.mb.molecule_name = mol.name
+        dipole_ob.parent = mol.objects.parent.object
+        dipole_ob.mb.molecule_ident = mol.name
         
         # add arrow object
         arrow_mesh = mb_utils.get_arrow_data()
         arrow_ob = bpy.data.objects.new("{}_dipole".format(mol.name_mol),
                                         arrow_mesh)
-        arrow_ob.parent = mol.objects.parent.get_object()
+        arrow_ob.parent = mol.objects.parent.object
         bpy.context.scene.objects.link(arrow_ob)
         bpy.context.scene.objects.active = arrow_ob
-        arrow_ob.mb.molecule_name = mol.name
+        arrow_ob.mb.molecule_ident = mol.name
 
         c = arrow_ob.constraints.new('STRETCH_TO')
         c.name = "mb.stretch"
         c.rest_length = 1.0
         c.volume = 'NO_VOLUME'
         c.target = dipole_ob
-        return {'FINISHED'}
-
-
-class MB_OT_hover(Operator):
-    '''
-    Operator for extending default selection operator
-    '''
-    bl_idname = "mb.hover"
-    bl_label = "Hover selection"
-    bl_options = {'REGISTER'}
-    
-    @classmethod
-    def poll(cls, context):
-        return True
-    
-    def modal(self, context, event):
-        bpy.ops.object.select_all(action='DESELECT')
-        hover_ob = mb_utils.return_cursor_object(context, event)
-        if hover_ob is not None:
-            hover_ob.select = True
-        context.scene.objects.active = hover_ob
-        if event.type in ['ESC', 'LEFTMOUSE']:
-            return {'FINISHED'}
         
-        return {'RUNNING_MODAL'}
-    
-    def invoke(self, context, event):
-        return self.execute(context)
-    
-    def execute(self, context):
-        if context.space_data.type == 'VIEW_3D':
-            context.window_manager.modal_handler_add(self)
-            return {'RUNNING_MODAL'}
-        else:
-            return {'CANCELLED'}
-
+        mb_utils.check_ob_dimensions(arrow_ob)
+        return {'FINISHED'}
 
 class MB_OT_import_molecule(Operator):
     bl_idname = "mb.import_molecule"
@@ -877,7 +806,6 @@ class MB_OT_import_molecule(Operator):
                 context.scene.mb.remove_molecule(new_molecule)
         return {'FINISHED'}
 
-
 def draw_callback_px(self, context):
     try:
         font_id = 0
@@ -892,8 +820,7 @@ def draw_callback_px(self, context):
         
         for ob in context.selected_objects:
             if ob.mb.type == "BOND":
-                locs = [o.get_object().matrix_world.decompose()[0] 
-                        for o in ob.mb.bonded_atoms]
+                locs = [o.object.mb.world_location for o in ob.mb.bonded_atoms]
                 co_3d = (locs[0] + locs[1]) / 2.
                 prj = persp_mat * co_3d.to_4d()
                 x = width/2 + width/2 * (prj.x / prj.w)
@@ -901,7 +828,7 @@ def draw_callback_px(self, context):
                 blf.position(font_id, x, y, 0)
                 blf.draw(font_id, "{:6.4f}".format((locs[1]-locs[0]).length))
     except:
-        print(sys.exc_info()[0])
+        debug_print(sys.exc_info()[0], level=1)
         context.scene.mb.globals.show_bond_lengths = False
 
 class MB_OT_draw_bond_lengths(bpy.types.Operator):

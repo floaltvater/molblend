@@ -79,6 +79,7 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
+# TODO Override Delete operator to delete objects from collections when deleted
 # TODO Make PEP 8 compatible
 # TODO Go over comments
 # TODO Make debug_print more consistent (and add more for higher level verbosity)
@@ -93,6 +94,8 @@ from bpy.props import (StringProperty,
 # TODO Geometries when adding atom
 
 ### FEATURES
+# TODO import q!=0 modes with phase
+# TODO display bond angles/dihedrals?
 # TODO add option to work in different unit in Blender (so that bond guessing works as well)
 # TODO add GUI option to adjust bond tolerance and update bondlist/create new bonds automatically
 # TODO add GUI option to ignore hydrogen atoms (or custom set of atoms)
@@ -147,7 +150,7 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout.operator("mb.initialize")
         
         modal = mb_operators.MB_OT_modal_add.is_running()
-        label = "RMB or ESC to stop" if modal == True else "Use MolBlend"
+        label = "ESC to stop" if modal == True else "Use MolBlend"
         layout.operator("mb.modal_add", text=label)
         #--- tools -----------------------------------------------------------#
         row = layout.row()
@@ -160,71 +163,9 @@ class MB_PT_tools(MolBlendPanel, Panel):
         
         layout.separator()
         layout.operator("mb.make_static")
-        layout.operator("mb.export_to_blend4web")
         layout.operator("mb.select_bonded")
         layout.prop(context.scene.mb.globals, "show_bond_lengths")
-        layout.prop(context.scene.mb.globals, "show_bond_angles")
-
-class MB_PT_atom(MolBlendPanel, Panel):
-    bl_label = "Atom properties"
-    
-    @classmethod
-    def poll(cls, context):
-        return (context.object is not None and 
-                hasattr(context.object, 'mb') and
-                context.object.mb.type == 'ATOM')
-   
-    def draw(self, context):
-        layout = self.layout
-        active_ob = context.object
-        active_ob.mb.draw_properties(context, layout, active_ob)
-
-
-class MB_PT_molecule_properties(MolBlendPanel, Panel):
-    bl_label = "Molecule properties"
-    
-    @classmethod
-    def poll(cls, context):
-        return (context.object is not None and 
-                hasattr(context.object, 'mb') and
-                context.object.mb.get_molecule())
-    
-    def draw(self, context):
-        layout = self.layout
-        active_ob = context.object
-        mol = active_ob.mb.get_molecule()
-        mol.draw_properties(layout)
-
-class MB_PT_vibration_properties(MolBlendPanel, Panel):
-    bl_label = "Molecule vibrations"
-    
-    @classmethod
-    def poll(cls, context):
-        return (context.object is not None and 
-                hasattr(context.object, 'mb') and
-                context.object.mb.get_molecule() and
-                context.object.mb.get_molecule().max_mode > 0)
-    
-    def draw(self, context):
-        layout = self.layout
-        active_ob = context.object
-        mol = active_ob.mb.get_molecule()
-        mol.draw_vibrations(layout)
-
-class MB_PT_molecule_draw_styles(MolBlendPanel, Panel):
-    bl_label = "Molecule draw styles"
-    
-    @classmethod
-    def poll(cls, context):
-        return (context.object is not None and 
-                hasattr(context.object, 'mb') and
-                context.object.mb.get_molecule())
-    
-    def draw(self, context):
-        layout = self.layout
-        active_ob = context.object
-        mol = active_ob.mb.get_molecule()
-        mol.draw_styles(layout)
+        #layout.prop(context.scene.mb.globals, "show_bond_angles")
 
 
 class MB_PT_import(MolBlendPanel, Panel):
@@ -251,6 +192,66 @@ class MB_PT_import(MolBlendPanel, Panel):
         row = layout.row()
         row.active = initialized
         row.operator("mb.import_molecule", text="Import")
+
+
+class MB_PT_atom(MolBlendPanel, Panel):
+    bl_label = "Atom properties"
+    
+    @classmethod
+    def poll(cls, context):
+        active_ob = context.object or context.scene.mb.modal_last_active
+        return hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM'
+   
+    def draw(self, context):
+        layout = self.layout
+        active_ob = context.object or context.scene.mb.modal_last_active
+        active_ob.mb.draw_properties(context, layout, active_ob)
+
+
+class MB_PT_molecule_properties(MolBlendPanel, Panel):
+    bl_label = "Molecule properties"
+    
+    @classmethod
+    def poll(cls, context):
+        active_ob = context.object or context.scene.mb.modal_last_active
+        return hasattr(active_ob, 'mb') and active_ob.mb.get_molecule()
+    
+    def draw(self, context):
+        layout = self.layout
+        active_ob = context.object or context.scene.mb.modal_last_active
+        mol = active_ob.mb.get_molecule()
+        mol.draw_properties(layout)
+
+
+class MB_PT_vibration_properties(MolBlendPanel, Panel):
+    bl_label = "Molecule vibrations"
+    
+    @classmethod
+    def poll(cls, context):
+        active_ob = context.object or context.scene.mb.modal_last_active
+        return (hasattr(active_ob, 'mb') and active_ob.mb.get_molecule()
+                and active_ob.mb.get_molecule().max_mode > 0)
+    
+    def draw(self, context):
+        layout = self.layout
+        active_ob = context.object
+        mol = active_ob.mb.get_molecule()
+        mol.draw_vibrations(layout)
+
+
+class MB_PT_molecule_draw_styles(MolBlendPanel, Panel):
+    bl_label = "Molecule draw styles"
+    
+    @classmethod
+    def poll(cls, context):
+        active_ob = context.object or context.scene.mb.modal_last_active
+        return hasattr(active_ob, 'mb') and active_ob.mb.get_molecule()
+    
+    def draw(self, context):
+        layout = self.layout
+        active_ob = context.object or context.scene.mb.modal_last_active
+        mol = active_ob.mb.get_molecule()
+        mol.draw_styles(layout)
 
 #TODO implement export
 #class MB_PT_export(MolBlendPanel, Panel):

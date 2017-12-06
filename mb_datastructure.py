@@ -23,6 +23,8 @@ else:
     from molblend import mb_utils
 
 import os
+import string
+import random
 
 import bpy
 from bpy.types import PropertyGroup
@@ -39,16 +41,17 @@ from bpy.props import (StringProperty,
 from molblend.mb_helper import debug_print
 
 class mb_object_pointer(PropertyGroup):
-    name = StringProperty(name="Object name")
-    
-    def get_object(self):
-        return bpy.data.objects.get(self.name)
+    #name = StringProperty(name="Object name")
+    object = PointerProperty(name="Object", type=bpy.types.Object)
+    @property
+    def name(self):
+        return self.object.name
 
-class mb_mesh_pointer(PropertyGroup):
-    name = StringProperty(name="Mesh name")
-    
-    def get_data(self):
-        return bpy.data.meshes.get(self.name)
+class mb_element_mesh(PropertyGroup):
+    name = StringProperty(name="Element")
+    data = PointerProperty(name="Mesh", type=bpy.types.Mesh)
+    #def get_data(self):
+        #return bpy.data.meshes.get(self.name)
 
 class atom_scale(PropertyGroup):
     name = StringProperty()
@@ -71,7 +74,7 @@ class mb_object(PropertyGroup):
     type = EnumProperty(
         name="type", description="Select the object type",
         items=mb_utils.enums.object_types, default='NONE')
-    molecule_name = StringProperty(name="Molecule identifier")
+    molecule_ident = StringProperty(name="Molecule identifier")
     
     # used by type == 'ATOM'
     bonds = CollectionProperty(type=mb_object_pointer)
@@ -86,75 +89,58 @@ class mb_object(PropertyGroup):
     bonded_atoms = CollectionProperty(type=mb_object_pointer)
     modes = CollectionProperty(type=mb_atom_mode)
     
+    @property
+    def object(self):
+        return self.id_data
+    @property
+    def world_location(self):
+        return self.id_data.matrix_world.to_translation()
+    
     def get_molecule(self):
-        return bpy.context.scene.mb.molecules.get(self.molecule_name)
+        return bpy.context.scene.mb.molecules.get(self.molecule_ident)
     
-    def get_object(self):
-        ob = bpy.data.objects.get(self.name)
-        if ob == None:
-            debug_print("WARNING: object {} not found.".format(self.name),
-                        level=2)
-        return bpy.data.objects.get(self.name)
-    
-    def add_bond(self, ob, replace_name=""):
+    def add_bond(self, ob):
+        """Add object to bond collection and return new collection item."""
         if not self.type == 'ATOM':
             debug_print("WARNING: Something is trying to add bond to "
                         "non-ATOM type object", level=1)
-            return
+            return None
         
-        ob_name = ob.name
-        if ob_name in self.bonds:
-            item = self.bonds[ob_name]
-        elif replace_name:
-            item = self.bonds.get(replace_name)
-            if item:
-                # if object is already in self.bonds, just delete replace_item
-                if ob_name in self.bonds:
-                    self.bonds.remove_bond(item.get_object())
-                else:
-                    item.name = ob_name
-            else:
-                debug_print("WARNING: {} not found in {}".format(
-                            replace_name, self.bonds), level=3)
+        bond = None
+        for existing in self.bonds:
+            if existing.object == ob:
+                bond = existing
+                break
         else:
-            item = self.bonds.add()
-            item.name = ob_name
-        return item
+            bond = self.bonds.add()
+            bond.object = ob
+        return bond
     
     def remove_bond(self, ob):
         if not self.type == 'ATOM':
             debug_print("WARNING: Something is trying to remove bond from "
                         "non-ATOM type object", level=1)
-            return
+            return None
         for i, b in enumerate(self.bonds):
-            if b.name == ob.name:
+            if b.object == ob:
                 self.bonds.remove(i)
                 return
     
-    def add_bonded_atom(self, ob, replace_name=""):
+    def add_bonded_atom(self, ob):
         if not self.type == 'BOND':
             debug_print("WARNING: Something is trying to add bonded_atom to "
                         "non-BOND type object", level=1)
             return
         
-        ob_name = ob.name
-        if ob_name in self.bonded_atoms:
-            item = self.bonded_atoms[ob_name]
-        elif replace_name:
-            item = self.bonded_atoms.get(replace_name)
-            if item:
-                # if object is in self.bonded_atoms, delete replace_item
-                if ob_name in self.bonded_atoms:
-                    self.bonded_atoms.remove_bonded_atom(item.get_object())
-                else:
-                    item.name = ob_name
-            else:
-                debug_print("WARNING: {} not found in {}".format(
-                            replace_name, self.bonded_atoms), level=3)
+        atom = None
+        for existing in self.bonded_atoms:
+            if existing.object == ob:
+                atom = existing
+                break
         else:
-            item = self.bonded_atoms.add()
-            item.name = ob_name
-        return item
+            atom = self.bonded_atoms.add()
+            atom.object = ob
+        return atom
     
     def remove_bonded_atom(self, ob):
         if not self.type == 'BOND':
@@ -164,7 +150,7 @@ class mb_object(PropertyGroup):
             return
         
         for i, a in enumerate(self.bonded_atoms):
-            if a.name == ob.name:
+            if a.object == ob:
                 self.bonded_atoms.remove(i)
                 return
     
@@ -192,8 +178,6 @@ class mb_object(PropertyGroup):
 class mb_molecule_objects(PropertyGroup):
     atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
     bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
-    bond_curve = PointerProperty(name="Parent", type=mb_object_pointer)
-    meshes = CollectionProperty(name="Molecule meshes", type=mb_mesh_pointer)
     parent = PointerProperty(name="Parent", type=mb_object_pointer)
     dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
     other = CollectionProperty(name="Bonds", type=mb_object_pointer)
@@ -211,13 +195,15 @@ class mb_mode(PropertyGroup):
 class mb_molecule(PropertyGroup):
     index = IntProperty(name="Molecule index")
     name = StringProperty(name="Molecule identifier")
-    name_mol = StringProperty(name="Molecule Name")
+    name_mol = StringProperty(name="Molecule Name", 
+                              update=mb_utils.update_molecule_name)
     # index that increases with each added atom in the molecule, but doesn't 
     # decrease when atom is deleted. => Not an indicator of size of molecule! 
     # Only guarantees uniqueness for atom names
-    atom_index = IntProperty()
+    atom_index = IntProperty(name="Atom counter")
     objects = PointerProperty(name="Molecule objects", 
-        type=mb_molecule_objects)
+                              type=mb_molecule_objects)
+    meshes = CollectionProperty(name="Meshes", type=mb_element_mesh)
     
     # display properties
     bond_material = EnumProperty(
@@ -286,7 +272,9 @@ class mb_molecule(PropertyGroup):
         row = layout.row()
         row.prop(self, "name_mol", text="")
         row = layout.row()
-        row.label("(id: '{}')".format(self.objects.parent.name))
+        row.label("(parent: {}".format(self.objects.parent.name))
+        row = layout.row()
+        row.label("(ident: '{}')".format(self.name))
         
         #row = layout.row()
         #row.active = bool(self.vibrations.max_mode)
@@ -295,16 +283,16 @@ class mb_molecule(PropertyGroup):
         #row.active = bool(self.vibrations.max_mode)
         #row.prop(self.vibrations, "mode_scale")
         
-        if self.objects.parent.get_object():
+        if self.objects.parent.object:
             col = layout.column()
-            col.prop(self.objects.parent.get_object(), "location", 
+            col.prop(self.objects.parent.object, "location", 
                      text="Center of mass")
         row = layout.row()
         row.operator("mb.center_mol_parent")
         
-        if self.objects.dipole.get_object():
+        if self.objects.dipole.object:
             col = layout.column()
-            col.prop(self.objects.dipole.get_object(), "location", 
+            col.prop(self.objects.dipole.object, "location", 
                      text="Dipole")
         else:
             row = layout.row()
@@ -315,7 +303,9 @@ class mb_molecule(PropertyGroup):
         row = layout.row()
         row.label(self.name_mol)
         row = layout.row()
-        row.label("(id: {}".format(self.objects.parent.name))
+        row.label("(parent: {}".format(self.objects.parent.name))
+        row = layout.row()
+        row.label("(ident: {}".format(self.name))
         
         props = {
             "Atom scale": [self.atom_scales[self.draw_style], "val", 10],
@@ -332,67 +322,55 @@ class mb_molecule(PropertyGroup):
             row = layout.row()
             row.prop(data, prop)
         
-    def add_object(self, ob, replace_name=""):
+    def add_object(self, ob):
         '''
-        add an object's name to the molecule's atoms collection
-        if replace_name is given, first atom's name is replaced by the new one
-        if name is already in collection, just return the atom
+        Add an object to the molecule's atoms collection and return the
+        collection item. If object is already in collection, just return the
+        collection item.
         '''
         collection = {
             'ATOM': self.objects.atoms,
             'BOND': self.objects.bonds,
-            'MESH': self.objects.meshes,
             'NONE': self.objects.other
-            }[ob.mb.type]
-        ob_name = ob.name
-        if ob_name in collection:
-            item = collection[ob_name]
-        elif replace_name:
-            item = collection.get(replace_name)
-            if item:
-                # if object is already in collection, just delete replace_item
-                if ob_name in collection:
-                    collection.remove_object(item.get_object())
-                else:
-                    item.name = ob_name
-            else:
-                debug_print(
-                    "WARNING: "
-                    "{} not found in {}".format(replace_name, collection), 
-                    level=3)
+            }
+        objects = collection[ob.mb.type]
+        
+        for existing in objects:
+            if existing.object == ob:
+                item = existing
+                break
         else:
-            item = collection.add()
-            item.name = ob_name
+            item = objects.add()
+            item.object = ob
         return item
     
     def remove_object(self, ob):
         collection = {
             'ATOM': self.objects.atoms,
             'BOND': self.objects.bonds,
-            'MESH': self.objects.meshes,
             'NONE': self.objects.other
-            }[ob.mb.type]
-        for i, a in enumerate(collection):
-            if a.name == ob.name:
-                collection.remove(i)
+            }
+        objects = collection[ob.mb.type]
+        
+        for i, a in enumerate(objects):
+            if a == ob:
+                objects.remove(i)
                 return
     
     def remove_objects(self, ob_list=None):
         ob_list = ob_list or []
-        objects = {'ATOM': [ob.name for ob in ob_list if ob.mb.type == 'ATOM'],
-                   'BOND': [ob.name for ob in ob_list if ob.mb.type == 'BOND'],
-                   'MESH': [ob.name for ob in ob_list if ob.mb.type == 'MESH'],
-                   'NONE': [ob.name for ob in ob_list if ob.mb.type == 'NONE']}
+        objects = {'ATOM': [ob for ob in ob_list if ob.mb.type == 'ATOM'],
+                   'BOND': [ob for ob in ob_list if ob.mb.type == 'BOND'],
+                   'NONE': [ob for ob in ob_list if ob.mb.type == 'NONE']}
         
         collections = {'ATOM': self.objects.atoms,
                       'BOND': self.objects.bonds,
-                      'MESH': self.objects.meshes,
                       'NONE': self.objects.other}
-        for ob_type, ob_name_list in objects.items():
+        for ob_type, obs in objects.items():
             # find all the indices of the objects to delete
             indeces = []
             for i, a in enumerate(collections[ob_type]):
-                if a.name in ob_name_list:
+                if a in obs:
                     indeces.append(i)
             # delete higher numbers first to not mess up the order of the coll.
             for i in reversed(indeces):
@@ -479,20 +457,28 @@ class mb_scn_globals(PropertyGroup):
     import_props = PointerProperty(type=mb_scn_import)
     export_props = PointerProperty(type=mb_scn_export)
     show_bond_lengths = BoolProperty(
-        name="Show bond lengths", default=False, 
+        name="Show bond lengths", default=False,
+        description="Display bond length of selected bonds",
         update=mb_utils.update_show_bond_lengths)
-    show_bond_angles = BoolProperty(
-        name="Show bond lengths", default=False, 
-        update=mb_utils.update_show_bond_angles)
-    
+    #show_bond_angles = BoolProperty(
+        #name="Show bond angles", default=False, 
+        #description="Display bond angle of selected bonds",
+        #update=mb_utils.update_show_bond_angles)
 
 class mb_scene(PropertyGroup):
     elements = CollectionProperty(type=mb_element)
     molecules = CollectionProperty(type=mb_molecule)
     # index that increases with each added molecule, but doesn't decrease when
-    # molecule is deleted. Guarantees uniqueness for molecule names
-    molecule_index = IntProperty()
+    # molecule is deleted.
+    molecule_count = IntProperty(name="Molecule counter")
     globals = PointerProperty(type=mb_scn_globals)
+    # store last active object for modal operator
+    modal_last_active = PointerProperty(name="Last active", type=bpy.types.Object)
+    
+    #@class
+    def id_generator(self, size=6,
+                     chars=string.ascii_uppercase + string.digits):
+        return ''.join(random.choice(chars) for _ in range(size))
     
     def new_molecule(self,
                      name_mol=None,
@@ -504,10 +490,13 @@ class mb_scene(PropertyGroup):
                      atom_scales=None):
         mol = self.molecules.add()
         
-        mol.index = self.molecule_index
-        self.molecule_index += 1
-        mol.name = "{}_{}".format(name_mol or "molecule", mol.index)
-        mol.name_mol = name_mol or "Molecule {}".format(mol.index)
+        new_id = self.id_generator()
+        while new_id in self.molecules:
+            new_id = self.id_generator()
+        mol.name = new_id
+        
+        mol.index = self.molecule_count
+        self.molecule_count += 1
         mol.draw_style = draw_style or self.globals.draw_style
         mol.radius_type = radius_type or self.globals.radius_type
         mol.bond_radius = bond_radius or self.globals.bond_radius
@@ -520,22 +509,23 @@ class mb_scene(PropertyGroup):
         parent_ob.empty_draw_type = 'SPHERE'
         parent_ob.empty_draw_size = 0.3
         bpy.context.scene.objects.link(parent_ob)
-        mol.objects.parent.name = parent_ob.name
-        parent_ob.mb.molecule_name = mol.name
+        mol.objects.parent.object = parent_ob
+        parent_ob.mb.molecule_ident = mol.name
         parent_ob.mb.type = 'PARENT'
+        mol.name_mol = name_mol or "Molecule"
         return mol
     
     def remove_molecule(self, mol):
         # Make sure all objects are deleted first
-        if (0 == len(mol.objects.atoms) and
-            0 == len(mol.objects.other) == len(mol.objects.bonds)):
+        if (0 == len(mol.objects.atoms) == len(mol.objects.bonds)
+              == len(mol.objects.other)):
             # delete all meshes
-            for me in mol.objects.meshes:
-                bpy.data.meshes.remove(me.get_data())
+            for me in mol.meshes:
+                bpy.data.meshes.remove(me.data)
             # delete parent
-            parent = mol.objects.parent.get_object()
+            parent = mol.objects.parent.object
             if parent:
-                if parent.name in bpy.context.scene.objects:
+                if parent in bpy.context.scene.objects:
                     bpy.context.scene.objects.unlink(parent)
                 else:
                     debug_print("Object {} not in scene {}.".format(
@@ -545,6 +535,21 @@ class mb_scene(PropertyGroup):
                 except RuntimeError:
                     debug_print(
                         "Object {} ".format(parent.name)
+                        + "can not be deleted from bpy.data.objects.",
+                        level=1)
+            # delete dipole
+            dipole = mol.objects.dipole.object
+            if dipole:
+                if dipole in bpy.context.scene.objects:
+                    bpy.context.scene.objects.unlink(dipole)
+                else:
+                    debug_print("Object {} not in scene {}.".format(
+                        dipole.name, bpy.context.scene.name), level=1)
+                try:
+                    bpy.data.objects.remove(dipole)
+                except RuntimeError:
+                    debug_print(
+                        "Object {} ".format(dipole.name)
                         + "can not be deleted from bpy.data.objects.",
                         level=1)
             # Finally delete molecule from scene collection
@@ -557,25 +562,22 @@ class mb_scene(PropertyGroup):
                                 level=3)
                     return
         else:
-            ob_list = ([ob.get_object() for ob in mol.objects.atoms] + 
-                       [ob.get_object() for ob in mol.objects.other] + 
-                       [ob.get_object() for ob in mol.objects.bonds])
+            ob_list = ([item.object for item in mol.objects.atoms] + 
+                       [item.object for item in mol.objects.other] + 
+                       [item.object for item in mol.objects.bonds])
             self.remove_objects(ob_list) # will call remove_molecule again
             
     def remove_object(self, ob):
-        if ob.mb.type == 'MESH':
-            debug_print("WARNING: Deleting individual mesh not necessary.",
-                        level=1)
-        elif ob.mb.type == 'ATOM':
+        if ob.mb.type == 'ATOM':
             # remove link from bonds
             for b in ob.mb.bonds:
-                b_ob = b.get_object()
+                b_ob = b.object
                 if b_ob:
                     b_ob.mb.remove_bonded_atom(ob)
         elif ob.mb.type == 'BOND':
             # remove link from atoms
             for a in ob.mb.bonded_atoms:
-                a_ob = a.get_object()
+                a_ob = a.object
                 if a_ob:
                     a_ob.mb.remove_bond(ob)
         # remove link from molecule
@@ -586,36 +588,30 @@ class mb_scene(PropertyGroup):
         bpy.context.scene.objects.unlink(ob)
         bpy.data.objects.remove(ob)
         # check if object was last object in molecule and delete molecule if so
-        if (mol and 0 == len(mol.objects.atoms) == len(mol.objects.other) and
-                0 == len(mol.objects.bonds)):
+        if (mol and 0 == len(mol.objects.atoms) == len(mol.objects.other)
+                      == len(mol.objects.bonds)):
             self.remove_molecule(mol)
     
     def remove_objects(self, ob_list):
         # now collect all objects per molecule
         molecules = {}
-        found_mesh = False
         for ob in ob_list:
-            if ob.mb.type == 'MESH':
-                found_mesh = True
             if ob.mb.type == 'ATOM':
                 # remove link from bonds
                 for b in ob.mb.bonds:
-                    b_ob = b.get_object()
+                    b_ob = b.object
                     if b_ob:
                         b_ob.mb.remove_bonded_atom(ob)
             elif ob.mb.type == 'BOND':
                 # remove link from atoms
                 for a in ob.mb.bonded_atoms:
-                    a_ob = a.get_object()
+                    a_ob = a.object
                     if a_ob:
                         a_ob.mb.remove_bond(ob)
             try:
                 molecules[ob.mb.get_molecule()].append(ob)
             except KeyError:
                 molecules[ob.mb.get_molecule()] = [ob]
-        if found_mesh:
-            debug_print("WARNING: Deleting individual meshes not necessary.", 
-                        level=1)
         
         for mol, ob_list in molecules.items():
             if mol:
@@ -623,10 +619,9 @@ class mb_scene(PropertyGroup):
             for ob in ob_list:
                 bpy.context.scene.objects.unlink(ob)
                 bpy.data.objects.remove(ob)
-        if (mol and 0 == len(mol.objects.atoms) == len(mol.objects.other) and
-                0 == len(mol.objects.bonds)):
+        if (mol and 0 == len(mol.objects.atoms) == len(mol.objects.other)
+                      == len(mol.objects.bonds)):
             self.remove_molecule(mol)
-
 
 class mb_wm_globals(PropertyGroup):
     group_selected_extend = BoolProperty(

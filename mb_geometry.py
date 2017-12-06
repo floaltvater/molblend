@@ -27,11 +27,11 @@ from molblend.mb_helper import debug_print
 
 #--- Geometry functions ------------------------------------------------------#
 
-def get_fixed_angle(context, first_atom, coord_3d, angle_list=None):
+def get_fixed_angle(context, first_loc, coord_3d, angle_list=None):
     debug_print("mb_utils.get_fixed_angle", level=6)
     angle_list = angle_list or []
     # get current vector between first_atom and the mouse pointer
-    bond_vector = coord_3d - first_atom.location
+    bond_vector = coord_3d - first_loc
     
     basis_change_matrix = context.region_data.view_matrix.to_3x3()
     basis_change_matrix.transpose()
@@ -68,7 +68,7 @@ def get_fixed_angle(context, first_atom, coord_3d, angle_list=None):
     # transform back to world coordinates
     new_bond_vector = basis_change_matrix * transformed
     # calculate new coordinates of second atom
-    fixed_vector = first_atom.location + new_bond_vector
+    fixed_vector = first_loc + new_bond_vector
     return fixed_vector
 
 
@@ -78,8 +78,9 @@ def get_fixed_length(context, first_atom, second_atom, coord_3d, length=-1):
         r1 = context.scene.mb.elements[first_atom.mb.element].covalent
         r2 = context.scene.mb.elements[second_atom.mb.element].covalent
         length = r1 + r2
-    bond_vector = (coord_3d - first_atom.location).normalized()
-    return first_atom.location + bond_vector * length
+    first_loc = first_atom.mb.world_location
+    bond_vector = (coord_3d - first_loc).normalized()
+    return first_loc + bond_vector * length
 
 
 def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
@@ -93,21 +94,23 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
     if geometry == 'NONE':
         return coord_3d
     
+    first_loc = first_atom.mb.world_location
+    
     bond_vecs = []
     for bond in first_atom.mb.bonds:
-        bond_ob = bond.get_object()
+        bond_ob = bond.object
         for atom in bond_ob.mb.bonded_atoms:
-            if (not atom.name == first_atom.name 
-                and not atom.name == new_atom.name):
-                bond_vecs.append((atom.get_object().location 
-                                  - first_atom.location).normalized())
+            if (not atom.object == first_atom
+                and not atom.object == new_atom):
+                bond_vecs.append((atom.object.mb.world_location
+                                  - first_loc).normalized())
                 break
     
     # existing number of bonds
     n_bonds = len(bond_vecs)
     
     if geometry == 'GENERAL' or n_bonds == 0:
-        return get_fixed_angle(context, first_atom, coord_3d)
+        return get_fixed_angle(context, first_loc, coord_3d)
     
     elif geometry == 'LINEAR':
         # matrix to change between view and world coordinates
@@ -122,7 +125,7 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
             fixed_xy.append(-Vector((transformed.x, transformed.y)))
         
         # get current vector between first_atom and the mouse pointer
-        bond_vector = coord_3d - first_atom.location
+        bond_vector = coord_3d - first_loc
         
         # bond vector in viewing coordinates
         transformed = basis_change_matrix.inverted() * bond_vector
@@ -137,7 +140,7 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
         fixed_bond_vector = -bond_vecs[pos]
         
         # calculate new coordinates of second atom
-        fixed_vector = first_atom.location + fixed_bond_vector * xy_vec.length
+        fixed_vector = first_loc + fixed_bond_vector * xy_vec.length
         return fixed_vector
 
     elif geometry == 'TRIGONAL':
@@ -145,7 +148,7 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
         basis_change_matrix.transpose()
         
         # get current vector between first_atom and the mouse pointer
-        bond_vector = coord_3d - first_atom.location
+        bond_vector = coord_3d - first_loc
         
         # bond vector in viewing coordinates
         transformed = basis_change_matrix.inverted() * bond_vector
@@ -186,7 +189,7 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
             fixed_bond_vector = bisect_vectors[pos]
             
             # calculate new coordinates of second atom
-            fixed_vector = (first_atom.location 
+            fixed_vector = (first_loc
                             + fixed_bond_vector * xy_vec.length)
             return fixed_vector
         
@@ -220,7 +223,7 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
             fixed_bond_vector = bisect_vectors[pos]
             
             # calculate new coordinates of second atom
-            fixed_vector = (first_atom.location 
+            fixed_vector = (first_loc
                             + fixed_bond_vector * xy_vec.length)
             return fixed_vector
 
