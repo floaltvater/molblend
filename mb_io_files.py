@@ -43,6 +43,11 @@ class MB_Q_Modes():
         self.n_q = n_q
         self.qvec = qvec
 
+class MB_Mode_Collection():
+    
+    def __init__(self):
+        self.qmodes = []
+        
     @classmethod
     def from_file(cls, modefilepath, file_format):
         """
@@ -88,6 +93,7 @@ class MB_Q_Modes():
     def _read_simple_modes(cls, modefilepath):
         
         mode_col = cls()
+        qmode = MB_Q_Modes()
         
         # This is a custom file format similar to the xyz file format
         with open(modefilepath, "r") as fin:
@@ -133,16 +139,16 @@ class MB_Q_Modes():
                                                        Vector(imag)))
                     
                     number_atoms = -1
-                    mode_col.modes.append(new_mode)
-        
-        return [mode_col]
+                    qmode.modes.append(new_mode)
+        mode_col.qmodes.append(qmode)
+        return mode_col
 
     @classmethod
     def _read_qe_dynmat_out(cls, filepath):
         # read mode file, modes need to be in same order as atoms in input file
         # currently only supports dynmat.out
         
-        all_modes = []
+        mode_col = cls()
 
         with open(filepath, 'r') as fin:
             line = next(fin)
@@ -178,11 +184,11 @@ class MB_Q_Modes():
                         new_mode.displacements.append((Vector(real), 
                                                        Vector(imag)))
                     elif '**********' in line:
-                        all_modes.append(qmodes)
+                        mode_col.qmodes.append(qmodes)
                         break
                 line = next(fin)
 
-        return all_modes
+        return mode_col
 
 
 class MB_Structure():

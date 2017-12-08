@@ -178,26 +178,13 @@ def get_world_coordinates(ob):
 #--- Main functions ----------------------------------------------------------#
 
 def import_modes(report,
-                  modefilepath,
-                  molecule):
+                 modefilepath,
+                 molecule):
     
         debug_print("Reading modes file {}".format(modepath), level=4)
         
-        if filepath.rsplit('.')[-1] == 'guo':
-            frequencies, modes = read_guo_modes(modepath)
-        elif modepath.rsplit('.')[-1] == 'yaml':
-            frequencies, modes = read_phonopy_mode(modepath, all_frames)
-        else:
-            #frequencies, modes = read_modes(modepath, n_q)
-            frequencies, modes = read_manual_modes(modepath)
-        if not modes:
-            debug_print("ERROR: Couldn't read any normal modes in file "
-                        "{}".format(modepath),
-                        level=1)
-            report({'ERROR'}, "Couldn't read any normal modes in file "
-                            "{}".format(modepath))
-            return False
-        else:
+        all_modes = mb_io_files.MB_Q_Modes.from_file(modefilepath)
+        
             molecule.max_mode = len(frequencies)
             modes_col = molecule.modes_col
             m = modes_col.add()
