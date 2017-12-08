@@ -183,20 +183,19 @@ def import_modes(report,
     
         debug_print("Reading modes file {}".format(modepath), level=4)
         
-        all_modes = mb_io_files.MB_Q_Modes.from_file(modefilepath)
+        all_modes = mb_io_files.MB_Mode_Collection.from_file(modefilepath)
         
-            molecule.max_mode = len(frequencies)
-            modes_col = molecule.modes_col
+        molecule.max_mode = len(frequencies)
+        modes_col = molecule.modes_col
+        m = modes_col.add()
+        m.index = 0
+        m.name = "mode_0"
+        for i, freq in enumerate(frequencies):
             m = modes_col.add()
-            m.index = 0
-            m.name = "mode_0"
-            for i, freq in enumerate(frequencies):
-                m = modes_col.add()
-                m.index = i+1
-                m.name = "mode_{}".format(i+1)
-                m.freq = freq
-        else:
-            modes = None
+            m.index = i+1
+            m.name = "mode_{}".format(i+1)
+            m.freq = freq
+
 
         # replace the index i in data with the corresponding mode
         if modepath and modes:

@@ -80,7 +80,7 @@ class MB_Mode_Collection():
         }
         if not file_format in read_funcs:
             msg = "ERROR: File format {}".format(file_format)
-            msg += " not implemented yet".
+            msg += " not implemented yet."
             debug_print(msg, level=1)
         
         ret = read_modes_funcs[fmt](modefilepath)
@@ -164,7 +164,7 @@ class MB_Mode_Collection():
                 line = next(fin)
                 
                 new_mode = None
-                for line in fin
+                for line in fin:
                     lstrip = line.strip()
                     # new mode
                     if lstrip.startswith('omega(') or lstrip.startswith('freq ('):
