@@ -28,6 +28,163 @@ from molblend.elements_default import ELEMENTS
 
 A_per_Bohr = 0.529177249
 
+class MB_Mode():
+    
+    def __init__(self):
+        self.displacements = []
+        self.freq = []
+    
+
+class MB_Q_Modes():
+    """This class is a collection of all modes of a q-point.
+    """
+    def __init__(self, n_q=-1, qvec=None):
+        self.modes = []
+        self.n_q = n_q
+        self.qvec = qvec
+
+    @classmethod
+    def from_file(cls, modefilepath, file_format):
+        """
+        Read vibrational modes from file, agnostic of the underlying atomic
+        system.
+        
+        Currently implemented file formats:
+        - qe_dynmat: Quantum espresso (dynmat/matdyn format)
+        - simple: xyz style file with Nx3 (real) or Nx6 (complex) floats
+            (i.e. real_modes.xyz:
+                2
+                freq = 10 cm^-1
+                C  0.1  0.2  0.1
+                O  0.1  0.9  0.1
+                
+                2
+                freq = 0.1 THz
+                C -0.3  0.2  0.1
+                O  0.2 -0.1  0.2
+                
+                etc.
+            )
+            complex: Re_x Im_x Re_y Im_y Re_z Im_z
+            The first column is completely ignored!
+            This format doesn't allow separate q-points.
+        """
+        read_funcs = {
+            "qe_dynmat": cls._read_qe_dynmat_out,
+            "xyz": cls._read_simple_modes
+        }
+        if not file_format in read_funcs:
+            msg = "ERROR: File format {}".format(file_format)
+            msg += " not implemented yet".
+            debug_print(msg, level=1)
+        
+        ret = read_modes_funcs[fmt](modefilepath)
+        if not ret == True:
+            debug_print("Problem when reading modes")
+            structure.modes = []
+            structure.freqs = []
+    
+    @classmethod
+    def _read_simple_modes(cls, modefilepath):
+        
+        mode_col = cls()
+        
+        # This is a custom file format similar to the xyz file format
+        with open(modefilepath, "r") as fin:
+            number_atoms = -1
+            for line in fin:
+                
+                # Simply ignore empty lines
+                if line == "":
+                    continue
+                
+                # Read until I find the number of atoms
+                split_list = line.rsplit()
+                if len(split_list) == 1:
+                    try:
+                        number_atoms = int(split_list[0])
+                    except ValueError:
+                        pass
+                
+                # Read as many lines as there are atoms (plus one comment line)
+                # and repeat the procedure for additional frames
+                if number_atoms > 0:
+                    new_mode = MB_Mode()
+                    # comment line might contain frequency, search for float
+                    line = fin.readline()
+                    m = re.search("[-+]?[0-9]*\.[0-9]+([eEdD][-+]?[0-9]+)?", line)
+                    if m:
+                        new_mode.freqs.append(m.group(0))
+                    else:
+                        new_mode.freqs.append("")
+                    
+                    for i in range(number_atoms):
+                        
+                        split_line = fin.readline().strip().split()
+                        disp = list(map(float, split_list[1:]))
+                        if len(disp) == 3:
+                            real = disp
+                            imag = (0., 0., 0.)
+                        elif len(disp) == 6:
+                            real = disp[::2]
+                            imag = disp[1::2]
+                        
+                        new_mode.displacements.append((Vector(real), 
+                                                       Vector(imag)))
+                    
+                    number_atoms = -1
+                    mode_col.modes.append(new_mode)
+        
+        return [mode_col]
+
+    @classmethod
+    def _read_qe_dynmat_out(cls, filepath):
+        # read mode file, modes need to be in same order as atoms in input file
+        # currently only supports dynmat.out
+        
+        all_modes = []
+
+        with open(filepath, 'r') as fin:
+            line = next(fin)
+            q_count = 0
+            while line:
+                if 'q =' in line:
+                    q_count += 1
+                    q = list(map(float, line.split()[-3:]))
+                qmodes = cls(n_q=q_count, qvec=Vector(q))
+                debug_print("Reading q-point {}: ({}, {}, {})".format(n_q, *q), level=3)
+                
+                line = next(fin) # stars
+                line = next(fin)
+                
+                new_mode = None
+                for line in fin
+                    lstrip = line.strip()
+                    # new mode
+                    if lstrip.startswith('omega(') or lstrip.startswith('freq ('):
+                        if new_mode:
+                            qmodes.modes.append(new_mode)
+                        new_mode = MB_Mode()
+                        m = re.search(
+                            '(omega|freq )\(([ 0-9*]+)\).+ ([-.0-9]+)(?= \[cm-1\])', 
+                            lstrip)
+                        new_mode.freq = float(m.group(3))
+                    elif lstrip.startswith('('):
+                        lsplit = lstrip[1:-1].split()
+                        
+                        disp = list(map(float, lsplit))
+                        real = disp[::2]
+                        imag = disp[1::2]
+                        new_mode.displacements.append((Vector(real), 
+                                                       Vector(imag)))
+                    elif '**********' in line:
+                        all_modes.append(qmodes)
+                        break
+                line = next(fin)
+
+        return all_modes
+
+
 class MB_Structure():
     
     def __init__(self):
@@ -36,8 +193,6 @@ class MB_Structure():
         self.all_atoms = {}
         self.bonds = {}
         self.axes = []
-        self.modes = []
-        self.freqs = []
     
     def guess_bonds(self, tol=0.2):
         '''
@@ -140,24 +295,6 @@ class MB_Structure():
         if unit_fac != 1.0:
             for atom in structure.all_atoms.values():
                 atom["coords"] = [loc*unit_fac for loc in atom["coords"]]
-        
-        if modefilepath:
-            read_funcs = {
-                "qe_dynmat": structure._read_qe_dynmat_out,
-                "yaml": structure._read_phonopy_modes,
-                "real": structure._read_real_modes,
-                "complex": structure._read_complex_modes,
-            }
-            fmt = modefilepath.rsplit('.')[-1]
-            # Determine file format
-            #TODO open file and check for QE output
-            if not fmt in read_funcs:
-                fmt = "real"
-            ret = read_modes_funcs[fmt](modefilepath, n_q=n_q, qvec=qvec)
-            if not ret == True:
-                debug_print("Problem when reading modes")
-                structure.modes = []
-                structure.freqs = []
             
     
     @classmethod
@@ -796,123 +933,7 @@ class MB_Structure():
         
         return strc
 
-    def _read_complex_modes(self, filepath):
-        #TODO add phase to complex part!!!
-        all_evecs = []
-        with open(filepath, 'r') as fin:
-            for line in fin:
-                ls = list(map(float, line.split()))
-                all_evecs.append([[ls[i], ls[i+1], ls[i+2]] for i in range(0, len(ls), 3)])
-        #with open(filepath.rsplit(".",1)[0] + ".freqs", "r") as fin:
-            #freqs = [float(line) for line in fin]
-        
-        self.modes = all_evecs
-        self.freqs = [0.0]*len(all_evecs)
-        return True
-    
-    def _read_real_modes(self, filepath):
-        all_evecs = []
-        with open(filepath, 'r') as fin:
-            for line in fin:
-                ls = list(map(float, line.split()))
-                if len(ls) == 6:
-                    debug_print("Mode file looks like complex modes", level=1)
-                    return False
-                all_evecs.append(ls)
-        
-        self.modes = all_evecs
-        self.freqs = [0.0]*len(all_evecs)
-        return True
 
-    def _read_phonopy_modes(self, filepath):
-        
-        masses = []
-        for i in sorted(self.all_atoms):
-            masses.append(ELEMENTS[self.all_atoms[i]["element"]]["mass"])
-        
-        all_evecs = []
-        freqs = []
-        with open(filepath, "r") as fin:
-            nqpt = int(next(fin).split()[-1])
-            nat = int(next(fin).split()[-1])
-            if nat != len(self.all_atoms):
-                msg = "{} ".format(self.filepath)
-                msg += "contains a different number of atoms than"
-                msg += "{} ".format(filepath)
-                debug_print(msg, level=1)
-                return False
-            
-            # reciprocal lattice
-            next(fin)
-            #recip_unit_vectors = []
-            for i in range(3):
-                line = next(fin)
-                #p = "\[([- .0-9]+),([- .0-9]+),([- .0-9]+)\]"
-                #coords = list(map(float, re.search(p, line).group(1,2,3)))
-                #recip_unit_vectors.append(Vector(coords) * alat)
-            # phonon
-            next(fin)
-            for nq in range(nqpt):
-                q = next(fin)
-                next(fin) #band
-                modes = []
-                for nm in range(3*nat):
-                    nmode = int(next(fin).split()[-1])
-                    freq = float(next(fin).split()[-1])
-                    next(fin) # eigenvector
-                    mode = []
-                    for na in range(nat):
-                        next(fin)
-                        coords = []
-                        try:
-                            for i in range(3):
-                                line = next(fin)
-                                p = "\[([- .0-9]+),([- .0-9]+)\]"
-                                real, im = list(map(float, re.search(p, line).group(1,2)))
-                                coords.append(real/math.sqrt(masses[na]))
-                        except AttributeError:
-                            print(line)
-                            raise
-                        mode.append(coords)
-                    freqs.append(freq)
-                    all_evecs.append(mode)
-        self.modes = all_evecs
-        self.freqs = freqs
-        return True
-
-    def _read_qe_dynmat_out(self, filepath, n_q=1):
-        # read mode file, modes need to be in same order as atoms in input file
-        # currently only supports dynmat.out
-        with open(filepath, 'r') as fin:
-            line = next(fin)
-            q_count = 0
-            while line and q_count != n_q:
-                if 'q =' in line:
-                    q_count += 1
-                    q = list(map(float, line.split()[-3:]))
-                line = next(fin)
-            debug_print("Reading q-point {}: ({}, {}, {})".format(n_q, *q), level=2)
-            all_evecs = []
-            freqs = []
-            for line in fin:
-                lstrip = line.strip()
-                # new mode
-                if lstrip.startswith('omega(') or lstrip.startswith('freq ('):
-                    m = re.search(
-                        '(omega|freq )\(([ 0-9*]+)\).+ ([-.0-9]+)(?= \[cm-1\])', 
-                        lstrip)
-                    freq = float(m.group(3))
-                    freqs.append(freq)
-                    current = []
-                    all_evecs.append(current) # links current to all_evecs
-                elif lstrip.startswith('('):
-                    lsplit = lstrip[1:-1].split()
-                    current.append(list(map(float, lsplit[::2])))
-                elif 'q = ' in line:
-                    break
-        self.modes = all_evecs
-        self.freqs = freqs
-        return True
 
 ## TODO combine export functions into one and split different fileformats into
 ## write functions

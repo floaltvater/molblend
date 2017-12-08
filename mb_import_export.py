@@ -177,11 +177,102 @@ def get_world_coordinates(ob):
 
 #--- Main functions ----------------------------------------------------------#
 
+def import_modes(report,
+                  modefilepath,
+                  molecule):
+    
+        debug_print("Reading modes file {}".format(modepath), level=4)
+        
+        if filepath.rsplit('.')[-1] == 'guo':
+            frequencies, modes = read_guo_modes(modepath)
+        elif modepath.rsplit('.')[-1] == 'yaml':
+            frequencies, modes = read_phonopy_mode(modepath, all_frames)
+        else:
+            #frequencies, modes = read_modes(modepath, n_q)
+            frequencies, modes = read_manual_modes(modepath)
+        if not modes:
+            debug_print("ERROR: Couldn't read any normal modes in file "
+                        "{}".format(modepath),
+                        level=1)
+            report({'ERROR'}, "Couldn't read any normal modes in file "
+                            "{}".format(modepath))
+            return False
+        else:
+            molecule.max_mode = len(frequencies)
+            modes_col = molecule.modes_col
+            m = modes_col.add()
+            m.index = 0
+            m.name = "mode_0"
+            for i, freq in enumerate(frequencies):
+                m = modes_col.add()
+                m.index = i+1
+                m.name = "mode_{}".format(i+1)
+                m.freq = freq
+        else:
+            modes = None
+
+        # replace the index i in data with the corresponding mode
+        if modepath and modes:
+            for all_atoms in all_frames:
+                for index, data in all_atoms.items():
+                    # data = [element, atom_name, location, i]
+                    try:
+                        data[-1] = [mode[data[-1]] for mode in modes]
+                    except (IndexError, ValueError) as e:
+                        debug_print("Error: Modes couldn't be matched with "
+                                    "atoms. ({})".format(e),
+                                    level=1)
+                        report({'ERROR'}, "Modes couldn't be matched with "
+                                    "atoms. ({})".format(e))
+                        modes = None
+                        return False
+                if not modes:
+                    break
+            
+            if modes and frequencies and len(modes) == len(frequencies):
+            # bpy.data.actions.new is very slow. Only make one action per atom
+            # store mode_vecs in atom object and add drivers to fcurves that
+            # point to this list
+                
+                m = new_atom.mb.modes.add()
+                m.name = 0
+                m.index = 0
+                m.freq = 0.0
+                m.vec = (0, 0, 0)
+                
+                for i, mode_vec in enumerate(data[3]):
+                    m = new_atom.mb.modes.add()
+                    m.name = i+1
+                    m.index = i+1
+                    m.freq = frequencies[i]
+                    m.vec = mode_vec
+                
+                anim_data = new_atom.animation_data_create()
+                atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
+                                         new_atom.mb.index)
+                action = bpy.data.actions.new(name="mode_{}".format(atom_id))
+                anim_data.action = action
+                #for dim in range(3):
+                    #fcu = action.fcurves.new(data_path="location", index=dim)
+                    #fcu.keyframe_points.add(3)
+                    #for p in range(3):
+                        #loc = new_atom.location[dim]
+                        #fcu.keyframe_points[p].co = 1.0 + 10*p, loc
+                        #fcu.keyframe_points[p].interpolation = 'BEZIER'
+                # make new group
+                ag = action.groups.new("Location")
+                for dim in range(3):
+                    fcu = action.fcurves.new(data_path="location", index=dim)
+                    fcu.group = ag
+                    fcu.keyframe_points.add(3)
+                    for p in range(3):
+                        loc = new_atom.location[dim]
+                        fcu.keyframe_points[p].co = 1.0 + 10*p, loc
+                        fcu.keyframe_points[p].interpolation = 'BEZIER'
+
+
 def import_molecule(report,
                     filepath,
-                    modepath,
-                    n_q,
-                    qvec,
                     molecule,
                     refine_atoms,
                     refine_bonds,
@@ -241,56 +332,6 @@ def import_molecule(report,
             debug_print("guess", level=4)
             debug_print(time.time() - start, level=5)
         
-        # read normal modes
-        
-        #if modepath:
-            #debug_print("Reading modes file {}".format(modepath), level=4)
-            #if filepath.rsplit('.')[-1] == 'guo':
-                #frequencies, modes = read_guo_modes(modepath)
-            #elif modepath.rsplit('.')[-1] == 'yaml':
-                #frequencies, modes = read_phonopy_mode(modepath, all_frames)
-            #else:
-                ##frequencies, modes = read_modes(modepath, n_q)
-                #frequencies, modes = read_manual_modes(modepath)
-            #if not modes:
-                #debug_print("ERROR: Couldn't read any normal modes in file "
-                            #"{}".format(modepath),
-                            #level=1)
-                #report({'ERROR'}, "Couldn't read any normal modes in file "
-                                #"{}".format(modepath))
-                #return False
-            #else:
-                #molecule.max_mode = len(frequencies)
-                #modes_col = molecule.modes_col
-                #m = modes_col.add()
-                #m.index = 0
-                #m.name = "mode_0"
-                #for i, freq in enumerate(frequencies):
-                    #m = modes_col.add()
-                    #m.index = i+1
-                    #m.name = "mode_{}".format(i+1)
-                    #m.freq = freq
-        #else:
-            #modes = None
-
-        ## replace the index i in data with the corresponding mode
-        #if modepath and modes:
-            #for all_atoms in all_frames:
-                #for index, data in all_atoms.items():
-                    ## data = [element, atom_name, location, i]
-                    #try:
-                        #data[-1] = [mode[data[-1]] for mode in modes]
-                    #except (IndexError, ValueError) as e:
-                        #debug_print("Error: Modes couldn't be matched with "
-                                    #"atoms. ({})".format(e),
-                                    #level=1)
-                        #report({'ERROR'}, "Modes couldn't be matched with "
-                                    #"atoms. ({})".format(e))
-                        #modes = None
-                        #return False
-                #if not modes:
-                    #break
-        
         debug_print("read", level=4)
         debug_print(time.time() - start, level=5)
         
@@ -321,47 +362,7 @@ def import_molecule(report,
             
             atom_obs[index] = new_atom
             
-            #if modes and frequencies and len(modes) == len(frequencies):
-            ## bpy.data.actions.new is very slow. Only make one action per atom
-            ## store mode_vecs in atom object and add drivers to fcurves that
-            ## point to this list
-                
-                #m = new_atom.mb.modes.add()
-                #m.name = 0
-                #m.index = 0
-                #m.freq = 0.0
-                #m.vec = (0, 0, 0)
-                
-                #for i, mode_vec in enumerate(data[3]):
-                    #m = new_atom.mb.modes.add()
-                    #m.name = i+1
-                    #m.index = i+1
-                    #m.freq = frequencies[i]
-                    #m.vec = mode_vec
-                
-                #anim_data = new_atom.animation_data_create()
-                #atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
-                                         #new_atom.mb.index)
-                #action = bpy.data.actions.new(name="mode_{}".format(atom_id))
-                #anim_data.action = action
-                ##for dim in range(3):
-                    ##fcu = action.fcurves.new(data_path="location", index=dim)
-                    ##fcu.keyframe_points.add(3)
-                    ##for p in range(3):
-                        ##loc = new_atom.location[dim]
-                        ##fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                        ##fcu.keyframe_points[p].interpolation = 'BEZIER'
-                ## make new group
-                #ag = action.groups.new("Location")
-                #for dim in range(3):
-                    #fcu = action.fcurves.new(data_path="location", index=dim)
-                    #fcu.group = ag
-                    #fcu.keyframe_points.add(3)
-                    #for p in range(3):
-                        #loc = new_atom.location[dim]
-                        #fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                        #fcu.keyframe_points[p].interpolation = 'BEZIER'
-            #elif len(all_frames) > 1:
+
             if structure.nframes > 1:
                 anim_data = new_atom.animation_data_create()
                 atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 

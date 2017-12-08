@@ -569,15 +569,29 @@ class MB_OT_draw_dipole(Operator):
         mb_utils.check_ob_dimensions(arrow_ob)
         return {'FINISHED'}
 
+
+class MD_OT_import_modes(bpy.types.Operator):
+    bl_idname = "mb.import_modes"
+    bl_label = "Import vibrational modes for molecule"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    
+    def draw(self, context):
+        pass
+    
+    def invoke(self, context, event):
+        pass
+    
+    def execute(self, context):
+        pass
+
 class OBJECT_OT_custompath(bpy.types.Operator):
     bl_idname = "mb.new_import"
     bl_label = "Import files"
     __doc__ = ""
 
-
     #filename_ext = ".txt"
     #filter_glob = StringProperty(default="*.txt", options={'HIDDEN'})
-
 
     #this can be look into the one of the export or import python file.
     #need to set a path so so we can get the file name and path
