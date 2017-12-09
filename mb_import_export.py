@@ -262,6 +262,7 @@ def import_molecule(report,
                     molecule,
                     refine_atoms,
                     refine_bonds,
+                    bond_material,
                     bond_type,
                     scale_distances,
                     bond_guess,
@@ -281,9 +282,6 @@ def import_molecule(report,
         structure = mb_io_files.MB_Structure.from_file(
             filepath,
             unit_fac=scale_distances,
-            modefilepath=modepath,
-            n_q=n_q,
-            qvec=qvec,
             )
         
         # some sanity checks
@@ -304,10 +302,10 @@ def import_molecule(report,
             # read unit cell and create cube
             unit_cell_obs = draw_unit_cell(molecule, structure.axes)
             all_obs.extend(unit_cell_obs)
+            for ob in unit_cell_obs[-3:]:
+                mb_utils.check_ob_dimensions(ob)
         elif draw_uc and not structure.axes:
-            debug_print("WARNING: No unit cell vectors read. Currently "
-                        "only supports Quantum Espresso input and output "
-                        "and Abinit output.",
+            debug_print("WARNING: No unit cell vectors read.",
                         level=1)
         
         if sum(supercell) > 3:
@@ -382,6 +380,7 @@ def import_molecule(report,
                                              atom_obs[index2], 
                                              bond_type=bond_type)
                 all_obs.append(new_bond)
+        molecule.bond_material = bond_material
         debug_print("", level=4)
         
         debug_print("bonds", level=4)
@@ -392,9 +391,6 @@ def import_molecule(report,
         
         if use_center:
             molecule.objects.parent.object.location -= center_of_mass
-        
-        for ob in unit_cell_obs[-3:]:
-            mb_utils.check_ob_dimensions(ob)
         
         # select all objects and make parent active
         bpy.ops.object.select_all(action="DESELECT")

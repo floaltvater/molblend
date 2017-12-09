@@ -79,6 +79,10 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
+# TODO clean up deleting objects. There should be ONE function to call when an object needs to be deleted
+#      that takes care of removing it from the molecule, and from Blender itself.
+# TODO add unit cell objects to Molecule
+# TODO clean up import structure (put Blender methods in mb_util etc. like draw_unit_cell
 # TODO Override Delete operator to delete objects from collections when deleted
 # TODO Make PEP 8 compatible
 # TODO Go over comments
@@ -181,21 +185,21 @@ class MB_PT_import(MolBlendPanel, Panel):
         #row.label("Import")
         
         row = layout.row()
-        row.operator("mb.new_import")
-        row = layout.row()
-        row.prop(mb.import_props, "filepath")
-        row = layout.row()
-        col = row.column()
-        col.prop(mb.import_props, "modes")
-        col = row.column()
-        col.active = mb.import_props.modes
-        col.prop(mb.import_props, "n_q")
-        row = layout.row()
-        row.active = mb.import_props.modes
-        row.prop(mb.import_props, "modes_path")
-        row = layout.row()
-        row.active = initialized
-        row.operator("mb.import_molecule", text="Import")
+        row.operator("mb.import_molecules")
+        #row = layout.row()
+        #row.prop(mb.import_props, "filepath")
+        #row = layout.row()
+        #col = row.column()
+        #col.prop(mb.import_props, "modes")
+        #col = row.column()
+        #col.active = mb.import_props.modes
+        #col.prop(mb.import_props, "n_q")
+        #row = layout.row()
+        #row.active = mb.import_props.modes
+        #row.prop(mb.import_props, "modes_path")
+        #row = layout.row()
+        #row.active = initialized
+        #row.operator("mb.import_molecule", text="Import")
 
 
 class MB_PT_atom(MolBlendPanel, Panel):

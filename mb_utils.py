@@ -294,6 +294,30 @@ def create_new_keyconfig(name, context):
     
     return context.window_manager.keyconfigs.get("MolBlend")
 
+def callback_draw_length(self, context):
+    try:
+        font_id = 0
+        blf.size(font_id, 12, 72)
+        offset = 0
+        
+        rv3d = context.space_data.region_3d
+        width = context.region.width
+        height = context.region.height
+        persp_mat = rv3d.perspective_matrix
+        persinv = persp_mat.inverted()
+        
+        for ob in context.selected_objects:
+            if ob.mb.type == "BOND":
+                locs = [o.object.mb.world_location for o in ob.mb.bonded_atoms]
+                co_3d = (locs[0] + locs[1]) / 2.
+                prj = persp_mat * co_3d.to_4d()
+                x = width/2 + width/2 * (prj.x / prj.w)
+                y = height/2 + height/2 * (prj.y / prj.w)
+                blf.position(font_id, x, y, 0)
+                blf.draw(font_id, "{:6.4f}".format((locs[1]-locs[0]).length))
+    except:
+        debug_print(sys.exc_info()[0], level=1)
+        context.scene.mb.globals.show_bond_lengths = False
 
 def add_element(context, element, element_dict):
     '''

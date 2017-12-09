@@ -105,10 +105,10 @@ class MB_Mode_Collection():
                     continue
                 
                 # Read until I find the number of atoms
-                split_list = line.rsplit()
-                if len(split_list) == 1:
+                split_line = line.rsplit()
+                if len(split_line) == 1:
                     try:
-                        number_atoms = int(split_list[0])
+                        number_atoms = int(split_line[0])
                     except ValueError:
                         pass
                 
@@ -127,7 +127,7 @@ class MB_Mode_Collection():
                     for i in range(number_atoms):
                         
                         split_line = fin.readline().strip().split()
-                        disp = list(map(float, split_list[1:]))
+                        disp = list(map(float, split_line[1:]))
                         if len(disp) == 3:
                             real = disp
                             imag = (0., 0., 0.)
@@ -194,7 +194,6 @@ class MB_Mode_Collection():
 class MB_Structure():
     
     def __init__(self):
-        self.filepath = ""
         self.nframes = 0
         self.all_atoms = {}
         self.bonds = {}
@@ -270,7 +269,7 @@ class MB_Structure():
         return center_of_mass
     
     @classmethod
-    def from_file(cls, filepath, modefilepath="", n_q=1, qvec=(0,0,0),
+    def from_file(cls, filepath,
                   unit_fac=1.0):
         read_funcs = {
             "xyz": cls._read_xyz_file,
@@ -296,12 +295,11 @@ class MB_Structure():
                     fmt = "qe_output"
         
         structure = read_funcs[fmt](filepath)
-        structure.filepath = filepath
         
         if unit_fac != 1.0:
             for atom in structure.all_atoms.values():
                 atom["coords"] = [loc*unit_fac for loc in atom["coords"]]
-            
+        return structure
     
     @classmethod
     def _read_guo_file(cls, filepath_guo):
@@ -401,7 +399,7 @@ class MB_Structure():
         all_frames = []
         
         element_by_number = dict(
-            [(ELEMENTS["atomic number"], element) for element in ELEMENTS]
+            [(ELEMENTS[element]["atomic number"], element) for element in ELEMENTS]
             )
         
         # XYZ is not a well defined file format. This is an attempt to be very
@@ -409,16 +407,16 @@ class MB_Structure():
         with open(filepath_xyz, "r") as fin:
             number_atoms = -1
             for line in fin:
-                
+                print(line)
                 # Simply ignore empty lines
                 if line == "":
                     continue
                 
                 # Read until I find the number of atoms
-                split_list = line.rsplit()
-                if len(split_list) == 1:
+                split_line = line.rsplit()
+                if len(split_line) == 1:
                     try:
-                        number_atoms = int(split_list[0])
+                        number_atoms = int(split_line[0])
                     except ValueError:
                         pass
                 
@@ -426,16 +424,18 @@ class MB_Structure():
                 # and repeat the procedure for additional frames
                 if number_atoms > 0:
                     # dump comment line
-                    line = fin.readline()
-                    
+                    line = next(fin)
+                    print(line)
                     all_atoms = []
                     for i in range(number_atoms):
                         
-                        split_line = fin.readline().strip().split()
-                        coords = list(map(float, split_list[1:4]))
+                        split_line = next(fin).strip().split()
+                        print(split_line)
+                        coords = list(map(float, split_line[1:4]))
+                        print(coords)
                         location = Vector(coords)
                         
-                        element = split_list[0]
+                        element = split_line[0]
                         # Apparently some formats use atomic numbers instead of
                         # element names
                         try:
@@ -458,7 +458,7 @@ class MB_Structure():
             strc.all_atoms[i] = {"element": element,
                                  "name": atom_name,
                                  "coords": [location],
-                                 "id": index}
+                                 "id": i}
         # Add other frames to coordinate lists
         for frame in all_frames[1:]:
             for el, an, loc, i in frame:
@@ -783,11 +783,11 @@ class MB_Structure():
                         for i in range(n_atoms):
                             line = next(fin)
                             line = line.strip()
-                            split_list = line.split()
-                            coords = list(map(float, split_list[1:4]))
+                            split_line = line.split()
+                            coords = list(map(float, split_line[1:4]))
                             location = cell_matrix * Vector(coords)
 
-                            element = split_list[0]
+                            element = split_line[0]
                             atom_name = "{}{}".format(element.capitalize(), i)
                             # If element is an 'X' then it is a vacancy.
                             if "X" in element:
@@ -848,11 +848,11 @@ class MB_Structure():
             for i in range(n_atoms):
                 line = next(fin)
                 line = line.strip()
-                split_list = line.split()
-                coords = list(map(float, split_list[-4:-1]))
+                split_line = line.split()
+                coords = list(map(float, split_line[-4:-1]))
                 location = cell_matrix * Vector(coords)
 
-                element = split_list[1]
+                element = split_line[1]
                 atom_name = "{}{}".format(element.capitalize(), i)
                 # If element is an 'X' then it is a vacancy.
                 if "X" in element:
@@ -912,11 +912,11 @@ class MB_Structure():
                     for i in range(n_atoms):
                         line = next(fin)
                         line = line.strip()
-                        split_list = line.split()
-                        coords = list(map(float, split_list[1:4]))
+                        split_line = line.split()
+                        coords = list(map(float, split_line[1:4]))
                         location = cell_matrix * Vector(coords)
 
-                        element = split_list[0]
+                        element = split_line[0]
                         atom_name = "{}{}".format(element.capitalize(), i)
                         # If element is an 'X' then it is a vacancy.
                         if "X" in element:
