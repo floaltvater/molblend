@@ -27,7 +27,8 @@ import string
 import random
 
 import bpy
-from bpy.types import PropertyGroup
+from bpy.types import (PropertyGroup,
+                       UIList)
 from bpy.props import (StringProperty,
                        BoolProperty,
                        IntProperty,
@@ -182,15 +183,32 @@ class mb_molecule_objects(PropertyGroup):
     dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
     other = CollectionProperty(name="Bonds", type=mb_object_pointer)
 
+class mb_mode_displacement(PropertyGroup):
+    real = FloatVectorProperty(name="real", size=3)
+    imag = FloatVectorProperty(name="imag", size=3)
+
 class mb_mode(PropertyGroup):
     name = StringProperty(name="name")
     index = IntProperty(name="index")
-    freq = FloatProperty(
-        name="Mode frequency", description="Mode frequency in cm^-1",
-        default=0.0)
+    freq = StringProperty(
+        name="Mode frequency",
+        default="")
     symmetry = StringProperty(
         name="Mode symmetry", description="Symmetry of the active mode",
         default="")
+    displacements = CollectionProperty(name="Displacements", type=mb_mode_displacement)
+
+class mb_qmode(PropertyGroup):
+    name = StringProperty(name="name")
+    nqpt = IntProperty(name="nqpt", default=1)
+    qvec = FloatVectorProperty(name="q vector", default=(0,0,0))
+    modes = CollectionProperty(type=mb_mode)
+
+class MB_UL_modes(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        #split = layout.split(0.2)
+        layout.label(str(item.nqpt))
+        layout.label("q=({:5.3f}, {:5.3f}, {:5.3f})".format(*item.qvec))
 
 class mb_molecule(PropertyGroup):
     index = IntProperty(name="Molecule index")
@@ -209,34 +227,48 @@ class mb_molecule(PropertyGroup):
     bond_material = EnumProperty(
         name="Bond material", description="Choose bond material",
         items=mb_utils.enums.bond_material, default='ATOMS',
-        update=mb_utils.update_bond_material)
+        update=mb_utils.update_bond_material
+        )
     bond_color = FloatVectorProperty(
         name='Bond color', description="Color for generic bond",
         default=(0.8, 0.8, 0.8), min=0.0, max=1.0, subtype='COLOR',
-        update=mb_utils.update_all_meshes)
+        update=mb_utils.update_all_meshes
+        )
     draw_style = EnumProperty(
         name="Display style", description="Style to draw atoms and bonds",
         items=mb_utils.enums.molecule_styles, default='BAS',
-        update=mb_utils.set_draw_style)
+        update=mb_utils.set_draw_style
+        )
     radius_type = EnumProperty(
         name="Radius type", description="Type of radius to use as reference",
         items=mb_utils.enums.radius_types, default='covalent', 
-        update=mb_utils.update_radius_type)
+        update=mb_utils.update_radius_type
+        )
     bond_radius = FloatProperty(
         name="Bond radius", description="Radius for bond objects",
         default=0.1, min=0.0, max=3.0,
-        update=mb_utils.update_all_meshes)
+        update=mb_utils.update_all_meshes
+        )
     atom_scales = CollectionProperty(type=atom_scale)
     refine_atoms = IntProperty(
         name="Refine atoms", description="Refine value for atom meshes", 
         default=8, min=3, max=64,
-        update=mb_utils.update_refine_atoms)
+        update=mb_utils.update_refine_atoms
+        )
     refine_bonds = IntProperty(
         name="Refine bonds", description="Refine value for atom meshes", 
         default=8, min=3, max=64,
-        update=mb_utils.update_refine_bonds)
+        update=mb_utils.update_refine_bonds
+        )
     
     # vibrational modes
+    qmodes = CollectionProperty(name="Modes", type=mb_qmode)
+    active_nqpt = IntProperty(
+        name="Active q-point",
+        description="Active q-point",
+        default=0, min=0,
+        update=mb_utils.update_active_nqpt
+        )
     max_mode = IntProperty(
         name="Number of modes", 
         description="Number of vibrational modes of molecule",
@@ -246,25 +278,31 @@ class mb_molecule(PropertyGroup):
         name="Active Mode",
         description="Active Mode to display. 0 = equilibrium position",
         default=0, min=0,
-        update=mb_utils.update_active_mode)
+        update=mb_utils.update_active_mode
+        )
     mode_scale = FloatProperty(
         name="Mode Scale", description="Scale of normal mode displacement",
         default=1.0, min=-1000.0, max=1000.0, 
-        update=mb_utils.update_active_mode)
-    modes_col = CollectionProperty(name="Modes", type=mb_mode)
+        update=mb_utils.update_active_mode
+        )
     
     def draw_vibrations(self, layout):
         
+        layout.template_list("MB_UL_modes", "", self, "qmodes", self, "active_nqpt",rows=2)
         row = layout.row()
         row.prop(self, "active_mode")
         row = layout.row()
-        row.label("Frequency: {:>7.2f} cm^-1".format(
-                  self.modes_col["mode_{}".format(self.active_mode)].freq))
+        row.label("active_nqpt: {} ".format(self.active_nqpt))
         row = layout.row()
-        row.prop(self.modes_col["mode_{}".format(self.active_mode)],
-                 "symmetry", text="Symmetry")
-        row = layout.row()
-        row.prop(self, "mode_scale")
+        row.operator("mb.import_modes")
+        #row = layout.row()
+        #row.label("Frequency: {:>7.2f} cm^-1".format(
+                  #self.qmodes["mode_{}".format(self.active_mode)].freq))
+        #row = layout.row()
+        #row.prop(self.modes_col["mode_{}".format(self.active_mode)],
+                 #"symmetry", text="Symmetry")
+        #row = layout.row()
+        #row.prop(self, "mode_scale")
     
     
     def draw_properties(self, layout):
@@ -466,6 +504,7 @@ class mb_scn_globals(PropertyGroup):
         #update=mb_utils.update_show_bond_angles)
 
 class mb_scene(PropertyGroup):
+    is_initialized = BoolProperty(default=False)
     elements = CollectionProperty(type=mb_element)
     molecules = CollectionProperty(type=mb_molecule)
     # index that increases with each added molecule, but doesn't decrease when

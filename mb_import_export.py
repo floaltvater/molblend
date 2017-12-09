@@ -179,82 +179,105 @@ def get_world_coordinates(ob):
 
 def import_modes(report,
                  modefilepath,
+                 file_format,
                  molecule):
     
-        debug_print("Reading modes file {}".format(modepath), level=4)
-        
-        all_modes = mb_io_files.MB_Mode_Collection.from_file(modefilepath)
-        
-        molecule.max_mode = len(frequencies)
-        modes_col = molecule.modes_col
-        m = modes_col.add()
-        m.index = 0
-        m.name = "mode_0"
-        for i, freq in enumerate(frequencies):
-            m = modes_col.add()
-            m.index = i+1
-            m.name = "mode_{}".format(i+1)
-            m.freq = freq
+    debug_print("Reading modes file {}".format(modefilepath), level=4)
+    try:
+        qmodes = mb_io_files.modes_from_file(modefilepath, 
+                                             file_format)
+    except:
+        raise
+    
+    if not qmodes or not qmodes[0].modes:
+        msg = "No modes found in {}\n".format(bpy.path.basename(modefilepath))
+        msg += "Did you chose the correct file format?"
+        report({'ERROR'}, msg)
+    # TODO Check for correct number of displacements
+    
+    for qmode in qmodes:
+        qm = molecule.qmodes.add()
+        qm.nqpt = qmode.nqpt
+        print(qmode.qvec)
+        qm.qvec = qmode.qvec
+        for mode in qmode.modes:
+            m = qm.modes.add()
+            m.freq = mode.freq
+            for disp in mode.displacements:
+                d = m.displacements.add()
+                d.real = disp.real
+                d.imag = disp.imag
+    
+    #molecule.max_mode = len(frequencies)
+        #modes_col = molecule.modes_col
+        #m = modes_col.add()
+        #m.index = 0
+        #m.name = "mode_0"
+        #for i, freq in enumerate(frequencies):
+            #m = modes_col.add()
+            #m.index = i+1
+            #m.name = "mode_{}".format(i+1)
+            #m.freq = freq
 
 
-        # replace the index i in data with the corresponding mode
-        if modepath and modes:
-            for all_atoms in all_frames:
-                for index, data in all_atoms.items():
-                    # data = [element, atom_name, location, i]
-                    try:
-                        data[-1] = [mode[data[-1]] for mode in modes]
-                    except (IndexError, ValueError) as e:
-                        debug_print("Error: Modes couldn't be matched with "
-                                    "atoms. ({})".format(e),
-                                    level=1)
-                        report({'ERROR'}, "Modes couldn't be matched with "
-                                    "atoms. ({})".format(e))
-                        modes = None
-                        return False
-                if not modes:
-                    break
+        ## replace the index i in data with the corresponding mode
+        #if modepath and modes:
+            #for all_atoms in all_frames:
+                #for index, data in all_atoms.items():
+                    ## data = [element, atom_name, location, i]
+                    #try:
+                        #data[-1] = [mode[data[-1]] for mode in modes]
+                    #except (IndexError, ValueError) as e:
+                        #debug_print("Error: Modes couldn't be matched with "
+                                    #"atoms. ({})".format(e),
+                                    #level=1)
+                        #report({'ERROR'}, "Modes couldn't be matched with "
+                                    #"atoms. ({})".format(e))
+                        #modes = None
+                        #return False
+                #if not modes:
+                    #break
             
-            if modes and frequencies and len(modes) == len(frequencies):
-            # bpy.data.actions.new is very slow. Only make one action per atom
-            # store mode_vecs in atom object and add drivers to fcurves that
-            # point to this list
+            #if modes and frequencies and len(modes) == len(frequencies):
+            ## bpy.data.actions.new is very slow. Only make one action per atom
+            ## store mode_vecs in atom object and add drivers to fcurves that
+            ## point to this list
                 
-                m = new_atom.mb.modes.add()
-                m.name = 0
-                m.index = 0
-                m.freq = 0.0
-                m.vec = (0, 0, 0)
+                #m = new_atom.mb.modes.add()
+                #m.name = 0
+                #m.index = 0
+                #m.freq = 0.0
+                #m.vec = (0, 0, 0)
                 
-                for i, mode_vec in enumerate(data[3]):
-                    m = new_atom.mb.modes.add()
-                    m.name = i+1
-                    m.index = i+1
-                    m.freq = frequencies[i]
-                    m.vec = mode_vec
+                #for i, mode_vec in enumerate(data[3]):
+                    #m = new_atom.mb.modes.add()
+                    #m.name = i+1
+                    #m.index = i+1
+                    #m.freq = frequencies[i]
+                    #m.vec = mode_vec
                 
-                anim_data = new_atom.animation_data_create()
-                atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
-                                         new_atom.mb.index)
-                action = bpy.data.actions.new(name="mode_{}".format(atom_id))
-                anim_data.action = action
+                #anim_data = new_atom.animation_data_create()
+                #atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
+                                         #new_atom.mb.index)
+                #action = bpy.data.actions.new(name="mode_{}".format(atom_id))
+                #anim_data.action = action
+                ##for dim in range(3):
+                    ##fcu = action.fcurves.new(data_path="location", index=dim)
+                    ##fcu.keyframe_points.add(3)
+                    ##for p in range(3):
+                        ##loc = new_atom.location[dim]
+                        ##fcu.keyframe_points[p].co = 1.0 + 10*p, loc
+                        ##fcu.keyframe_points[p].interpolation = 'BEZIER'
+                ## make new group
+                #ag = action.groups.new("Location")
                 #for dim in range(3):
                     #fcu = action.fcurves.new(data_path="location", index=dim)
+                    #fcu.group = ag
                     #fcu.keyframe_points.add(3)
                     #for p in range(3):
                         #loc = new_atom.location[dim]
                         #fcu.keyframe_points[p].co = 1.0 + 10*p, loc
                         #fcu.keyframe_points[p].interpolation = 'BEZIER'
-                # make new group
-                ag = action.groups.new("Location")
-                for dim in range(3):
-                    fcu = action.fcurves.new(data_path="location", index=dim)
-                    fcu.group = ag
-                    fcu.keyframe_points.add(3)
-                    for p in range(3):
-                        loc = new_atom.location[dim]
-                        fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                        fcu.keyframe_points[p].interpolation = 'BEZIER'
 
 
 def import_molecule(report,

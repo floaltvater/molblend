@@ -28,167 +28,153 @@ from molblend.elements_default import ELEMENTS
 
 A_per_Bohr = 0.529177249
 
+# These three classes mirror the property structure of mb_molecule. If
+# something goes wrong during import, it is much easier to just discard these
+# instances, than to delete already read mode vectors from the molecule.
+
+class MB_Mode_Displacement():
+    def __init__(self, real, imag):
+        self.real = real
+        self.imag = imag
+
 class MB_Mode():
-    
-    def __init__(self):
+    def __init__(self, freq=""):
+        self.freq = freq
         self.displacements = []
-        self.freq = []
-    
 
-class MB_Q_Modes():
-    """This class is a collection of all modes of a q-point.
-    """
-    def __init__(self, n_q=-1, qvec=None):
-        self.modes = []
-        self.n_q = n_q
+class MB_QMode():
+    def __init__(self, nqpt, qvec):
+        self.nqpt = nqpt
         self.qvec = qvec
+        self.modes = []
 
-class MB_Mode_Collection():
+def modes_from_file(modefilepath, file_format):
+    """
+    Read vibrational modes from file.
     
-    def __init__(self):
-        self.qmodes = []
-        
-    @classmethod
-    def from_file(cls, modefilepath, file_format):
-        """
-        Read vibrational modes from file, agnostic of the underlying atomic
-        system.
-        
-        Currently implemented file formats:
-        - qe_dynmat: Quantum espresso (dynmat/matdyn format)
-        - simple: xyz style file with Nx3 (real) or Nx6 (complex) floats
-            (i.e. real_modes.xyz:
-                2
-                freq = 10 cm^-1
-                C  0.1  0.2  0.1
-                O  0.1  0.9  0.1
-                
-                2
-                freq = 0.1 THz
-                C -0.3  0.2  0.1
-                O  0.2 -0.1  0.2
-                
-                etc.
-            )
-            complex: Re_x Im_x Re_y Im_y Re_z Im_z
-            The first column is completely ignored!
-            This format doesn't allow separate q-points.
-        """
-        read_funcs = {
-            "qe_dynmat": cls._read_qe_dynmat_out,
-            "xyz": cls._read_simple_modes
-        }
-        if not file_format in read_funcs:
-            msg = "ERROR: File format {}".format(file_format)
-            msg += " not implemented yet."
-            debug_print(msg, level=1)
-        
-        ret = read_modes_funcs[fmt](modefilepath)
-        if not ret == True:
-            debug_print("Problem when reading modes")
-            structure.modes = []
-            structure.freqs = []
+    Currently implemented file formats:
+    - qe_dynmat: Quantum espresso (dynmat/matdyn format)
+    - simple: xyz style file with Nx3 (real) or Nx6 (complex) floats
+    """
+    read_modes_funcs = {
+        "QE_DYNMAT": _read_qe_dynmat_out,
+        "XYZ": _read_simple_modes
+    }
+    if not file_format in read_modes_funcs:
+        msg = "ERROR: File format {}".format(file_format)
+        msg += " not implemented yet."
+        debug_print(msg, level=1)
     
-    @classmethod
-    def _read_simple_modes(cls, modefilepath):
-        
-        mode_col = cls()
-        qmode = MB_Q_Modes()
-        
-        # This is a custom file format similar to the xyz file format
-        with open(modefilepath, "r") as fin:
-            number_atoms = -1
-            for line in fin:
-                
-                # Simply ignore empty lines
-                if line == "":
-                    continue
-                
-                # Read until I find the number of atoms
-                split_line = line.rsplit()
-                if len(split_line) == 1:
-                    try:
-                        number_atoms = int(split_line[0])
-                    except ValueError:
-                        pass
-                
-                # Read as many lines as there are atoms (plus one comment line)
-                # and repeat the procedure for additional frames
-                if number_atoms > 0:
-                    new_mode = MB_Mode()
-                    # comment line might contain frequency, search for float
-                    line = fin.readline()
-                    m = re.search("[-+]?[0-9]*\.[0-9]+([eEdD][-+]?[0-9]+)?", line)
-                    if m:
-                        new_mode.freqs.append(m.group(0))
-                    else:
-                        new_mode.freqs.append("")
-                    
-                    for i in range(number_atoms):
-                        
-                        split_line = fin.readline().strip().split()
-                        disp = list(map(float, split_line[1:]))
-                        if len(disp) == 3:
-                            real = disp
-                            imag = (0., 0., 0.)
-                        elif len(disp) == 6:
-                            real = disp[::2]
-                            imag = disp[1::2]
-                        
-                        new_mode.displacements.append((Vector(real), 
-                                                       Vector(imag)))
-                    
-                    number_atoms = -1
-                    qmode.modes.append(new_mode)
-        mode_col.qmodes.append(qmode)
-        return mode_col
+    return read_modes_funcs[file_format](modefilepath)
 
-    @classmethod
-    def _read_qe_dynmat_out(cls, filepath):
-        # read mode file, modes need to be in same order as atoms in input file
-        # currently only supports dynmat.out
-        
-        mode_col = cls()
 
-        with open(filepath, 'r') as fin:
-            line = next(fin)
-            q_count = 0
-            while line:
-                if 'q =' in line:
-                    q_count += 1
-                    q = list(map(float, line.split()[-3:]))
-                qmodes = cls(n_q=q_count, qvec=Vector(q))
-                debug_print("Reading q-point {}: ({}, {}, {})".format(n_q, *q), level=3)
+def _read_simple_modes(modefilepath):
+    """
+    xyz-style format
+    (i.e. real_modes.xyz:
+        2
+        freq = 10 cm^-1
+        C  0.1  0.2  0.1
+        O  0.1  0.9  0.1
+        
+        2
+        freq = 0.1 THz
+        C -0.3  0.2  0.1
+        O  0.2 -0.1  0.2
+        
+        etc.
+    )
+    complex colums: ELEMENT Re_x Im_x Re_y Im_y Re_z Im_z
+    The first column is completely ignored!
+    This format doesn't allow separate q-points.
+    """
+    
+    # This is a custom file format similar to the xyz file format
+    # It can only contain one q-point
+    qmode = MB_QMode(1, (0,0,0))
+    
+    with open(modefilepath, "r") as fin:
+        number_atoms = -1
+        for line in fin:
+            
+            # Simply ignore empty lines
+            if line == "":
+                continue
+            
+            # Read until I find the number of atoms
+            split_line = line.rsplit()
+            if len(split_line) == 1:
+                try:
+                    number_atoms = int(split_line[0])
+                except ValueError:
+                    pass
+            
+            # Read as many lines as there are atoms (plus one comment line)
+            # and repeat the procedure for additional frames
+            if number_atoms > 0:
+                # comment line might contain frequency, search for float
+                line = fin.readline()
+                m = re.search("[-+]?[0-9]*\.[0-9]+([eEdD][-+]?[0-9]+)?", line)
+                if m:
+                    freq = m.group(0)
+                else:
+                    freq = ""
+                new_mode = MB_Mode(freq)
+                
+                for i in range(number_atoms):
+                    split_line = fin.readline().strip().split()
+                    disp = list(map(float, split_line[1:]))
+                    if len(disp) == 3:
+                        real = disp
+                        imag = (0., 0., 0.)
+                    elif len(disp) == 6:
+                        real = disp[::2]
+                        imag = disp[1::2]
+                    new_mode.displacements.append(
+                        MB_Mode_Displacement(real, imag))
+                qmode.modes.append(new_mode)
+                number_atoms = -1
+    return [qmode]
+    
+
+def _read_qe_dynmat_out(filepath):
+    # read mode file, modes need to be in same order as atoms in input file
+    # currently only supports dynmat.out
+    
+    all_qmodes = []
+    with open(filepath, 'r') as fin:
+        line = next(fin)
+        q_count = 0
+        for line in fin:
+            if 'q =' in line:
+                q_count += 1
+                q = list(map(float, line.split()[-3:]))
+                qmode = MB_QMode(q_count, q)
+                debug_print("Reading q-point {}: ({}, {}, {})".format(q_count, *q), level=2)
                 
                 line = next(fin) # stars
-                line = next(fin)
                 
-                new_mode = None
                 for line in fin:
                     lstrip = line.strip()
+                    
                     # new mode
                     if lstrip.startswith('omega(') or lstrip.startswith('freq ('):
-                        if new_mode:
-                            qmodes.modes.append(new_mode)
-                        new_mode = MB_Mode()
                         m = re.search(
                             '(omega|freq )\(([ 0-9*]+)\).+ ([-.0-9]+)(?= \[cm-1\])', 
                             lstrip)
-                        new_mode.freq = float(m.group(3))
+                        qmode.modes.append(MB_Mode(m.group(3)))
+                    
                     elif lstrip.startswith('('):
                         lsplit = lstrip[1:-1].split()
                         
                         disp = list(map(float, lsplit))
-                        real = disp[::2]
-                        imag = disp[1::2]
-                        new_mode.displacements.append((Vector(real), 
-                                                       Vector(imag)))
+                        qmode.modes[-1].displacements.append(
+                            MB_Mode_Displacement(disp[::2], disp[1::2]))
+                    
                     elif '**********' in line:
-                        mode_col.qmodes.append(qmodes)
+                        all_qmodes.append(qmode)
                         break
-                line = next(fin)
-
-        return mode_col
+    return all_qmodes
 
 
 class MB_Structure():

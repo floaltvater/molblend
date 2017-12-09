@@ -79,6 +79,8 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
+# TODO Initialize on startup/load (like in manuelbastioni)
+# TODO remove properties from window manager, add to scene
 # TODO clean up deleting objects. There should be ONE function to call when an object needs to be deleted
 #      that takes care of removing it from the molecule, and from Blender itself.
 # TODO add unit cell objects to Molecule
@@ -153,28 +155,32 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout = self.layout
        
         layout.operator("mb.initialize")
-        
-        modal = mb_operators.MB_OT_modal_add.is_running()
-        label = "ESC to stop" if modal == True else "Use MolBlend"
-        layout.operator("mb.modal_add", text=label)
-        #--- tools -----------------------------------------------------------#
-        row = layout.row()
-        col = row.column()
-        col.label("Add")
-        col.label("Geometry")
-        col = row.column()
-        col.prop(context.window_manager.mb.globals, "element_to_add", text="")
-        col.prop(context.window_manager.mb.globals, "geometry_to_add", text="")
-        
-        layout.separator()
-        layout.operator("mb.make_static")
-        layout.operator("mb.select_bonded")
-        layout.prop(context.scene.mb.globals, "show_bond_lengths")
-        #layout.prop(context.scene.mb.globals, "show_bond_angles")
+        if context.scene.mb.is_initialized:
+            modal = mb_operators.MB_OT_modal_add.is_running()
+            label = "ESC to stop" if modal == True else "Use MolBlend"
+            layout.operator("mb.modal_add", text=label)
+            #--- tools -----------------------------------------------------------#
+            row = layout.row()
+            col = row.column()
+            col.label("Add")
+            col.label("Geometry")
+            col = row.column()
+            col.prop(context.window_manager.mb.globals, "element_to_add", text="")
+            col.prop(context.window_manager.mb.globals, "geometry_to_add", text="")
+            
+            layout.separator()
+            layout.operator("mb.make_static")
+            layout.operator("mb.select_bonded")
+            layout.prop(context.scene.mb.globals, "show_bond_lengths")
+            #layout.prop(context.scene.mb.globals, "show_bond_angles")
 
 
 class MB_PT_import(MolBlendPanel, Panel):
     bl_label = "Import"
+    
+    @classmethod
+    def poll(cls, context):
+        return context.scene.mb.is_initialized
     
     def draw(self, context):
         initialized = len(context.scene.mb.elements) > 0
@@ -208,7 +214,8 @@ class MB_PT_atom(MolBlendPanel, Panel):
     @classmethod
     def poll(cls, context):
         active_ob = context.object or context.scene.mb.modal_last_active
-        return hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM'
+        return (context.scene.mb.is_initialized
+                and hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM')
    
     def draw(self, context):
         layout = self.layout
@@ -222,7 +229,8 @@ class MB_PT_molecule_properties(MolBlendPanel, Panel):
     @classmethod
     def poll(cls, context):
         active_ob = context.object or context.scene.mb.modal_last_active
-        return hasattr(active_ob, 'mb') and active_ob.mb.get_molecule()
+        return (context.scene.mb.is_initialized 
+                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
     
     def draw(self, context):
         layout = self.layout
@@ -237,8 +245,8 @@ class MB_PT_vibration_properties(MolBlendPanel, Panel):
     @classmethod
     def poll(cls, context):
         active_ob = context.object or context.scene.mb.modal_last_active
-        return (hasattr(active_ob, 'mb') and active_ob.mb.get_molecule()
-                and active_ob.mb.get_molecule().max_mode > 0)
+        return (context.scene.mb.is_initialized
+                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
     
     def draw(self, context):
         layout = self.layout
@@ -253,7 +261,8 @@ class MB_PT_molecule_draw_styles(MolBlendPanel, Panel):
     @classmethod
     def poll(cls, context):
         active_ob = context.object or context.scene.mb.modal_last_active
-        return hasattr(active_ob, 'mb') and active_ob.mb.get_molecule()
+        return (context.scene.mb.is_initialized
+                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
     
     def draw(self, context):
         layout = self.layout

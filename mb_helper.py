@@ -21,7 +21,7 @@
 # 1: print warnings
 # should clean up the rest
 # 6: highest level
-debug = 1
+debug = 2
 
 def debug_print(arg, level=1, end='\n'):
     if debug >= level:

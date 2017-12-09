@@ -67,6 +67,7 @@ class MB_OT_initialize(Operator):
         row.prop(context.user_preferences.system, "use_scripts_auto_execute")
     
     def invoke(self, context, event):
+        debug_print("mb.initialize.invoke", level=6)
         # check if python scripts can be executed. Needed for drivers
         if not context.user_preferences.system.use_scripts_auto_execute:
             return context.window_manager.invoke_props_dialog(self)
@@ -93,6 +94,7 @@ class MB_OT_initialize(Operator):
         
         # don't show parent lines
         context.space_data.show_relationship_lines = False
+        context.scene.mb.is_initialized = True
         return {'FINISHED'}
 
 
@@ -109,14 +111,6 @@ class MB_OT_modal_add(Operator):
     @classmethod
     def is_running(cls):
         return cls.is_running_bool
-    
-    #@classmethod
-    #def kill_modal(cls):
-        #cls.is_running_bool = False
-    
-    #@classmethod
-    #def poll(cls, context):
-        #return mb_utils.is_initialized(context)
     
     def modal(self, context, event):
         if event.type in ('ESC',) or not type(self).is_running_bool:
@@ -176,7 +170,7 @@ class MB_OT_modal_add(Operator):
         
         
     def invoke(self, context, event):
-        if not mb_utils.is_initialized(context):
+        if not context.scene.mb.is_initialized:
             bpy.ops.mb.initialize("INVOKE_DEFAULT")
         
         if context.area.type == 'VIEW_3D':
@@ -205,10 +199,6 @@ class MB_OT_make_static(Operator):
     bl_label = "Make static"
     bl_options = {'UNDO', 'REGISTER'}
     bl_description = "apply and remove bond constraints"
-    
-    @classmethod
-    def poll(cls, context):
-        return True
 
     def invoke(self, context, event):
         return self.execute(context)
@@ -223,6 +213,8 @@ class MB_OT_make_static(Operator):
         ob.matrix_world = mat
     
     def execute(self, context):
+        if not context.selected_editable_objects:
+            debug_print("No objects selected", level=2)
         for ob in context.selected_editable_objects:
             if ob.mb.type == 'BOND':
                 self.remove_constraints(ob)
@@ -275,10 +267,6 @@ class MB_OT_add_atom(Operator):
     first_atom_name = EnumProperty(
         name="Atom name", description="Name of atom to bond the new atom to",
         items=mb_atom_objects)
-    
-    @classmethod
-    def poll(cls, context):
-        return True
     
     def draw(self, context):
         layout = self.layout
@@ -578,15 +566,40 @@ class MD_OT_import_modes(bpy.types.Operator):
     bl_label = "Import vibrational modes for molecule"
     bl_options = {'REGISTER', 'UNDO'}
     
+    filepath = StringProperty(
+        name="File Path", description="Filepath used for importing one file",
+        maxlen=1024, subtype='FILE_PATH')
+    
+    file_format = EnumProperty(
+        name="File format", description="Choose file format of mode file",
+        items=mb_utils.enums.mode_file_format, default='XYZ')
     
     def draw(self, context):
-        pass
+        layout = self.layout
+        row = layout.row()
+        row.prop(self, "file_format")
+    
+    @classmethod
+    def poll(cls, context):
+        return context.object and context.object.mb.get_molecule()
     
     def invoke(self, context, event):
-        pass
+        wm = context.window_manager
+        wm.fileselect_add(self)
+        return {'RUNNING_MODAL'}
     
     def execute(self, context):
-        pass
+        ret = mb_import_export.import_modes(
+            self.report,
+            self.filepath,
+            self.file_format,
+            context.object.mb.get_molecule()
+            )
+        if ret:
+            return {'FINISHED'}
+        else:
+            return {'CANCELLED'}
+        
 
 class MD_OT_import_molecules(bpy.types.Operator):
     bl_idname = "mb.import_molecules"
@@ -675,19 +688,29 @@ class MD_OT_import_molecules(bpy.types.Operator):
                     "the first frame only",
         default=False)
     
-    def execute(self, context):
+    @classmethod
+    def poll(cls, context):
+        return context.scene.mb.is_initialized
+    
+    def invoke(self, context, event):
         if not len(self.atom_scales):
-            if not len(context.scene.mb.globals.atom_scales):
-                default_scales = {'BALLS': 1.0, 'BAS': 0.4, 'STICKS': 0.001}
-            else:
-                default_scales = {}
-                for style in ('BALLS', 'BAS', 'STICKS'):
-                    val = context.scene.mb.globals.atom_scales[style].val
-                    default_scales[style] = val
-            for style in default_scales:
+            for style in ('BALLS', 'BAS', 'STICKS'):
                 atom_scale = self.atom_scales.add()
                 atom_scale.name = style
-                atom_scale.val = default_scales[style]
+                val = context.scene.mb.globals.atom_scales[style].val
+                atom_scale.val = val
+        
+        wm = context.window_manager
+        wm.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        if not len(self.atom_scales):
+            for style in ('BALLS', 'BAS', 'STICKS'):
+                atom_scale = self.atom_scales.add()
+                atom_scale.name = style
+                val = context.scene.mb.globals.atom_scales[style].val
+                atom_scale.val = val
         
         files = set([os.path.join(self.directory, f.name) for f in self.files])
         files.add(bpy.path.abspath(self.filepath))
@@ -803,27 +826,6 @@ class MD_OT_import_molecules(bpy.types.Operator):
         row = layout.row()
         row.prop(self, "supercell")
         
-    def invoke(self, context, event):
-        
-        if not mb_utils.is_initialized(context):
-            bpy.ops.mb.initialize("INVOKE_DEFAULT")
-
-        if not len(self.atom_scales):
-            if not len(context.scene.mb.globals.atom_scales):
-                default_scales = {'BALLS': 1.0, 'BAS': 0.4, 'STICKS': 0.001}
-            else:
-                default_scales = {}
-                for style in ('BALLS', 'BAS', 'STICKS'):
-                    val = context.scene.mb.globals.atom_scales[style].val
-                    default_scales[style] = val
-            for style in default_scales:
-                atom_scale = self.atom_scales.add()
-                atom_scale.name = style
-                atom_scale.val = default_scales[style]
-        
-        wm = context.window_manager
-        wm.fileselect_add(self)
-        return {'RUNNING_MODAL'}
 
 class MB_OT_draw_bond_lengths(bpy.types.Operator):
     """Draw a line with the mouse"""

@@ -80,6 +80,10 @@ class enums():
         ('PDB', "pdb", "Protein Databank format"),
         ('B4W', "b4w", "standalone HTML with embedded 3D viewer")
         ]
+    mode_file_format = [
+        ('XYZ', "xyz", "xyz-style format"),
+        ('QE_DYNMAT', "QE dynmat", "Quantum ESPRESSO output"),
+        ]
 
 
 #--- Update functions --------------------------------------------------------#
@@ -90,6 +94,8 @@ def update_all_meshes(self, context):
     for me in bpy.data.meshes:
         me.update()
 
+def update_active_nqpt(self, context):
+    debug_print("Update active qmode", level=1)
 
 def update_active_mode(self, context):
     debug_print("mb_utils.update_active_mode", level=6)
@@ -349,18 +355,6 @@ def initialize_elements(context):
     debug_print("mb_utils.initialize_elements", level=6)
     for element, data in ELEMENTS_DEFAULT.items():
         add_element(context, element, data)
-
-
-def is_initialized(context):
-    try:
-        context.scene.mb.elements['Default']
-        context.scene.mb.globals.atom_scales['BALLS']
-        context.scene.mb.globals.atom_scales['BAS']
-        context.scene.mb.globals.atom_scales['STICKS']
-    except KeyError as e:
-        return False
-    
-    return context.user_preferences.system.use_scripts_auto_execute
 
 
 #--- Viewport functions ------------------------------------------------------#
