@@ -187,7 +187,8 @@ def import_molecule(context,
                     bond_type,
                     scale_distances,
                     bond_guess,
-                    use_center,
+                    put_origin,
+                    parent_center,
                     mask_planes,
                     mask_flip,
                     draw_uc,
@@ -233,7 +234,10 @@ def import_molecule(context,
         
         if sum(supercell) > 3:
             structure.create_supercell(supercell)
+        
+        if mask_planes:
             
+        
         if bond_guess:
             structure.guess_bonds(tol=0.2)
             debug_print("guess", level=4)
@@ -242,8 +246,11 @@ def import_molecule(context,
         debug_print("read", level=4)
         debug_print(time.time() - start, level=5)
         
-        # Create parent empty at center of mass
-        center_of_mass = structure.get_center_of_mass()
+        if parent_center:
+            center_of_mass = structure.get_center_of_mass()
+        else:
+            center_of_mass = Vector((0,0,0))
+        
         molecule.objects.parent.object.location = center_of_mass
         debug_print("center", level=4)
         debug_print(time.time() - start, level=5)
@@ -311,7 +318,7 @@ def import_molecule(context,
         if error:
             debug_print('\n'.join(error), level=1)
         
-        if use_center:
+        if put_origin:
             molecule.objects.parent.object.location -= center_of_mass
         
         # select all objects and make parent active

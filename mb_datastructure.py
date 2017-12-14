@@ -71,11 +71,20 @@ class mb_atom_mode(PropertyGroup):
     freq = FloatProperty(name="frequency")
     vec = FloatVectorProperty(name="vector", subtype="XYZ")
 
+class mb_dipole(PropertyGroup):
+    empty = PointerProperty(name="Dipole", type=mb_object_pointer)
+    arrow = PointerProperty(name="Vector", type=mb_object_pointer)
+
+class mb_unit_cell(PropertyGroup):
+    uc_cube = PointerProperty(name="Unit cell base", type=mb_object_pointer)
+    objects = CollectionProperty(name="Unit cell objects", type=mb_object_pointer)
+
 class mb_molecule_objects(PropertyGroup):
     atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
     bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
     parent = PointerProperty(name="Parent", type=mb_object_pointer)
-    dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
+    dipole = PointerProperty(name="Dipole", type=mb_dipole)
+    unit_cell = PointerProperty(name="Unit cell objects", type=mb_unit_cell)
     other = CollectionProperty(name="Bonds", type=mb_object_pointer)
 
 class mb_mode_displacement(PropertyGroup):
@@ -101,14 +110,13 @@ class mb_qmode(PropertyGroup):
     modes = CollectionProperty(type=mb_mode)
 
 class MB_UL_modes(UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        #split = layout.split(0.2)
-        layout.label(str(item.nqpt))
-        layout.label("q=({:5.3f}, {:5.3f}, {:5.3f})".format(*item.qvec))
-
-class mb_unit_cell(PropertyGroup):
-    x = FloatVectorProperty()
-
+    def draw_item(self, context, layout, data, item, icon, active_data, 
+                  active_propname, index):
+        split = layout.split(0.1)
+        col = split.column()
+        col.label(str(item.nqpt))
+        col = split.column()
+        col.label("q=({:5.3f}, {:5.3f}, {:5.3f})".format(*item.qvec))
 
 class mb_object(PropertyGroup):
     index = IntProperty(name="Index")
@@ -308,18 +316,20 @@ class mb_molecule(PropertyGroup):
         
         row = layout.row()
         row.operator("mb.import_modes")
-        row = layout.row()
-        row.template_list("MB_UL_modes", "", self, "qpts", self, "active_nqpt",rows=1)
-        row = layout.row()
-        row.prop(self, "active_mode")
-        row = layout.row()
-        row.prop(self, "mode_scale")
-        row = layout.row()
-        row.prop(self.qpts[self.active_nqpt].modes[self.active_mode], "freq",
-                 text="Frequency")
-        row = layout.row()
-        row.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
-                 "symmetry", text="Symmetry")
+        if self.qpts:
+            row = layout.row()
+            row.template_list("MB_UL_modes", "", self, "qpts", self, 
+                              "active_nqpt",rows=1)
+            row = layout.row()
+            row.prop(self, "active_mode")
+            row = layout.row()
+            row.prop(self, "mode_scale")
+            row = layout.row()
+            row.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
+                     "freq", text="Frequency")
+            row = layout.row()
+            row.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
+                     "symmetry", text="Symmetry")
         
     
     def draw_properties(self, layout):
@@ -347,14 +357,34 @@ class mb_molecule(PropertyGroup):
         row = layout.row()
         row.operator("mb.center_mol_parent")
         
-        if self.objects.dipole.object:
+        if self.objects.dipole.empty.object:
             col = layout.column()
-            col.prop(self.objects.dipole.object, "location", 
+            col.prop(self.objects.dipole.empty.object, "location", 
                      text="Dipole")
         else:
             row = layout.row()
             row.operator("mb.draw_dipole")
-    
+        #if not self.objects.unit_cell.uc_cube.object:
+        row = layout.row()
+        row.operator("mb.draw_unit_cell")
+        #else:
+            #uc_cube =self.objects.unit_cell.uc_cube.object
+            #vgs = [vg for vg in uc_cube.vertex_groups 
+                   #if vg.name in ("a", "b", "c")]
+            #vg_ids = [vg.index for vg in sorted(vgs, key=lambda vg: vg.name)]
+            #verts = []
+            #for vg_id in vg_ids:
+                #vs = [v for v in uc_cube.data.vertices 
+                      #if vg_id in [vg.group for vg in v.groups]]
+                #if len(vs) != 1:
+                    #msg = "ERROR: Something wrong with uc_cube vertext groups"
+                    #debug_print(msg, level=1)
+                    #return
+                #verts.append(vs[0])
+            #for v in verts:
+                #row = layout.row()
+                #row.prop(v, "co")
+            
     def draw_styles(self, layout):
         #layout.label("Molecule draw style")
         row = layout.row()
@@ -514,6 +544,15 @@ class mb_scn_globals(PropertyGroup):
         #name="Show bond angles", default=False, 
         #description="Display bond angle of selected bonds",
         #update=mb_utils.update_show_bond_angles)
+    element_to_add = StringProperty(
+        name="Element", description="Element to add to scene", 
+        default="C")
+    geometry_to_add = EnumProperty(
+        name="Geometry",
+        description="Geometry the new bond should be in relative to "
+                    "existing bonds.", 
+        items=mb_utils.enums.geometries, default='NONE')
+
 
 class mb_scene(PropertyGroup):
     is_initialized = BoolProperty(default=False)
@@ -524,7 +563,8 @@ class mb_scene(PropertyGroup):
     molecule_count = IntProperty(name="Molecule counter")
     globals = PointerProperty(type=mb_scn_globals)
     # store last active object for modal operator
-    modal_last_active = PointerProperty(name="Last active", type=bpy.types.Object)
+    modal_last_active = PointerProperty(name="Last active", 
+                                        type=bpy.types.Object)
     
     #@class
     def id_generator(self, size=6,
@@ -551,8 +591,10 @@ class mb_scene(PropertyGroup):
         mol.draw_style = draw_style or self.globals.draw_style
         mol.radius_type = radius_type or self.globals.radius_type
         mol.bond_radius = bond_radius or self.globals.bond_radius
-        mol.refine_atoms = refine_atoms
-        mol.refine_bonds = refine_bonds
+        if refine_atoms:
+            mol.refine_atoms = refine_atoms
+        if refine_bonds:
+            mol.refine_bonds = refine_bonds
         for scale in (atom_scales or self.globals.atom_scales):
             new_scale = mol.atom_scales.add()
             new_scale.name = scale.name
@@ -571,7 +613,7 @@ class mb_scene(PropertyGroup):
     def remove_molecule(self, mol):
         # Make sure all objects are deleted first
         if (0 == len(mol.objects.atoms) == len(mol.objects.bonds)
-              == len(mol.objects.other)):
+              == len(mol.objects.unit_cell) == len(mol.objects.other)):
             # delete all meshes
             for me in mol.meshes:
                 bpy.data.meshes.remove(me.data)
@@ -591,20 +633,21 @@ class mb_scene(PropertyGroup):
                         + "can not be deleted from bpy.data.objects.",
                         level=1)
             # delete dipole
-            dipole = mol.objects.dipole.object
-            if dipole:
-                if dipole.name in bpy.context.scene.objects:
-                    bpy.context.scene.objects.unlink(dipole)
-                else:
-                    debug_print("Object {} not in scene {}.".format(
-                        dipole.name, bpy.context.scene.name), level=1)
-                try:
-                    bpy.data.objects.remove(dipole)
-                except RuntimeError:
-                    debug_print(
-                        "Object {} ".format(dipole.name)
-                        + "can not be deleted from bpy.data.objects.",
-                        level=1)
+            for ob in (mol.objects.dipole.empty.object,
+                       mol.objects.dipole.arrow.object):
+                if ob:
+                    if dipole.name in bpy.context.scene.objects:
+                        bpy.context.scene.objects.unlink(dipole)
+                    else:
+                        debug_print("Object {} not in scene {}.".format(
+                            dipole.name, bpy.context.scene.name), level=1)
+                    try:
+                        bpy.data.objects.remove(dipole)
+                    except RuntimeError:
+                        debug_print(
+                            "Object {} ".format(dipole.name)
+                            + "can not be deleted from bpy.data.objects.",
+                            level=1)
             # Finally delete molecule from scene collection
             for i, mol_item in enumerate(self.molecules):
                 if mol == mol_item:
@@ -615,9 +658,11 @@ class mb_scene(PropertyGroup):
                                 level=3)
                     return
         else:
-            ob_list = ([item.object for item in mol.objects.atoms] + 
-                       [item.object for item in mol.objects.other] + 
-                       [item.object for item in mol.objects.bonds])
+            ob_list = ([item.object for item in mol.objects.atoms] +
+                       [item.object for item in mol.objects.bonds] +
+                       [item.object for item in mol.objects.unit_cell] +
+                       [item.object for item in mol.objects.other]
+                       )
             self.remove_objects(ob_list) # will call remove_molecule again
             
     def remove_object(self, ob):
@@ -676,35 +721,14 @@ class mb_scene(PropertyGroup):
                       == len(mol.objects.bonds)):
             self.remove_molecule(mol)
 
-class mb_wm_globals(PropertyGroup):
-    group_selected_extend = BoolProperty(
-        name="Extend", description="Extend selected group to selection",
-        default=False)
-    element_to_add = StringProperty(
-        name="Element", description="Element to add to scene", 
-        default="C")
-    geometry_to_add = EnumProperty(
-        name="Geometry",
-        description="Geometry the new bond should be in relative to "
-                    "existing bonds.", 
-        items=mb_utils.enums.geometries, default='NONE')
-
-
-class mb_window_manager(PropertyGroup):
-    globals = PointerProperty(type=mb_wm_globals)
-
 
 def register():
     bpy.types.Object.mb = PointerProperty(type=mb_object)
     bpy.types.Mesh.mb = PointerProperty(type=mb_mesh)
-    #bpy.types.Action.mb = PointerProperty(type=mb_action)
     bpy.types.Scene.mb = PointerProperty(type=mb_scene)
-    bpy.types.WindowManager.mb = PointerProperty(type=mb_window_manager)
 
 
 def unregister():
     del bpy.types.Object.mb
     del bpy.types.Mesh.mb
-    #del bpy.types.Action.mb
     del bpy.types.Scene.mb
-    del bpy.types.WindowManager.mb

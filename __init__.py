@@ -79,9 +79,8 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
-# TODO What happens when I duplicate a full molecule? What about the drivers? Do they refer to the same MB_Molecule?
-# TODO Initialize on startup/load (like in manuelbastioni)
-# TODO remove properties from window manager, add to scene
+# TODO Duplicating whole molecules doesn't duplicate the MB_Molecule, so atom colors, drawing styles etc are still linked.
+# TODO Initialize on startup/load (like in manuelbastioni).
 # TODO clean up deleting objects. There should be ONE function to call when an object needs to be deleted
 #      that takes care of removing it from the molecule, and from Blender itself.
 # TODO add unit cell objects to Molecule
@@ -101,6 +100,7 @@ from bpy.props import (StringProperty,
 # TODO Geometries when adding atom
 
 ### FEATURES
+# TODO add abinit input file
 # TODO switch to ID properties. Easier to link to objects that way.
 # TODO implement masking objects again
 # TODO import q!=0 modes with phase
@@ -159,7 +159,7 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout.operator("mb.initialize")
         if context.scene.mb.is_initialized:
             modal = mb_operators.MB_OT_modal_add.is_running()
-            label = "ESC to stop" if modal == True else "Use MolBlend"
+            label = "ESC to stop" if modal == True else "Draw atoms"
             layout.operator("mb.modal_add", text=label)
             #--- tools -----------------------------------------------------------#
             row = layout.row()
@@ -167,8 +167,8 @@ class MB_PT_tools(MolBlendPanel, Panel):
             col.label("Add")
             col.label("Geometry")
             col = row.column()
-            col.prop(context.window_manager.mb.globals, "element_to_add", text="")
-            col.prop(context.window_manager.mb.globals, "geometry_to_add", text="")
+            col.prop(context.scene.mb.globals, "element_to_add", text="")
+            col.prop(context.scene.mb.globals, "geometry_to_add", text="")
             
             layout.separator()
             layout.operator("mb.make_static")
@@ -252,7 +252,7 @@ class MB_PT_vibration_properties(MolBlendPanel, Panel):
     
     def draw(self, context):
         layout = self.layout
-        active_ob = context.object
+        active_ob = context.object or context.scene.mb.modal_last_active
         mol = active_ob.mb.get_molecule()
         mol.draw_vibrations(layout)
 

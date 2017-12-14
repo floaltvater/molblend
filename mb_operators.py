@@ -340,8 +340,8 @@ class MB_OT_add_atom(Operator):
         return {'RUNNING_MODAL'}
     
     def invoke(self, context, event):
-        self.element = context.window_manager.mb.globals.element_to_add
-        self.geometry = context.window_manager.mb.globals.geometry_to_add
+        self.element = context.scene.mb.globals.element_to_add
+        self.geometry = context.scene.mb.globals.geometry_to_add
         hover_ob = mb_utils.return_cursor_object(context, event,
                                                  mb_type='ATOM')
         
@@ -500,21 +500,75 @@ class MB_OT_center_mol_parent(Operator):
             return {'CANCELLED'}
 
 
+def get_molecules(self, context):
+        lst = []
+        for mol in context.scene.mb.molecules:
+            lst.append((mol.name, mol.name_mol, ""))
+        return lst
+
+def update_draw_unit_cell(self, context):
+    mol = context.scene.mb.molecules.get(self.molecule_id)
+    if "unit_cells" in molecule and molecule["unit_cells"]:
+        self.has_axes = True
+    else:
+        self.has_axes = False
+    mb_utils.update_molecule_selection(self, context)
+    
+class MB_OT_draw_unit_cell(Operator):
+    bl_idname = "mb.draw_unit_cell"
+    bl_label = "Draw unit cell of structure"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    uc_x = FloatVectorProperty(name="x")
+    uc_y = FloatVectorProperty(name="y")
+    uc_z = FloatVectorProperty(name="z")
+    molecules_id = EnumProperty(name="Molecules", items=get_molecules,
+                                  update=update_draw_unit_cell)
+    has_axes = BoolProperty()
+    
+    
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+        row.prop(self, "molecules_id")
+        if self.has_axes:
+            mol = context.scene.mb.molecules.get(self.molecule_id)
+            for i, ax in enumerate(mol["unit_cells"][0]):
+                row = layout.row()
+                label = "{}: ({:6.3f}, {:6.3f}, {:6.3f})".format("xyz"[i], *ax)
+                row.label(label)
+        else:
+            for ax in ("uc_x", "uc_y", "uc_z"):
+                row = layout.row()
+                row.prop(self, ax)
+        
+    def invoke(self, context, event):
+        if context.object and context.object.mb.get_molecule():
+            mol = context.object.mb.get_molecule()
+            self.molecule_id = mol.name
+            self.has_axes = bool("unit_cells" in mol and mol["unit_cells"])
+        return context.window_manager.invoke_props_dialog(self)
+    
+    def execute(self, context):
+        mol = context.scene.mb.molecules.get(self.molecule_id)
+        if not self.has_axes:
+            mol["unit_cells"] = [Matrix((self.uc_x, self.uc_y, self.uc_z))]
+        mb_utils.draw_unit_cell(mol)
+        return {'FINISHED'}
+
 class MB_OT_draw_dipole(Operator):
     bl_idname = "mb.draw_dipole"
     bl_label = "Draw dipole of molecule"
     bl_options = {'REGISTER', 'UNDO'}
     
     dipole_vec = FloatVectorProperty(name="Dipole vector", size=3)
-    molecule_id = StringProperty(
-        name="Molecule identifier",
-        update=mb_utils.update_molecule_selection)
+    molecules_id = EnumProperty(name="Molecules", items=get_molecules,
+                                  update=mb_utils.update_molecule_selection)
     
     def draw(self, context):
         layout = self.layout
         row = layout.row()
-        row.prop_search(self, "molecule_id", context.scene.mb,
-                        "molecules", text="")
+        row.prop(self, "molecules_id")
         col = layout.column()
         col.prop(self, "dipole_vec")
         
@@ -531,33 +585,7 @@ class MB_OT_draw_dipole(Operator):
                 level=0)
             return {'CANCELLED'}
         
-        # add empty as stretch target
-        dipole_ob = bpy.data.objects.new(
-            "{}_dipole_target".format(mol.name_mol), None)
-        dipole_ob.empty_draw_type = 'SINGLE_ARROW'
-        dipole_ob.empty_draw_size = 0.5
-        bpy.context.scene.objects.link(dipole_ob)
-        mol.objects.dipole = dipole_ob
-        dipole_ob.location = self.dipole_vec
-        dipole_ob.parent = mol.objects.parent.object
-        dipole_ob.mb.molecule_ident = mol.name
-        
-        # add arrow object
-        arrow_mesh = mb_utils.get_arrow_data()
-        arrow_ob = bpy.data.objects.new("{}_dipole".format(mol.name_mol),
-                                        arrow_mesh)
-        arrow_ob.parent = mol.objects.parent.object
-        bpy.context.scene.objects.link(arrow_ob)
-        bpy.context.scene.objects.active = arrow_ob
-        arrow_ob.mb.molecule_ident = mol.name
-
-        c = arrow_ob.constraints.new('STRETCH_TO')
-        c.name = "mb.stretch"
-        c.rest_length = 1.0
-        c.volume = 'NO_VOLUME'
-        c.target = dipole_ob
-        
-        mb_utils.check_ob_dimensions(arrow_ob)
+        mb_utils.draw_dipole(molecule)
         return {'FINISHED'}
 
 
@@ -687,10 +715,13 @@ class MD_OT_import_molecules(bpy.types.Operator):
     supercell = IntVectorProperty(
         name="Supercell", description="Specify supercell dimensions",
         size=3, default=(1,1,1), min=1, subtype='XYZ')
-    use_center = BoolProperty(
-        name="Object to origin (first frame)",
-        description="Put the object into the global origin, "
-                    "the first frame only",
+    put_origin = BoolProperty(
+        name="Parent to origin",
+        description="Put the parent object into the global origin",
+        default=False)
+    parent_center = BoolProperty(
+        name="Center parent",
+        description="Put the parent object into the center of mass",
         default=False)
     
     @classmethod
@@ -769,7 +800,8 @@ class MD_OT_import_molecules(bpy.types.Operator):
                             self.bond_type,
                             scale_distances,
                             self.bond_guess,
-                            self.use_center,
+                            self.put_origin,
+                            self.parent_center,
                             mask_planes,
                             self.mask_flip,
                             self.draw_unit_cell,
@@ -788,11 +820,51 @@ class MD_OT_import_molecules(bpy.types.Operator):
     def draw(self, context):
         layout = self.layout
         row = layout.row()
-        row.prop(self, "name_mol")
+        row.label("Molecule name")
+        row = layout.row()
+        row.prop(self, "name_mol", text="")
         
         layout.separator()
         row = layout.row()
-        row.prop(self, "draw_style")
+        row.label("Units")
+        row = layout.row()
+        row.prop(self, "length_unit", text="")
+        row = layout.row()
+        row.active = (self.length_unit == 'OTHER')
+        row.prop(self, "length_unit_other")
+        
+        layout.separator()
+        row = layout.row()
+        row.label("Periodic systems")
+        row = layout.row()
+        row.prop(self, "draw_unit_cell")
+        row = layout.row()
+        row.prop(self, "supercell")
+        
+        layout.separator()
+        row = layout.row()
+        row.label("Parent location")
+        row = layout.row()
+        col = row.column()
+        col.prop(self, "put_origin")
+        col = row.column()
+        col.prop(self, "parent_center")
+        
+        layout.separator()
+        row = layout.row()
+        row.label(text="Masking object")
+        row = layout.row()
+        col = row.column()
+        col.prop_search(self, "use_mask", bpy.data, "objects", text="")
+        col = row.column()
+        col.prop(self, "mask_flip")
+        
+        
+        layout.separator()
+        row = layout.row()
+        row.label("Draw style")
+        row = layout.row()
+        row.prop(self, "draw_style", text="")
         row = layout.row()
         # Atom props
         col = row.column()
@@ -810,27 +882,6 @@ class MD_OT_import_molecules(bpy.types.Operator):
         col.prop(self, "bond_color")
         col.prop(self, "bond_guess")
         col.prop(self, "bond_type")
-        
-        layout.separator()
-        row = layout.row()
-        row.label(text="Masking object")
-        row.prop_search(self, "use_mask", bpy.data, "objects", text="")
-        row = layout.row()
-        row.prop(self, "mask_flip")
-        
-        layout.separator()
-        row = layout.row()
-        row.prop(self, "use_center")
-        
-        row = layout.row()
-        row.prop(self, "length_unit")
-        row = layout.row()
-        row.active = (self.length_unit == 'OTHER')
-        row.prop(self, "length_unit_other")
-        row = layout.row()
-        row.prop(self, "draw_unit_cell")
-        row = layout.row()
-        row.prop(self, "supercell")
         
 
 class MB_OT_draw_bond_lengths(bpy.types.Operator):
