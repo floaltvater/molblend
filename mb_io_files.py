@@ -40,12 +40,13 @@ class MB_Mode_Displacement():
 class MB_Mode():
     def __init__(self, freq=""):
         self.freq = freq
-        self.displacements = []
+        self.evecs = []
 
 class MB_QMode():
     def __init__(self, nqpt, qvec):
         self.nqpt = nqpt
         self.qvec = qvec
+        self.qvecs_format = ""
         self.modes = []
 
 def modes_from_file(modefilepath, file_format):
@@ -130,26 +131,27 @@ def _read_simple_modes(modefilepath):
                     elif len(disp) == 6:
                         real = disp[::2]
                         imag = disp[1::2]
-                    new_mode.displacements.append(
+                    new_mode.evecs.append(
                         MB_Mode_Displacement(real, imag))
                 qmode.modes.append(new_mode)
                 number_atoms = -1
     return [qmode]
-    
+
 
 def _read_qe_dynmat_out(filepath):
     # read mode file, modes need to be in same order as atoms in input file
     # currently only supports dynmat.out
     
-    all_qmodes = []
+    all_qpts = []
     with open(filepath, 'r') as fin:
         line = next(fin)
         q_count = 0
         for line in fin:
             if 'q =' in line:
                 q_count += 1
-                q = list(map(float, line.split()[-3:]))
+                q = [c*1. for c in (map(float, line.split()[-3:]))]
                 qmode = MB_QMode(q_count, q)
+                qmode.qvecs_format = "QE"
                 debug_print("Reading q-point {}: ({}, {}, {})".format(q_count, *q), level=2)
                 
                 line = next(fin) # stars
@@ -168,13 +170,13 @@ def _read_qe_dynmat_out(filepath):
                         lsplit = lstrip[1:-1].split()
                         
                         disp = list(map(float, lsplit))
-                        qmode.modes[-1].displacements.append(
+                        qmode.modes[-1].evecs.append(
                             MB_Mode_Displacement(disp[::2], disp[1::2]))
                     
                     elif '**********' in line:
-                        all_qmodes.append(qmode)
+                        all_qpts.append(qmode)
                         break
-    return all_qmodes
+    return all_qpts
 
 
 class MB_Structure():
@@ -242,6 +244,7 @@ class MB_Structure():
                         "name": atom["name"],
                         "coords": sc_coords,
                         "id": index, # keep old index for reference
+                        "supercell": (i, j, k),
                         }
                 n_unit_cell += 1
         else:
@@ -470,8 +473,6 @@ class MB_Structure():
         '''
         
         strc = cls()
-        
-        all_unit_vectors = []
         
         # some default variables
         optcell = 0
@@ -799,9 +800,6 @@ class MB_Structure():
         
         strc = cls()
         
-        all_atoms = {}
-        all_frames = []
-        all_unit_vectors = []
         with open(filepath, 'r') as fin:
             # read all parameters
             for line in fin:
@@ -821,7 +819,7 @@ class MB_Structure():
                         line = fin.readline()
                         coords = list(map(float, line.split()[3:6]))
                         unit_vectors.append(Vector(coords) * alat)
-                    all_unit_vectors.append(unit_vectors)
+                    self.axes.append(unit_vectors)
                 elif "Cartesian axes" in line:
                     break
             
@@ -865,7 +863,7 @@ class MB_Structure():
                         line = fin.readline()
                         coords = list(map(float, line.split()))
                         unit_vectors.append(Vector(coords) * alat)
-                    all_unit_vectors.append(unit_vectors)
+                    self.axes.append(unit_vectors)
                 
                 if "ATOMIC_POSITIONS" in line:
                     strc.nframes += 1
@@ -884,7 +882,7 @@ class MB_Structure():
                                 #level=1)
                     elif "crystal" in line.lower():
                         # get unit vectors
-                        cell_matrix = Matrix(all_unit_vectors[-1]).transposed()
+                        cell_matrix = Matrix(self.axes[-1]).transposed()
                     elif "alat" in line.lower():
                         #alat = float(line.split('=')[-1].strip().strip(",").strip()) 
                         cell_matrix = alat #* Matrix.Identity(3)

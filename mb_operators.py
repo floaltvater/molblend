@@ -584,12 +584,17 @@ class MD_OT_import_modes(bpy.types.Operator):
         return context.object and context.object.mb.get_molecule()
     
     def invoke(self, context, event):
+        molecule = context.object.mb.get_molecule()
+        if molecule.objects.atoms[0].object.animation_data:
+            # TODO allow user a choice
+            self.report({'WARNING'}, "Atoms already contain animation data. Will overwrite")
         wm = context.window_manager
         wm.fileselect_add(self)
         return {'RUNNING_MODAL'}
     
     def execute(self, context):
         ret = mb_import_export.import_modes(
+            context,
             self.report,
             self.filepath,
             self.file_format,
@@ -647,10 +652,10 @@ class MD_OT_import_molecules(bpy.types.Operator):
     atom_scales = CollectionProperty(type=atom_scale)
     refine_atoms = IntProperty(
         name="Refine atoms", description="Refine value for atom meshes",
-        default=8, min=3, max=64)
+        default=8, min=2, max=64)
     refine_bonds = IntProperty(
         name="Refine bonds", description="Refine value for atom meshes",
-        default=8, min=3, max=64)
+        default=8, min=2, max=64)
     bond_type = EnumProperty(
         name="Bond type", description="Select how bonds should behave",
         items=mb_utils.enums.bond_types, default='CONSTRAINT')
@@ -754,6 +759,7 @@ class MD_OT_import_molecules(bpy.types.Operator):
             # Execute main routine
             try:
                 worked = mb_import_export.import_molecule(
+                            context,
                             self.report,
                             filepath,
                             new_molecule,

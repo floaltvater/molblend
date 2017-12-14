@@ -32,6 +32,7 @@ from bpy.types import (PropertyGroup,
 from bpy.props import (StringProperty,
                        BoolProperty,
                        IntProperty,
+                       IntVectorProperty,
                        FloatProperty,
                        FloatVectorProperty,
                        BoolVectorProperty,
@@ -60,8 +61,9 @@ class atom_scale(PropertyGroup):
                         precision=2, update=mb_utils.update_all_meshes)
 
 class mb_mesh(PropertyGroup):
-    type = EnumProperty(name="type", items=[('MESH', 'MESH', 'MESH'),],
-                        description="Do not change", default='MESH')
+    type = EnumProperty(
+        name="type", description="Identifies the mesh type",
+        items=mb_utils.enums.mesh_types, default='NONE')
 
 class mb_atom_mode(PropertyGroup):
     name = IntProperty(name="index")
@@ -69,12 +71,52 @@ class mb_atom_mode(PropertyGroup):
     freq = FloatProperty(name="frequency")
     vec = FloatVectorProperty(name="vector", subtype="XYZ")
 
+class mb_molecule_objects(PropertyGroup):
+    atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
+    bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
+    parent = PointerProperty(name="Parent", type=mb_object_pointer)
+    dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
+    other = CollectionProperty(name="Bonds", type=mb_object_pointer)
+
+class mb_mode_displacement(PropertyGroup):
+    real = FloatVectorProperty(name="real", size=3)
+    imag = FloatVectorProperty(name="imag", size=3)
+    action = PointerProperty(name="action", type=bpy.types.Action)
+
+class mb_mode(PropertyGroup):
+    name = StringProperty(name="name")
+    index = IntProperty(name="index")
+    freq = StringProperty(
+        name="Mode frequency",
+        default="")
+    symmetry = StringProperty(
+        name="Mode symmetry", description="Symmetry of the active mode",
+        default="")
+    evecs = CollectionProperty(name="Displacements", type=mb_mode_displacement)
+
+class mb_qmode(PropertyGroup):
+    name = StringProperty(name="name")
+    nqpt = IntProperty(name="nqpt", default=1)
+    qvec = FloatVectorProperty(name="q vector", default=(0,0,0))
+    modes = CollectionProperty(type=mb_mode)
+
+class MB_UL_modes(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        #split = layout.split(0.2)
+        layout.label(str(item.nqpt))
+        layout.label("q=({:5.3f}, {:5.3f}, {:5.3f})".format(*item.qvec))
+
+class mb_unit_cell(PropertyGroup):
+    x = FloatVectorProperty()
+
+
 class mb_object(PropertyGroup):
     index = IntProperty(name="Index")
     name = StringProperty(name="Object name")
     type = EnumProperty(
         name="type", description="Select the object type",
         items=mb_utils.enums.object_types, default='NONE')
+    
     molecule_ident = StringProperty(name="Molecule identifier")
     
     # used by type == 'ATOM'
@@ -88,7 +130,10 @@ class mb_object(PropertyGroup):
     
     # used by type == 'BOND'
     bonded_atoms = CollectionProperty(type=mb_object_pointer)
-    modes = CollectionProperty(type=mb_atom_mode)
+    #modes = CollectionProperty(type=mb_atom_mode)
+    
+    supercell = IntVectorProperty(name="supercell", default=(0,0,0),
+                                  size=3)
     
     @property
     def object(self):
@@ -176,39 +221,12 @@ class mb_object(PropertyGroup):
             row.prop(data, prop, text=label)
 
 
-class mb_molecule_objects(PropertyGroup):
-    atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
-    bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
-    parent = PointerProperty(name="Parent", type=mb_object_pointer)
-    dipole = PointerProperty(name="Dipole", type=mb_object_pointer)
-    other = CollectionProperty(name="Bonds", type=mb_object_pointer)
+#class mb_action(PropertyGroup):
+    #name = StringProperty(name="Action name")
+    #mode_vector = FloatVectorProperty(
+        #name="Mode vector",
+        #description="Original mode vector for atom as read from file")
 
-class mb_mode_displacement(PropertyGroup):
-    real = FloatVectorProperty(name="real", size=3)
-    imag = FloatVectorProperty(name="imag", size=3)
-
-class mb_mode(PropertyGroup):
-    name = StringProperty(name="name")
-    index = IntProperty(name="index")
-    freq = StringProperty(
-        name="Mode frequency",
-        default="")
-    symmetry = StringProperty(
-        name="Mode symmetry", description="Symmetry of the active mode",
-        default="")
-    displacements = CollectionProperty(name="Displacements", type=mb_mode_displacement)
-
-class mb_qmode(PropertyGroup):
-    name = StringProperty(name="name")
-    nqpt = IntProperty(name="nqpt", default=1)
-    qvec = FloatVectorProperty(name="q vector", default=(0,0,0))
-    modes = CollectionProperty(type=mb_mode)
-
-class MB_UL_modes(UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        #split = layout.split(0.2)
-        layout.label(str(item.nqpt))
-        layout.label("q=({:5.3f}, {:5.3f}, {:5.3f})".format(*item.qvec))
 
 class mb_molecule(PropertyGroup):
     index = IntProperty(name="Molecule index")
@@ -252,22 +270,22 @@ class mb_molecule(PropertyGroup):
     atom_scales = CollectionProperty(type=atom_scale)
     refine_atoms = IntProperty(
         name="Refine atoms", description="Refine value for atom meshes", 
-        default=8, min=3, max=64,
+        default=8, min=2, max=64,
         update=mb_utils.update_refine_atoms
         )
     refine_bonds = IntProperty(
         name="Refine bonds", description="Refine value for atom meshes", 
-        default=8, min=3, max=64,
+        default=8, min=2, max=64,
         update=mb_utils.update_refine_bonds
         )
     
     # vibrational modes
-    qmodes = CollectionProperty(name="Modes", type=mb_qmode)
+    qpts = CollectionProperty(name="Modes", type=mb_qmode)
     active_nqpt = IntProperty(
         name="Active q-point",
         description="Active q-point",
         default=0, min=0,
-        update=mb_utils.update_active_nqpt
+        update=mb_utils.update_active_mode
         )
     max_mode = IntProperty(
         name="Number of modes", 
@@ -288,22 +306,21 @@ class mb_molecule(PropertyGroup):
     
     def draw_vibrations(self, layout):
         
-        layout.template_list("MB_UL_modes", "", self, "qmodes", self, "active_nqpt",rows=2)
+        row = layout.row()
+        row.operator("mb.import_modes")
+        row = layout.row()
+        row.template_list("MB_UL_modes", "", self, "qpts", self, "active_nqpt",rows=1)
         row = layout.row()
         row.prop(self, "active_mode")
         row = layout.row()
-        row.label("active_nqpt: {} ".format(self.active_nqpt))
+        row.prop(self, "mode_scale")
         row = layout.row()
-        row.operator("mb.import_modes")
-        #row = layout.row()
-        #row.label("Frequency: {:>7.2f} cm^-1".format(
-                  #self.qmodes["mode_{}".format(self.active_mode)].freq))
-        #row = layout.row()
-        #row.prop(self.modes_col["mode_{}".format(self.active_mode)],
-                 #"symmetry", text="Symmetry")
-        #row = layout.row()
-        #row.prop(self, "mode_scale")
-    
+        row.prop(self.qpts[self.active_nqpt].modes[self.active_mode], "freq",
+                 text="Frequency")
+        row = layout.row()
+        row.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
+                 "symmetry", text="Symmetry")
+        
     
     def draw_properties(self, layout):
         #layout.label("Molecule properties")
@@ -311,6 +328,8 @@ class mb_molecule(PropertyGroup):
         row.prop(self, "name_mol", text="")
         row = layout.row()
         row.label("(parent: {}".format(self.objects.parent.name))
+        row = layout.row()
+        row.label("(parent_ob: {}".format(self.objects.parent.object.name))
         row = layout.row()
         row.label("(ident: '{}')".format(self.name))
         
@@ -414,13 +433,6 @@ class mb_molecule(PropertyGroup):
             for i in reversed(indeces):
                 collections[ob_type].remove(i)
         return
-
-
-class mb_action(PropertyGroup):
-    name = StringProperty(name="Action name")
-    mode_vector = FloatVectorProperty(
-        name="Mode vector",
-        description="Original mode vector for atom as read from file")
 
 
 class mb_element(PropertyGroup):
@@ -539,6 +551,8 @@ class mb_scene(PropertyGroup):
         mol.draw_style = draw_style or self.globals.draw_style
         mol.radius_type = radius_type or self.globals.radius_type
         mol.bond_radius = bond_radius or self.globals.bond_radius
+        mol.refine_atoms = refine_atoms
+        mol.refine_bonds = refine_bonds
         for scale in (atom_scales or self.globals.atom_scales):
             new_scale = mol.atom_scales.add()
             new_scale.name = scale.name
@@ -683,7 +697,7 @@ class mb_window_manager(PropertyGroup):
 def register():
     bpy.types.Object.mb = PointerProperty(type=mb_object)
     bpy.types.Mesh.mb = PointerProperty(type=mb_mesh)
-    bpy.types.Action.mb = PointerProperty(type=mb_action)
+    #bpy.types.Action.mb = PointerProperty(type=mb_action)
     bpy.types.Scene.mb = PointerProperty(type=mb_scene)
     bpy.types.WindowManager.mb = PointerProperty(type=mb_window_manager)
 
@@ -691,6 +705,6 @@ def register():
 def unregister():
     del bpy.types.Object.mb
     del bpy.types.Mesh.mb
-    del bpy.types.Action.mb
+    #del bpy.types.Action.mb
     del bpy.types.Scene.mb
     del bpy.types.WindowManager.mb

@@ -44,6 +44,11 @@ class enums():
         ('BOND', "Bond", "Bond"),
         ('PARENT', "Parent", "Parent"),
         ]
+    mesh_types = [
+        ('NONE', "None", "None"),
+        ('ELEMENT', "Element", "Element"),
+        ('BOND', "Bond", "Bond"),
+        ]
     radius_types = [
         ('covalent', 'covalent', 'covalent'),
         ('vdw', 'van der Waals', 'van der Waals'),
@@ -94,49 +99,28 @@ def update_all_meshes(self, context):
     for me in bpy.data.meshes:
         me.update()
 
-def update_active_nqpt(self, context):
-    debug_print("Update active qmode", level=1)
-
 def update_active_mode(self, context):
     debug_print("mb_utils.update_active_mode", level=6)
-    if self.max_mode == 0:
+    if len(self.qpts) == 0:
+        if context.screen.is_animation_playing:
+            bpy.ops.screen.animation_play()
+            context.scene.frame_current = 1
+        return
+    
+    modes = self.qpts[self.active_nqpt].modes
+    if len(modes) == 0:
         if self.active_mode == 0:
             return
         else:
             self.active_mode = 0
             return
-    elif self.active_mode > self.max_mode:
-        self.active_mode = self.max_mode
+    elif self.active_mode >= len(modes):
+        self.active_mode = len(modes) - 1
         return
     
     for atom in self.objects.atoms:
-        atom_ob = atom.object
-        atom_id = get_atom_id(self.index, atom_ob.mb.index)
-        anim_data = atom_ob.animation_data
-        if anim_data:
-            action = anim_data.action
-            if action:
-                avec = atom_ob.mb.modes[self.active_mode].vec * self.mode_scale
-                for dim in range(3):
-                    fcu = action.fcurves[dim]
-                    kf1 = fcu.keyframe_points[0]
-                    kf2 = fcu.keyframe_points[1]
-                    middle = (kf1.co[1] + kf2.co[1]) / 2.0
-                    
-                    for p in range(3):
-                        loc = middle + pow(-1, p) * avec[dim]
-                        fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                        if self.active_mode == 0:
-                            fcu.keyframe_points[p].interpolation = 'LINEAR'
-                        else:
-                            fcu.keyframe_points[p].interpolation = 'BEZIER'
-                    fcu.update()
-            else:
-                debug_print("No action for atom '{}'.".format(atom_id),
-                            level=1)
-        else:
-            debug_print("No animation data for atom '{}'.".format(atom_id),
-                        level=1)
+        #update_mode_drivers(atom.object, self)
+        update_mode_action(atom.object, self)
     
     if self.active_mode == 0:
         # stop animation
@@ -148,6 +132,7 @@ def update_active_mode(self, context):
         if not context.screen.is_animation_playing:
             context.scene.frame_end = 20
             bpy.ops.screen.animation_play()
+            
 
 
 def update_atom_element(self, context):
@@ -202,34 +187,37 @@ def update_bond_material(self, context):
 
 def update_refine_atoms(self, context):
     debug_print("mb_utils.update_refine_atoms", level=6)
-    if self.refine_atoms < 3:
-        self.refine_atoms = 3
+    if self.refine_atoms < 2:
+        self.refine_atoms = 2
+        return
     replaced_elements = set()
-    for mesh in self.objects.meshes:
-        if "atom_mesh" in mesh.name:
-            element = mesh.name.split(".")[-1]
-            if not element in replaced_elements:
-                data = mesh.get_data()
-                # get new temporary atom mesh with new refine value
-                new_data = get_atom_data(element, self, type='MESH', 
-                                         mesh_name="tmp_mesh")
-                # replace mesh data
-                bm = bmesh.new()
-                bm.from_mesh(new_data)
-                bm.to_mesh(data)
-                bm.free()
-                replaced_elements.add(element)
-                # delete temporary mesh
-                bpy.data.meshes.remove(new_data)
+    for mesh in self.meshes:
+        print(mesh.name, mesh.data.mb.type)
+        if mesh.data.mb.type == "ELEMENT":
+            element = mesh.name
+            #if not element in replaced_elements:
+            data = mesh.data
+            # get new temporary atom mesh with new refine value
+            new_data = get_atom_data(element, self, type='MESH', 
+                                        mesh_name="tmp_mesh")
+            # replace mesh data
+            bm = bmesh.new()
+            bm.from_mesh(new_data)
+            bm.to_mesh(data)
+            bm.free()
+            replaced_elements.add(element)
+            # delete temporary mesh
+            bpy.data.meshes.remove(new_data)
 
 
 def update_refine_bonds(self, context):
     debug_print("mb_utils.update_refine_bonds", level=6)
-    if self.refine_bonds < 3:
-        self.refine_bonds = 3
-    mesh = self.objects.meshes.get("bond_mesh_{}".format(self.index))
+    if self.refine_bonds < 2:
+        self.refine_bonds = 2
+        return
+    mesh = self.meshes.get("bond")
     if mesh:
-        data = mesh.get_data()
+        data = mesh.data
         # get new temporary bond mesh with new refine value
         name = "tmp_mesh"
         new_data = get_bond_data(self, type='MESH', mesh_name="tmp_mesh")
@@ -608,7 +596,7 @@ def get_atom_data(element, molecule, type='MESH', mesh_name=""):
             me = bpy.context.blend_data.meshes.get(mesh_name)
         else:
             element = element.capitalize()
-            mesh_name = "atom_mesh_{}.{}".format(molecule.index, element)
+            atom_name = "atom_mesh_{}.{}".format(molecule.index, element)
             item = molecule.meshes.get(element)
             if item:
                 me = item.data
@@ -626,11 +614,13 @@ def get_atom_data(element, molecule, type='MESH', mesh_name=""):
             new_atom = bpy.context.object
             bpy.ops.object.shade_smooth()
             me = new_atom.data
-            me.name = mesh_name
-            
-            item = molecule.meshes.add()
-            item.name = element
-            item.data = me
+            me.name = mesh_name or atom_name
+            me.mb.type = "ELEMENT"
+            if not mesh_name:
+                print("add")
+                item = molecule.meshes.add()
+                item.name = element
+                item.data = me
             # adds material slot to mesh, but don't assign material yet
             new_atom.data.materials.append(None)
             
@@ -671,6 +661,7 @@ def get_bond_data(molecule, type='MESH', mesh_name=""):
             
             me = new_bond.data
             me.name = mesh_name or "bond_mesh_{}".format(molecule.index)
+            me.mb.type = "BOND"
             bm = bmesh.new()
             bm.from_mesh(me)
             
@@ -683,10 +674,11 @@ def get_bond_data(molecule, type='MESH', mesh_name=""):
                 if vert.co.y > 0.01:
                     vert.select = False
             new_verts = []
+            bm.edges.ensure_lookup_table()
             for edge in bm.edges:
-                if len(edge.link_faces) == 2 and edge.calc_length() == 1.0:
-                    if hasattr(edge, "ensure_lookup_table"):
-                        edge.ensure_lookup_table()
+                if abs(edge.verts[0].co.y - edge.verts[1].co.y) > .5:
+                    #if hasattr(edge, "ensure_lookup_table"):
+                        #edge.ensure_lookup_table()
                     e, v = bmesh.utils.edge_split(edge, edge.verts[0], 0.5)
                     new_verts.append(v)
             n_verts = len(new_verts)
@@ -730,10 +722,10 @@ def get_bond_data(molecule, type='MESH', mesh_name=""):
             for o in selected:
                 o.select = True
             bpy.context.scene.objects.active = last_active
-    
-            item = molecule.meshes.add()
-            item.name = mesh_name or bond_name
-            item.data = me
+            if not mesh_name:
+                item = molecule.meshes.add()
+                item.name = bond_name
+                item.data = me
     return me
 
 
@@ -883,6 +875,291 @@ def set_bond_drivers(context, bond, molecule):
         targ.id = context.scene
         targ.data_path = 'mb.molecules["{}"].bond_radius'.format(
                             molecule.name)
+
+def clear_modes(molecule):
+    #for atom in molecule.objects.atoms:
+        #clear_mode_drivers(atom.object)
+    while len(molecule.qpts):
+        molecule.qpts.remove(0)
+
+#def clear_mode_drivers(atom):
+    #atom.driver_remove('location', -1)
+
+#def update_mode_drivers(atom, molecule):
+    #debug_print("mb_utils.set_mode_drivers", level=6)
+    #fc_list = atom.driver_add('location', -1) # add new driver
+    
+    #nqpt = molecule.active_nqpt
+    #mode = molecule.active_mode
+    #nvec = len(molecule.qpts[nqpt].modes[mode].evecs)
+    
+    #for dim, fcurve in enumerate(fc_list):
+        #drv = fcurve.driver
+        #drv.type = 'SCRIPTED'
+        #drv.show_debug_info = True
+        
+        #var = drv.variables.get('Real')
+        #trg = 'mb.molecules["{}"].qpts[{}].modes[{}].evecs[{}].real[{}]'.format(molecule.name, nqpt, mode, atom.mb.index%nvec, dim)
+        #var.targets[0].data_path = trg
+        
+        #var = drv.variables.get('Imag')
+        #trg = 'mb.molecules["{}"].qpts[{}].modes[{}].evecs[{}].imag[{}]'.format(molecule.name, nqpt, mode, atom.mb.index%nvec, dim)
+        #var.targets[0].data_path = trg
+
+        #var = drv.variables.get('qvec')
+        #trg = 'mb.molecules["{}"].qpts[{}].qvec'.format(molecule.name, nqpt)
+        #var.targets[0].data_path = trg
+        
+        #loc = atom.location[dim]
+        
+        #qR = "+".join(["qvec[{0}]*sc[{0}]".format(j) for j in range(3)])
+        #T = 20
+        #arg = "2*pi*({}-(frame-1)/{})".format(qR, T)
+        #expr = "{}+scale*(Real*cos({})+Imag*sin({}))".format(loc, arg, arg)
+        
+        #drv.expression = expr
+        
+
+#def set_mode_drivers(context, atom, molecule):
+    #debug_print("mb_utils.set_mode_drivers", level=6)
+    #fc_list = atom.driver_add('location', -1) # add new driver
+    
+    #nqpt = molecule.active_nqpt
+    #mode = molecule.active_mode
+    #nvec = len(molecule.qpts[nqpt].modes[mode].evecs)
+    
+    #for dim, fcurve in enumerate(fc_list):
+        #drv = fcurve.driver
+        #drv.type = 'SCRIPTED'
+        #drv.show_debug_info = True
+        
+        #var = drv.variables.get('scale')
+        #if not var:
+            #var = drv.variables.new()
+            #var.name = 'scale' # name to use in scripting
+            #var.type = 'SINGLE_PROP'
+        #targ = var.targets[0]
+        #targ.id_type = 'SCENE'
+        #targ.id = context.scene
+        #targ.data_path = 'mb.molecules["{}"].mode_scale'.format(molecule.name)
+        
+        #var = drv.variables.get('sc')
+        #if not var:
+            #var = drv.variables.new()
+            #var.name = 'sc' # name to use in scripting
+            #var.type = 'SINGLE_PROP'
+        #targ = var.targets[0]
+        #targ.id_type = 'OBJECT'
+        #targ.id = atom
+        #trg = 'mb.supercell'
+        #targ.data_path = trg
+        
+        #var = drv.variables.get('Real')
+        #if not var:
+            #var = drv.variables.new()
+            #var.name = 'Real' # name to use in scripting
+            #var.type = 'SINGLE_PROP'
+        #targ = var.targets[0]
+        #targ.id_type = 'SCENE'
+        #targ.id = context.scene
+        #trg = 'mb.molecules["{}"].qpts[{}].modes[{}].evecs[{}].real[{}]'.format(molecule.name, nqpt, mode, atom.mb.index%nvec, dim)
+        #targ.data_path = trg
+        
+        #var = drv.variables.get('Imag')
+        #if not var:
+            #var = drv.variables.new()
+            #var.name = 'Imag' # name to use in scripting
+            #var.type = 'SINGLE_PROP'
+        #targ = var.targets[0]
+        #targ.id_type = 'SCENE'
+        #targ.id = context.scene
+        #trg = 'mb.molecules["{}"].qpts[{}].modes[{}].evecs[{}].imag[{}]'.format(molecule.name, nqpt, mode, atom.mb.index%nvec, dim)
+        #targ.data_path = trg
+        
+        #var = drv.variables.get('qvec')
+        #if not var:
+            #var = drv.variables.new()
+            #var.name = 'qvec' # name to use in scripting
+            #var.type = 'SINGLE_PROP'
+        #targ = var.targets[0]
+        #targ.id_type = 'SCENE'
+        #targ.id = context.scene
+        #trg = 'mb.molecules["{}"].qpts[{}].qvec'.format(molecule.name, nqpt)
+        #targ.data_path = trg
+        
+        #loc = atom.location[dim]
+        
+        #qR = "+".join(["qvec[{0}]*sc[{0}]".format(j) for j in range(3)])
+        #T = 20
+        #arg = "2*pi*({}-(frame-1)/{})".format(qR, T)
+        #expr = "{}+scale*(Real*cos({})+Imag*sin({}))".format(loc, arg, arg)
+        
+        #drv.expression = expr
+        ##amp = "scale*qpts[nqpt].modes[mode].evecs[i].real[{}]".format(dim)
+        ##drv.expression = "{} +{}*sin((frame-1)*pi/10)".format(loc, amp)
+
+def update_mode_action(atom, molecule):
+    action = atom.animation_data.action
+    qpt = molecule.qpts[molecule.active_nqpt]
+    qvec = qpt.qvec
+    sc = atom.mb.supercell
+    qR = qvec[0]*sc[0] + qvec[1]*sc[1] + qvec[2]*sc[2]
+    T = 20
+    nevecs = len(qpt.modes[molecule.active_mode].evecs)
+    evec = qpt.modes[molecule.active_mode].evecs[atom.mb.index%nevecs]
+    Re = evec.real
+    Im = evec.imag
+    
+    for dim in range(3):
+        t_max = T*(qR - math.atan2(Im[dim], Re[dim])/(2*math.pi))
+        t0 = (t_max - T/4)
+        t0 = t0 - T*(t0//T) - T
+        arg = 2*math.pi*(qR-t_max/T)
+        cos_max = math.cos(arg)
+        sin_max = math.sin(arg)
+        fcu = action.fcurves[dim]
+        loc = fcu.keyframe_points[0].co[1]
+        vec = Re[dim]*cos_max - Im[dim]*sin_max
+        
+        for p in range(9):
+            frame = t0 + 5*p
+            coords = loc + pow(-1, p//2)*vec if p%2 else loc
+            #if atom.mb.index == 1 and dim == 0:
+                #print("{:6.3f}".format(coords),end=" ")
+            fcu.keyframe_points[p].co = (frame, coords)
+            if p%2 == 0:
+                fcu.keyframe_points[p].handle_left = (frame, loc)
+                fcu.keyframe_points[p].handle_right = (frame, loc)
+        fcu.update()
+    #if atom.mb.index == 1:
+        #print()
+            
+def create_mode_action(context, atom, molecule):
+    anim_data = atom.animation_data_create()
+    atom_id = '{}.{}'.format(molecule.index, atom.mb.index)
+    action = bpy.data.actions.new(name="mode_{}".format(atom_id))
+    anim_data.action = action
+    # make new group
+    ag = action.groups.new("Location")
+    for dim in range(3):
+        fcu = action.fcurves.new(data_path="location", index=dim)
+        fcu.group = ag
+        fcu.keyframe_points.add(9)
+        loc = atom.location[dim]
+        for p in range(9):
+            fcu.keyframe_points[p].co = 1.0 + 5*p, loc
+            fcu.keyframe_points[p].interpolation = 'BEZIER'
+        fcu.update()
+        
+#--- Unit cell functions -----------------------------------------------------#
+
+def draw_unit_cell(molecule, draw_style='ARROWS'):
+    # TODO implement different drawing styles
+    all_obs = []
+    
+    unit_vectors = Matrix(molecule.unit_cell_frames[0])
+
+    me = bpy.data.meshes.new("unit_cell_{}".format(molecule.index))
+    coords = (
+        (0,0,0), #0, O
+        unit_vectors[0], #1, x
+        unit_vectors[0] + unit_vectors[1], #2, xy
+        unit_vectors[1], #3, y
+        unit_vectors[2], #4, z
+        unit_vectors[0] + unit_vectors[2], #5, xz
+        unit_vectors[1] + unit_vectors[2], #6, yz
+        unit_vectors[0] + unit_vectors[1] + unit_vectors[2], #7, xyz
+        )
+    faces = (
+        (0, 3, 2, 1),
+        (0, 4, 6, 3),
+        (0, 1, 5, 4),
+        (7, 6, 4, 5),
+        (7, 5, 1, 2),
+        (7, 2, 3, 6),
+        )
+    me.from_pydata(coords, [], faces)
+    uc_cube = bpy.data.objects.new("unit_cell_{}".format(molecule.index), me)
+    bpy.context.scene.objects.link(uc_cube)
+    uc_cube.draw_type = 'WIRE'
+    
+    vg = []
+    vg.append(uc_cube.vertex_groups.new('a'))
+    vg[-1].add([1], 1, 'REPLACE')
+    vg.append(uc_cube.vertex_groups.new('b'))
+    vg[-1].add([3], 1, 'REPLACE')
+    vg.append(uc_cube.vertex_groups.new('c'))
+    vg[-1].add([4], 1, 'REPLACE')
+    
+    all_obs.append(uc_cube)
+    
+    if 'ARROWS' in draw_style:
+        radius = 0.1
+        # get material
+        material = bpy.data.materials.get('axes')
+        if not material:
+            material = mb_utils.new_material('axes', color=(1,0,0))
+        
+        # add sphere at origin
+        bpy.ops.mesh.primitive_uv_sphere_add(location=(0,0,0), size=radius, 
+                                             segments=8, ring_count=8)
+        ob = bpy.context.object
+        ob.name = "unit_cell_origin"
+        ob.parent = uc_cube
+        ob.parent_type = 'VERTEX'
+        ob.data.materials.append(None)
+        ob.material_slots[0].material = material
+        all_obs.append(ob)
+        
+        arrow_mesh = mb_utils.get_arrow_data(material=material, radius=radius)
+        
+        for di, vec in enumerate(unit_vectors):
+            ob = bpy.data.objects.new(('a', 'b', 'c')[di], arrow_mesh)
+            ob.parent = uc_cube
+            ob.parent_type = 'VERTEX'
+            bpy.context.scene.objects.link(ob)
+            bpy.context.scene.objects.active = ob
+            
+            c = ob.constraints.new('STRETCH_TO')
+            c.name = "mb.stretch"
+            c.rest_length = 1.0
+            c.volume = 'NO_VOLUME'
+            c.target = uc_cube
+            c.subtarget = vg[di].name
+            all_obs.append(ob)
+    
+    if len(molecule.unit_cell_frames) > 1:
+        print("animating uc")
+        # add one shape key per frame
+        for i, uvs in enumerate(len(molecule.unit_cell_frames)):
+            shape_key = uc_cube.shape_key_add("{}.{}".format(uc_cube.name, i), 
+                                              from_mix=False)
+            unit_vectors = Matrix(uvs)
+            coords = (
+                (0,0,0), #0, O
+                unit_vectors[0], #1, x
+                unit_vectors[0] + unit_vectors[1], #2, xy
+                unit_vectors[1], #3, y
+                unit_vectors[2], #4, z
+                unit_vectors[0] + unit_vectors[2], #5, xz
+                unit_vectors[1] + unit_vectors[2], #6, yz
+                unit_vectors[0] + unit_vectors[1] + unit_vectors[2], #7, xyz
+                )
+            for vert, coord in zip(uc_cube.data.vertices, coords):
+                shape_key.data[vert.index].co = coord
+        uc_cube.data.shape_keys.use_relative = False
+        
+        anim_data = uc_cube.data.shape_keys.animation_data_create()
+        action = bpy.data.actions.new(name="uc_{}".format(molecule.index))
+        anim_data.action = action
+        
+        fcu = action.fcurves.new(data_path="eval_time")
+        for nf, kb in enumerate(uc_cube.data.shape_keys.key_blocks):
+            fcu.keyframe_points.add(1)
+            fcu.keyframe_points[-1].co = nf + 1, kb.frame
+            fcu.keyframe_points[-1].interpolation = 'LINEAR'
+        
+    return all_obs
 
 #--- Material functions ------------------------------------------------------#
 

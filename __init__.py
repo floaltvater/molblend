@@ -79,6 +79,7 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
+# TODO What happens when I duplicate a full molecule? What about the drivers? Do they refer to the same MB_Molecule?
 # TODO Initialize on startup/load (like in manuelbastioni)
 # TODO remove properties from window manager, add to scene
 # TODO clean up deleting objects. There should be ONE function to call when an object needs to be deleted
@@ -100,6 +101,7 @@ from bpy.props import (StringProperty,
 # TODO Geometries when adding atom
 
 ### FEATURES
+# TODO switch to ID properties. Easier to link to objects that way.
 # TODO implement masking objects again
 # TODO import q!=0 modes with phase
 # TODO display bond angles/dihedrals?

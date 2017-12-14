@@ -48,239 +48,137 @@ def is_inside_of_planes(planes, l0, flip=False):
     else:
         return not flip # if flip, point must be inside to not be selected
 
-#--- Unit cell functions -----------------------------------------------------#
-
-def draw_unit_cell(molecule, all_unit_vectors, draw_style='ARROWS'):
-    # TODO implement different drawing styles
-    all_obs = []
-    
-    # if unit_vectors is a list of unit vectors reassign them to 
-    # all_unit_vectors
-    unit_vectors = all_unit_vectors[0]
-
-    me = bpy.data.meshes.new("unit_cell_{}".format(molecule.index))
-    coords = (
-        (0,0,0), #0, O
-        unit_vectors[0], #1, x
-        unit_vectors[0] + unit_vectors[1], #2, xy
-        unit_vectors[1], #3, y
-        unit_vectors[2], #4, z
-        unit_vectors[0] + unit_vectors[2], #5, xz
-        unit_vectors[1] + unit_vectors[2], #6, yz
-        unit_vectors[0] + unit_vectors[1] + unit_vectors[2], #7, xyz
-        )
-    faces = (
-        (0, 3, 2, 1),
-        (0, 4, 6, 3),
-        (0, 1, 5, 4),
-        (7, 6, 4, 5),
-        (7, 5, 1, 2),
-        (7, 2, 3, 6),
-        )
-    me.from_pydata(coords, [], faces)
-    uc_cube = bpy.data.objects.new("unit_cell_{}".format(molecule.index), me)
-    bpy.context.scene.objects.link(uc_cube)
-    uc_cube.draw_type = 'WIRE'
-    
-    vg = []
-    vg.append(uc_cube.vertex_groups.new('a'))
-    vg[-1].add([1], 1, 'REPLACE')
-    vg.append(uc_cube.vertex_groups.new('b'))
-    vg[-1].add([3], 1, 'REPLACE')
-    vg.append(uc_cube.vertex_groups.new('c'))
-    vg[-1].add([4], 1, 'REPLACE')
-    
-    all_obs.append(uc_cube)
-    
-    if 'ARROWS' in draw_style:
-        radius = 0.1
-        # get material
-        material = bpy.data.materials.get('axes')
-        if not material:
-            material = mb_utils.new_material('axes', color=(1,0,0))
-        
-        # add sphere at origin
-        bpy.ops.mesh.primitive_uv_sphere_add(location=(0,0,0), size=radius, 
-                                             segments=8, ring_count=8)
-        ob = bpy.context.object
-        ob.name = "unit_cell_origin"
-        ob.parent = uc_cube
-        ob.parent_type = 'VERTEX'
-        ob.data.materials.append(None)
-        ob.material_slots[0].material = material
-        all_obs.append(ob)
-        
-        arrow_mesh = mb_utils.get_arrow_data(material=material, radius=radius)
-        
-        for di, vec in enumerate(unit_vectors):
-            ob = bpy.data.objects.new(('a', 'b', 'c')[di], arrow_mesh)
-            ob.parent = uc_cube
-            ob.parent_type = 'VERTEX'
-            bpy.context.scene.objects.link(ob)
-            bpy.context.scene.objects.active = ob
-            
-            c = ob.constraints.new('STRETCH_TO')
-            c.name = "mb.stretch"
-            c.rest_length = 1.0
-            c.volume = 'NO_VOLUME'
-            c.target = uc_cube
-            c.subtarget = vg[di].name
-            all_obs.append(ob)
-    
-    if all_unit_vectors and len(all_unit_vectors) > 1:
-        print("animating uc")
-        n_frames = len(all_unit_vectors)
-        #bpy.context.scene.frame_end = n_frames - 1
-        # add one shape key per frame
-        for i, unit_vectors in enumerate(all_unit_vectors):
-            shape_key = uc_cube.shape_key_add("{}.{}".format(uc_cube.name, i), 
-                                              from_mix=False)
-            #shape_key.frame = i+1
-            #shape_key.value = 1.
-            coords = (
-                (0,0,0), #0, O
-                unit_vectors[0], #1, x
-                unit_vectors[0] + unit_vectors[1], #2, xy
-                unit_vectors[1], #3, y
-                unit_vectors[2], #4, z
-                unit_vectors[0] + unit_vectors[2], #5, xz
-                unit_vectors[1] + unit_vectors[2], #6, yz
-                unit_vectors[0] + unit_vectors[1] + unit_vectors[2], #7, xyz
-                )
-            for vert, coord in zip(uc_cube.data.vertices, coords):
-                shape_key.data[vert.index].co = coord
-        uc_cube.data.shape_keys.use_relative = False
-        
-        anim_data = uc_cube.data.shape_keys.animation_data_create()
-        action = bpy.data.actions.new(name="uc_{}".format(molecule.index))
-        anim_data.action = action
-        
-        fcu = action.fcurves.new(data_path="eval_time")
-        #for nf in range(n_frames):
-        for nf, kb in enumerate(uc_cube.data.shape_keys.key_blocks):
-            fcu.keyframe_points.add(1)
-            fcu.keyframe_points[-1].co = nf + 1, kb.frame
-            fcu.keyframe_points[-1].interpolation = 'LINEAR'
-                    
-        #uc_cube.data.shape_keys.eval_time = len(all_unit_vectors) + 1
-    
-    return all_obs
-
-
-#--- Other helper functions --------------------------------------------------#
-
-
-
-def get_world_coordinates(ob):
-    return ob.matrix_world.decompose()[0]
-
-
-#--- Main functions ----------------------------------------------------------#
-
-def import_modes(report,
+def import_modes(context,
+                 report,
                  modefilepath,
                  file_format,
                  molecule):
     
     debug_print("Reading modes file {}".format(modefilepath), level=4)
     try:
-        qmodes = mb_io_files.modes_from_file(modefilepath, 
+        qpts = mb_io_files.modes_from_file(modefilepath, 
                                              file_format)
     except:
         raise
     
-    if not qmodes or not qmodes[0].modes:
+    if not qpts or not qpts[0].modes:
         msg = "No modes found in {}\n".format(bpy.path.basename(modefilepath))
         msg += "Did you chose the correct file format?"
         report({'ERROR'}, msg)
-    # TODO Check for correct number of displacements
-    
-    for qmode in qmodes:
-        qm = molecule.qmodes.add()
-        qm.nqpt = qmode.nqpt
-        print(qmode.qvec)
-        qm.qvec = qmode.qvec
+        return False
+    # TODO Check for correct number of evecs
+    nat = len(molecule.objects.atoms)
+    for qmode in qpts:
+        if qmode.qvecs_format and not molecule["unit_cells"]:
+            debug_print("ERROR: can't convert qvecs to crystal coordinates because no unit cell information is present", level=1)
         for mode in qmode.modes:
+            if nat % len(mode.evecs) != 0:
+                msg = "number of displacement vectors "
+                msg += "{}".format(len(mode.evecs))
+                msg += " is different than number of atoms {}".format(nat)
+                msg += " in active molecule."
+                report({'ERROR'}, msg)
+                return False
+    
+    mb_utils.clear_modes(molecule)
+    
+    uc = Matrix(molecule["unit_cells"][0])*1.889725989
+    #print(uc)
+    k_uc = Matrix([uc[(dim+1)%3].cross(uc[(dim+2)%3]) for dim in range(3)])
+    fac = 2 * math.pi / uc[0].dot(uc[1].cross(uc[2]))
+    k_uc = k_uc * fac
+    
+    inv_k_uc = k_uc.inverted()
+    for nq, qmode in enumerate(qpts):
+        qm = molecule.qpts.add()
+        qm.nqpt = qmode.nqpt
+        if qmode.qvecs_format == "QE":
+            if qm.nqpt == 1:
+                print(qmode.qvec)
+                print(uc[0][0])
+                print(inv_k_uc)
+            qm.qvec = (Vector(qmode.qvec) * 2 * math.pi / uc[0][0]) * inv_k_uc
+        else:
+            qm.qvec = qmode.qvec
+        
+        mode_name_fmt = 'mode_{}.{}.{{}}.{{}}'.format(molecule.index, nq)
+        
+        # add mode 0 as the equilibrium position
+        m = qm.modes.add()
+        m.freq = "equilibrium"
+        for atom in molecule.objects.atoms:
+            d = m.evecs.add()
+            d.real = Vector((0,0,0))
+            d.imag = Vector((0,0,0))
+        
+        for nm, mode in enumerate(qmode.modes):
             m = qm.modes.add()
             m.freq = mode.freq
-            for disp in mode.displacements:
-                d = m.displacements.add()
+            for disp in mode.evecs:
+                d = m.evecs.add()
                 d.real = disp.real
                 d.imag = disp.imag
-    
+                
+                #driver script -1.365+sin((frame-1)*pi/10)
+    for atom in molecule.objects.atoms:
+        #mb_utils.set_mode_drivers(context, atom.object, molecule)
+        mb_utils.create_mode_action(context, atom.object, molecule)
+        
     #molecule.max_mode = len(frequencies)
-        #modes_col = molecule.modes_col
+    #modes_col = molecule.modes_col
+    #m = modes_col.add()
+    #m.index = 0
+    #m.name = "mode_0"
+    #for i, freq in enumerate(frequencies):
         #m = modes_col.add()
-        #m.index = 0
-        #m.name = "mode_0"
-        #for i, freq in enumerate(frequencies):
-            #m = modes_col.add()
-            #m.index = i+1
-            #m.name = "mode_{}".format(i+1)
-            #m.freq = freq
-
-
-        ## replace the index i in data with the corresponding mode
-        #if modepath and modes:
-            #for all_atoms in all_frames:
-                #for index, data in all_atoms.items():
-                    ## data = [element, atom_name, location, i]
-                    #try:
-                        #data[-1] = [mode[data[-1]] for mode in modes]
-                    #except (IndexError, ValueError) as e:
-                        #debug_print("Error: Modes couldn't be matched with "
-                                    #"atoms. ({})".format(e),
-                                    #level=1)
-                        #report({'ERROR'}, "Modes couldn't be matched with "
-                                    #"atoms. ({})".format(e))
-                        #modes = None
-                        #return False
-                #if not modes:
-                    #break
+        #m.index = i+1
+        #m.name = "mode_{}".format(i+1)
+        #m.freq = freq
+        
+        #if modes and frequencies and len(modes) == len(frequencies):
+        ## bpy.data.actions.new is very slow. Only make one action per atom
+        ## store mode_vecs in atom object and add drivers to fcurves that
+        ## point to this list
             
-            #if modes and frequencies and len(modes) == len(frequencies):
-            ## bpy.data.actions.new is very slow. Only make one action per atom
-            ## store mode_vecs in atom object and add drivers to fcurves that
-            ## point to this list
-                
+            #m = new_atom.mb.modes.add()
+            #m.name = 0
+            #m.index = 0
+            #m.freq = 0.0
+            #m.vec = (0, 0, 0)
+            
+            #for i, mode_vec in enumerate(data[3]):
                 #m = new_atom.mb.modes.add()
-                #m.name = 0
-                #m.index = 0
-                #m.freq = 0.0
-                #m.vec = (0, 0, 0)
-                
-                #for i, mode_vec in enumerate(data[3]):
-                    #m = new_atom.mb.modes.add()
-                    #m.name = i+1
-                    #m.index = i+1
-                    #m.freq = frequencies[i]
-                    #m.vec = mode_vec
-                
-                #anim_data = new_atom.animation_data_create()
-                #atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
-                                         #new_atom.mb.index)
-                #action = bpy.data.actions.new(name="mode_{}".format(atom_id))
-                #anim_data.action = action
-                ##for dim in range(3):
-                    ##fcu = action.fcurves.new(data_path="location", index=dim)
-                    ##fcu.keyframe_points.add(3)
-                    ##for p in range(3):
-                        ##loc = new_atom.location[dim]
-                        ##fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                        ##fcu.keyframe_points[p].interpolation = 'BEZIER'
-                ## make new group
-                #ag = action.groups.new("Location")
-                #for dim in range(3):
-                    #fcu = action.fcurves.new(data_path="location", index=dim)
-                    #fcu.group = ag
-                    #fcu.keyframe_points.add(3)
-                    #for p in range(3):
-                        #loc = new_atom.location[dim]
-                        #fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                        #fcu.keyframe_points[p].interpolation = 'BEZIER'
+                #m.name = i+1
+                #m.index = i+1
+                #m.freq = frequencies[i]
+                #m.vec = mode_vec
+            
+            #anim_data = new_atom.animation_data_create()
+            #atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
+                                        #new_atom.mb.index)
+            #action = bpy.data.actions.new(name="mode_{}".format(atom_id))
+            #anim_data.action = action
+            ##for dim in range(3):
+                ##fcu = action.fcurves.new(data_path="location", index=dim)
+                ##fcu.keyframe_points.add(3)
+                ##for p in range(3):
+                    ##loc = new_atom.location[dim]
+                    ##fcu.keyframe_points[p].co = 1.0 + 10*p, loc
+                    ##fcu.keyframe_points[p].interpolation = 'BEZIER'
+            ## make new group
+            #ag = action.groups.new("Location")
+            #for dim in range(3):
+                #fcu = action.fcurves.new(data_path="location", index=dim)
+                #fcu.group = ag
+                #fcu.keyframe_points.add(3)
+                #for p in range(3):
+                    #loc = new_atom.location[dim]
+                    #fcu.keyframe_points[p].co = 1.0 + 10*p, loc
+                    #fcu.keyframe_points[p].interpolation = 'BEZIER'
 
 
-def import_molecule(report,
+def import_molecule(context,
+                    report,
                     filepath,
                     molecule,
                     refine_atoms,
@@ -320,20 +218,22 @@ def import_molecule(report,
             raise IOError(("Number of unit vectors ({}) and frames ({})"
                             " does not match").format(len(structure.axes), 
                                                       len(structure.nframes)))
+
+        molecule["unit_cells"] = structure.axes
         
-        if draw_uc and structure.axes:
+        if draw_uc and molecule["unit_cells"]:
             # read unit cell and create cube
-            unit_cell_obs = draw_unit_cell(molecule, structure.axes)
+            unit_cell_obs = mb_utils.draw_unit_cell(molecule)
             all_obs.extend(unit_cell_obs)
             for ob in unit_cell_obs[-3:]:
                 mb_utils.check_ob_dimensions(ob)
-        elif draw_uc and not structure.axes:
+        elif draw_uc and not molecule["unit_cells"]:
             debug_print("WARNING: No unit cell vectors read.",
                         level=1)
         
         if sum(supercell) > 3:
             structure.create_supercell(supercell)
-        
+            
         if bond_guess:
             structure.guess_bonds(tol=0.2)
             debug_print("guess", level=4)
@@ -352,24 +252,23 @@ def import_molecule(report,
         atom_obs = {}
         error = set()
         debug_print("", level=4)
-        for index, atom in sorted(structure.all_atoms.items()):
+        for index, (old_index, atom) in enumerate(sorted(structure.all_atoms.items())):
             debug_print("\ratom {}".format(index), level=4, end='')
-            new_atom = mb_utils.add_atom(bpy.context, 
+            new_atom = mb_utils.add_atom(context, 
                                          atom["coords"][0]-center_of_mass, 
                                          atom["element"],
                                          atom["name"],
                                          molecule)
+            new_atom.mb.supercell = atom.get("supercell", (0,0,0))
             all_obs.append(new_atom)
             # adjust index to be the same as in imported file
-            if new_atom.mb.index < index:
-                new_atom.mb.index = index
-                molecule.atom_index = index + 1
-            elif new_atom.mb.index > index:
+            new_atom.mb.index = index
+            molecule.atom_index = index + 1
+            if new_atom.mb.index != old_index:
                 error.add("WARNING: Indeces will not be the same as imported.")
             
-            atom_obs[index] = new_atom
+            atom_obs[old_index] = new_atom
             
-
             if structure.nframes > 1:
                 anim_data = new_atom.animation_data_create()
                 atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
@@ -399,7 +298,7 @@ def import_molecule(report,
             for index2 in other:
                 debug_print("\rbond {}-{}".format(index1, index2), level=4, 
                             end='')
-                new_bond = mb_utils.add_bond(bpy.context, atom_obs[index1], 
+                new_bond = mb_utils.add_bond(context, atom_obs[index1], 
                                              atom_obs[index2], 
                                              bond_type=bond_type)
                 all_obs.append(new_bond)
@@ -417,13 +316,13 @@ def import_molecule(report,
         
         # select all objects and make parent active
         bpy.ops.object.select_all(action="DESELECT")
-        bpy.context.scene.objects.active = molecule.objects.parent.object
+        context.scene.objects.active = molecule.objects.parent.object
         for ob in all_obs:
             ob.select = True
     except:
         # if something bad happend, delete all objects and re-raise
         for ob in all_obs:
-            bpy.context.scene.objects.unlink(ob)
+            context.scene.objects.unlink(ob)
         raise
         
     return True
