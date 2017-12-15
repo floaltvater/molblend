@@ -214,9 +214,9 @@ class MB_Structure():
                     max_dist = cov1 + cov2 + tol
                     if distance < max_dist:
                         try:
-                            self.bonds[index1].append(index2)
+                            self.bonds[index1].add(index2)
                         except KeyError:
-                            self.bonds[index1] = [index2]
+                            self.bonds[index1] = set((index2,))
             if not self.bonds:
                 debug_print("WARNING: No bonds found.", level=1)
     
@@ -256,6 +256,21 @@ class MB_Structure():
         coords = [atom["coords"][0] for atom in self.all_atoms.values()]
         center_of_mass = sum(coords, origin) / len(coords)
         return center_of_mass
+    
+    def apply_mask(self, mask_planes, mask_flip=False):
+        delete = set()
+        for index, atom in self.all_atoms.items():
+            if not mb_utils.is_inside_of_planes(mask_planes, 
+                                                atom["coords"],
+                                                flip=mask_flip):
+                delete.add(index)
+        for index in delete:
+            del self.all_atoms[index]
+            if index in self.bonds:
+                del self.bonds[index]
+        for index1 in self.bonds:
+            self.bonds[index1] = self.bonds[index1] - delete
+        
     
     @classmethod
     def from_file(cls, filepath,
@@ -396,7 +411,6 @@ class MB_Structure():
         with open(filepath_xyz, "r") as fin:
             number_atoms = -1
             for line in fin:
-                print(line)
                 # Simply ignore empty lines
                 if line == "":
                     continue
@@ -414,14 +428,11 @@ class MB_Structure():
                 if number_atoms > 0:
                     # dump comment line
                     line = next(fin)
-                    print(line)
                     all_atoms = []
                     for i in range(number_atoms):
                         
                         split_line = next(fin).strip().split()
-                        print(split_line)
                         coords = list(map(float, split_line[1:4]))
-                        print(coords)
                         location = Vector(coords)
                         
                         element = split_line[0]
@@ -660,12 +671,11 @@ class MB_Structure():
                     if int(line[6:11]) > 0:
                         atomID1 = int(line[6:11])
                         if not atomID1 in strc.bonds:
-                            strc.bonds[atomID1] = []
+                            strc.bonds[atomID1] = set()
                         for i in range((len(line) - 11) // 5):
                             atomID2 = int(line[11 + i*5 : 16 + i*5])
                             if atomID2 > 0 and atomID2 > atomID1:
-                                if atomID2 not in strc.bonds[atomID1]:
-                                    strc.bonds[atomID1].append(atomID2)
+                                strc.bonds[atomID1].add(atomID2)
                 
                 elif line[:6] == 'ENDMDL':
                     debug_print("ENDMDL found.", level=6)

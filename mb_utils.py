@@ -120,8 +120,8 @@ def update_active_mode(self, context):
         return
     
     for atom in self.objects.atoms:
-        #update_mode_drivers(atom.object, self)
-        update_mode_action(atom.object, self)
+        #update_mode_drivers(atom, self)
+        update_mode_action(atom, self)
     
     if self.active_mode == 0:
         # stop animation
@@ -173,7 +173,7 @@ def update_atom_element(self, context):
     
     # update bond materials
     for bond in self.bonds:
-        assign_bond_material(bond.object)
+        assign_bond_material(bond)
     
     # assign type last, to be able to check if element is newly assigned or
     # just updated
@@ -183,7 +183,7 @@ def update_atom_element(self, context):
 def update_bond_material(self, context):
     debug_print("mb_utils.update_bond_material", level=6)
     for bond in self.objects.bonds:
-        assign_bond_material(bond.object)
+        assign_bond_material(bond)
 
 
 def update_refine_atoms(self, context):
@@ -193,7 +193,6 @@ def update_refine_atoms(self, context):
         return
     replaced_elements = set()
     for mesh in self.meshes:
-        print(mesh.name, mesh.data.mb.type)
         if mesh.data.mb.type == "ELEMENT":
             element = mesh.name
             #if not element in replaced_elements:
@@ -256,14 +255,14 @@ def update_molecule_selection(self, context):
         for ob in context.selected_objects:
             ob.select = False
         for col in (mol.objects.atoms, mol.objects.bonds, mol.objects.other):
-            for item in col:
-                item.object.select = True
-        parent = mol.objects.parent.object
+            for ob in col:
+                ob.select = True
+        parent = mol.objects.parent
         parent.select = True
         context.scene.objects.active = parent
 
 def update_molecule_name(self, context):
-    self.objects.parent.object.name = self.name_mol
+    self.objects.parent.name = self.name_mol
 
 def update_show_bond_lengths(self, context):
     if self.show_bond_lengths:
@@ -303,7 +302,7 @@ def callback_draw_length(self, context):
         
         for ob in context.selected_objects:
             if ob.mb.type == "BOND":
-                locs = [o.object.mb.world_location for o in ob.mb.bonded_atoms]
+                locs = [o.mb.world_location for o in ob.mb.bonded_atoms]
                 co_3d = (locs[0] + locs[1]) / 2.
                 prj = persp_mat * co_3d.to_4d()
                 x = width/2 + width/2 * (prj.x / prj.w)
@@ -419,14 +418,6 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None,
             if obj.type == 'MESH':
                 if (mb_type and mb_type == obj.mb.type) or mb_type == '':
                     yield (obj, obj.matrix_world.copy())
-            #if obj.dupli_type != 'NONE':
-                #obj.dupli_list_create(scene)
-                #for dob in obj.dupli_list:
-                    #obj_dupli = dob.object
-                    #if obj_dupli.type == 'MESH':
-                        #yield (obj_dupli, dob.matrix.copy())
-
-            #obj.dupli_list_clear()
 
     def obj_ray_cast(obj, matrix):
         """Wrapper for ray casting that moves the ray into object space"""
@@ -437,7 +428,6 @@ def return_cursor_object(context, event, ray_max=10000.0, exclude=None,
             ray_target_obj = matrix_inv * ray_target
             
             # cast the ray
-            #print(obj.ray_cast(ray_origin_obj, ray_target_obj))
             result, hit, normal, face_index = obj.ray_cast(ray_origin_obj, 
                                                            ray_target_obj)
             if face_index != -1:
@@ -497,7 +487,7 @@ def add_atom(context, location, element, atom_name, molecule):
     new_atom.mb.atom_name = atom_name
     
     # parent to molecule origin
-    new_atom.parent = molecule.objects.parent.object
+    new_atom.parent = molecule.objects.parent
     
     # updating the element will call update_atom_element, which assigns a mesh,
     # and sets all the drivers
@@ -515,10 +505,9 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
         debug_print('WARNING: add_bond: first_atom == second_atom', level=3)
         return None
     for b in first_atom.mb.bonds:
-        bob = b.object
-        if bob != None:
-            for ba in bob.mb.bonded_atoms:
-                if ba.object == second_atom:
+        if b != None:
+            for ba in b.mb.bonded_atoms:
+                if ba == second_atom:
                     debug_print(
                         "WARNING: add_bond: Bond {}-{} already exists".format(
                             first_atom.mb.index, second_atom.mb.index),
@@ -578,7 +567,7 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
         
     assign_bond_material(new_bond)
     set_bond_drivers(context, new_bond, new_bond.mb.get_molecule())
-    new_bond.parent = first_mol.objects.parent.object
+    new_bond.parent = first_mol.objects.parent
     
     return new_bond
 
@@ -618,7 +607,6 @@ def get_atom_data(element, molecule, type='MESH', mesh_name=""):
             me.name = mesh_name or atom_name
             me.mb.type = "ELEMENT"
             if not mesh_name:
-                print("add")
                 item = molecule.meshes.add()
                 item.name = element
                 item.data = me
@@ -878,166 +866,51 @@ def set_bond_drivers(context, bond, molecule):
                             molecule.name)
 
 def clear_modes(molecule):
-    #for atom in molecule.objects.atoms:
-        #clear_mode_drivers(atom.object)
     while len(molecule.qpts):
         molecule.qpts.remove(0)
 
-#def clear_mode_drivers(atom):
-    #atom.driver_remove('location', -1)
-
-#def update_mode_drivers(atom, molecule):
-    #debug_print("mb_utils.set_mode_drivers", level=6)
-    #fc_list = atom.driver_add('location', -1) # add new driver
-    
-    #nqpt = molecule.active_nqpt
-    #mode = molecule.active_mode
-    #nvec = len(molecule.qpts[nqpt].modes[mode].evecs)
-    
-    #for dim, fcurve in enumerate(fc_list):
-        #drv = fcurve.driver
-        #drv.type = 'SCRIPTED'
-        #drv.show_debug_info = True
-        
-        #var = drv.variables.get('Real')
-        #trg = 'mb.molecules["{}"].qpts[{}].modes[{}].evecs[{}].real[{}]'.format(molecule.name, nqpt, mode, atom.mb.index%nvec, dim)
-        #var.targets[0].data_path = trg
-        
-        #var = drv.variables.get('Imag')
-        #trg = 'mb.molecules["{}"].qpts[{}].modes[{}].evecs[{}].imag[{}]'.format(molecule.name, nqpt, mode, atom.mb.index%nvec, dim)
-        #var.targets[0].data_path = trg
-
-        #var = drv.variables.get('qvec')
-        #trg = 'mb.molecules["{}"].qpts[{}].qvec'.format(molecule.name, nqpt)
-        #var.targets[0].data_path = trg
-        
-        #loc = atom.location[dim]
-        
-        #qR = "+".join(["qvec[{0}]*sc[{0}]".format(j) for j in range(3)])
-        #T = 20
-        #arg = "2*pi*({}-(frame-1)/{})".format(qR, T)
-        #expr = "{}+scale*(Real*cos({})+Imag*sin({}))".format(loc, arg, arg)
-        
-        #drv.expression = expr
-        
-
-#def set_mode_drivers(context, atom, molecule):
-    #debug_print("mb_utils.set_mode_drivers", level=6)
-    #fc_list = atom.driver_add('location', -1) # add new driver
-    
-    #nqpt = molecule.active_nqpt
-    #mode = molecule.active_mode
-    #nvec = len(molecule.qpts[nqpt].modes[mode].evecs)
-    
-    #for dim, fcurve in enumerate(fc_list):
-        #drv = fcurve.driver
-        #drv.type = 'SCRIPTED'
-        #drv.show_debug_info = True
-        
-        #var = drv.variables.get('scale')
-        #if not var:
-            #var = drv.variables.new()
-            #var.name = 'scale' # name to use in scripting
-            #var.type = 'SINGLE_PROP'
-        #targ = var.targets[0]
-        #targ.id_type = 'SCENE'
-        #targ.id = context.scene
-        #targ.data_path = 'mb.molecules["{}"].mode_scale'.format(molecule.name)
-        
-        #var = drv.variables.get('sc')
-        #if not var:
-            #var = drv.variables.new()
-            #var.name = 'sc' # name to use in scripting
-            #var.type = 'SINGLE_PROP'
-        #targ = var.targets[0]
-        #targ.id_type = 'OBJECT'
-        #targ.id = atom
-        #trg = 'mb.supercell'
-        #targ.data_path = trg
-        
-        #var = drv.variables.get('Real')
-        #if not var:
-            #var = drv.variables.new()
-            #var.name = 'Real' # name to use in scripting
-            #var.type = 'SINGLE_PROP'
-        #targ = var.targets[0]
-        #targ.id_type = 'SCENE'
-        #targ.id = context.scene
-        #trg = 'mb.molecules["{}"].qpts[{}].modes[{}].evecs[{}].real[{}]'.format(molecule.name, nqpt, mode, atom.mb.index%nvec, dim)
-        #targ.data_path = trg
-        
-        #var = drv.variables.get('Imag')
-        #if not var:
-            #var = drv.variables.new()
-            #var.name = 'Imag' # name to use in scripting
-            #var.type = 'SINGLE_PROP'
-        #targ = var.targets[0]
-        #targ.id_type = 'SCENE'
-        #targ.id = context.scene
-        #trg = 'mb.molecules["{}"].qpts[{}].modes[{}].evecs[{}].imag[{}]'.format(molecule.name, nqpt, mode, atom.mb.index%nvec, dim)
-        #targ.data_path = trg
-        
-        #var = drv.variables.get('qvec')
-        #if not var:
-            #var = drv.variables.new()
-            #var.name = 'qvec' # name to use in scripting
-            #var.type = 'SINGLE_PROP'
-        #targ = var.targets[0]
-        #targ.id_type = 'SCENE'
-        #targ.id = context.scene
-        #trg = 'mb.molecules["{}"].qpts[{}].qvec'.format(molecule.name, nqpt)
-        #targ.data_path = trg
-        
-        #loc = atom.location[dim]
-        
-        #qR = "+".join(["qvec[{0}]*sc[{0}]".format(j) for j in range(3)])
-        #T = 20
-        #arg = "2*pi*({}-(frame-1)/{})".format(qR, T)
-        #expr = "{}+scale*(Real*cos({})+Imag*sin({}))".format(loc, arg, arg)
-        
-        #drv.expression = expr
-        ##amp = "scale*qpts[nqpt].modes[mode].evecs[i].real[{}]".format(dim)
-        ##drv.expression = "{} +{}*sin((frame-1)*pi/10)".format(loc, amp)
 
 def update_mode_action(atom, molecule):
     action = atom.animation_data.action
-    qpt = molecule.qpts[molecule.active_nqpt]
-    qvec = qpt.qvec
-    sc = atom.mb.supercell
-    qR = qvec[0]*sc[0] + qvec[1]*sc[1] + qvec[2]*sc[2]
-    T = 20
-    nevecs = len(qpt.modes[molecule.active_mode].evecs)
-    evec = qpt.modes[molecule.active_mode].evecs[atom.mb.index%nevecs]
-    Re = evec.real
-    Im = evec.imag
-    
-    for dim in range(3):
-        t_max = T*(qR - math.atan2(Im[dim], Re[dim])/(2*math.pi))
-        t0 = (t_max - T/4)
-        t0 = t0 - T*(t0//T) - T
-        arg = 2*math.pi*(qR-t_max/T)
-        cos_max = math.cos(arg)
-        sin_max = math.sin(arg)
-        fcu = action.fcurves[dim]
-        loc = fcu.keyframe_points[0].co[1]
-        vec = Re[dim]*cos_max - Im[dim]*sin_max
+    if action:
+        qpt = molecule.qpts[molecule.active_nqpt]
+        qvec = qpt.qvec
+        sc = atom.mb.supercell
+        qR = qvec[0]*sc[0] + qvec[1]*sc[1] + qvec[2]*sc[2]
+        T = 20
+        nevecs = len(qpt.modes[molecule.active_mode].evecs)
+        evec = qpt.modes[molecule.active_mode].evecs[atom.mb.index%nevecs]
+        Re = evec.real
+        Im = evec.imag
         
-        for p in range(9):
-            frame = t0 + 5*p
-            coords = loc + pow(-1, p//2)*vec if p%2 else loc
-            #if atom.mb.index == 1 and dim == 0:
-                #print("{:6.3f}".format(coords),end=" ")
-            fcu.keyframe_points[p].co = (frame, coords)
-            if p%2 == 0:
-                fcu.keyframe_points[p].handle_left = (frame, loc)
-                fcu.keyframe_points[p].handle_right = (frame, loc)
-        fcu.update()
-    #if atom.mb.index == 1:
-        #print()
+        for dim in range(3):
+            t_max = T*(qR - math.atan2(Im[dim], Re[dim])/(2*math.pi))
+            t0 = (t_max - T/4)
+            t0 = t0 - T*(t0//T) - T
+            arg = 2*math.pi*(qR-t_max/T)
+            cos_max = math.cos(arg)
+            sin_max = math.sin(arg)
+            fcu = action.fcurves[dim]
+            loc = fcu.keyframe_points[0].co[1]
+            vec = Re[dim]*cos_max - Im[dim]*sin_max
             
+            for p in range(9):
+                frame = t0 + 5*p
+                coords = loc + pow(-1, p//2)*vec if p%2 else loc
+                fcu.keyframe_points[p].co = (frame, coords)
+                if p%2 == 0:
+                    fcu.keyframe_points[p].handle_left = (frame, loc)
+                    fcu.keyframe_points[p].handle_right = (frame, loc)
+            fcu.update()
+    else:
+        msg = "WARNING: Trying to update mode action on"
+        msg += " object {}, but it has no existing action.".format(atom.name)
+        msg += " Did you change the molecule after importing the modes?"
+        debug_print(msg, level=2)
+
 def create_mode_action(context, atom, molecule):
     anim_data = atom.animation_data_create()
-    atom_id = '{}.{}'.format(molecule.index, atom.mb.index)
+    atom_id = get_atom_id(molecule.index, atom.mb.index)
     action = bpy.data.actions.new(name="mode_{}".format(atom_id))
     anim_data.action = action
     # make new group
@@ -1053,27 +926,27 @@ def create_mode_action(context, atom, molecule):
         fcu.update()
 
 
-def draw_dipole(mol):
+def draw_dipole(mol, dipole_vec):
     # add empty as stretch target
     dipole_ob = bpy.data.objects.new(
         "{}_dipole_target".format(mol.name_mol), None)
     dipole_ob.empty_draw_type = 'SINGLE_ARROW'
     dipole_ob.empty_draw_size = 0.5
     bpy.context.scene.objects.link(dipole_ob)
-    mol.objects.dipole.empty.object = dipole_ob
-    dipole_ob.location = self.dipole_vec
-    dipole_ob.parent = mol.objects.parent.object
+    mol.objects.dipole.empty = dipole_ob
+    dipole_ob.location = dipole_vec
+    dipole_ob.parent = mol.objects.parent
     dipole_ob.mb.molecule_ident = mol.name
     
     # add arrow object
     arrow_mesh = get_arrow_data()
     arrow_ob = bpy.data.objects.new("{}_dipole".format(mol.name_mol),
                                     arrow_mesh)
-    arrow_ob.parent = mol.objects.parent.object
+    arrow_ob.parent = mol.objects.parent
     bpy.context.scene.objects.link(arrow_ob)
     bpy.context.scene.objects.active = arrow_ob
     arrow_ob.mb.molecule_ident = mol.name
-    mol.objects.dipole.arrow.object = arrow_ob
+    mol.objects.dipole.arrow = arrow_ob
 
     c = arrow_ob.constraints.new('STRETCH_TO')
     c.name = "mb.stretch"
@@ -1088,19 +961,16 @@ def draw_unit_cell(molecule, draw_style='ARROWS'):
     # TODO implement different drawing styles
     
     # first remove old unit cell if present
-    if molecule.objects.unit_cell.uc_cube.object:
-        ob = molecule.objects.unit_cell.uc_cube.object
+    if molecule.objects.unit_cell.uc_cube:
+        ob = molecule.objects.unit_cell.uc_cube
         bpy.context.scene.objects.unlink(ob)
         bpy.data.objects.remove(ob)
-        molecule.objects.unit_cell.uc_cube.object = None
-    while len(molecule.objects.unit_cell.objects):
-        ob = molecule.objects.unit_cell.objects[0].object
-        try:
-            bpy.context.scene.objects.unlink(ob)
-            bpy.data.objects.remove(ob)
-        except RuntimeError:
-            pass
-        molecule.objects.unit_cell.objects.remove(0)
+        molecule.objects.unit_cell.uc_cube = None
+    for ob in molecule.objects.unit_cell.objects:
+        bpy.context.scene.objects.unlink(ob)
+        bpy.data.objects.remove(ob)
+    # "calling" the list again will update it and remove all items
+    molecule.objects.unit_cell.objects
     
     all_obs = []
     
@@ -1144,8 +1014,8 @@ def draw_unit_cell(molecule, draw_style='ARROWS'):
     
     all_obs.append(uc_cube)
     uc_cube.mb.type = 'UC'
-    molecule.objects.unit_cell.uc_cube.object = uc_cube
-    uc_cube.parent = molecule.objects.parent.object
+    molecule.objects.unit_cell.uc_cube = uc_cube
+    uc_cube.parent = molecule.objects.parent
     
     if 'ARROWS' in draw_style:
         radius = 0.1
@@ -1183,7 +1053,6 @@ def draw_unit_cell(molecule, draw_style='ARROWS'):
             all_obs.append(ob)
     
     if len(molecule["unit_cells"]) > 1:
-        print("animating uc")
         # add one shape key per frame
         for i, uvs in enumerate(len(molecule["unit_cells"])):
             shape_key = uc_cube.shape_key_add("{}.{}".format(uc_cube.name, i), 
@@ -1215,8 +1084,8 @@ def draw_unit_cell(molecule, draw_style='ARROWS'):
     
     for ob in all_obs[1:]:
         ob.mb.type = 'UC'
-        item = molecule.objects.unit_cell.objects.add()
-        item.object = ob
+        molecule.add_object(ob)
+        
     
     return all_obs
 
@@ -1299,8 +1168,8 @@ def assign_bond_material(ob):
     
     bond_mol = ob.mb.get_molecule()
     
-    first_atom = ob.mb.bonded_atoms[0].object
-    second_atom = ob.mb.bonded_atoms[1].object
+    first_atom = ob.mb.bonded_atoms[0]
+    second_atom = ob.mb.bonded_atoms[1]
     
     first_mol = first_atom.mb.get_molecule()
     second_mol = second_atom.mb.get_molecule()
@@ -1339,15 +1208,23 @@ def assign_bond_material(ob):
 def update_radius_type(self, context):
     debug_print("mb_utils.update_radius_type", level=6)
     for atom in self.objects.atoms:
-        set_atom_drivers(context, atom.object, self)
+        set_atom_drivers(context, atom, self)
 
 
 def set_draw_style(self, context):
     debug_print("mb_utils.set_draw_style", level=6)
     for atom in self.objects.atoms:
-        set_atom_drivers(context, atom.object, self)
+        set_atom_drivers(context, atom, self)
     
     hide = (self.draw_style == 'BALLS')
     for bond in self.objects.bonds:
-        bond_ob = bond.object
-        bond_ob.hide = hide
+        bond.hide = hide
+
+def is_inside_of_planes(planes, l0, flip=False):
+    for n, p0 in planes:
+        vec = p0 - l0
+        if (vec).dot(n) < 0:
+            # point lies outside of plane
+            return flip
+    else:
+        return not flip

@@ -30,6 +30,7 @@ else:
 
 import os
 import sys
+from operator import methodcaller
 
 import bpy
 import blf
@@ -47,7 +48,7 @@ from bpy.props import (StringProperty,
                        CollectionProperty,
                        EnumProperty)
 from bpy_extras.io_utils import ImportHelper, ExportHelper
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 from molblend.mb_helper import debug_print
 
@@ -209,7 +210,7 @@ class MB_OT_make_static(Operator):
             c = ob.constraints.get(cname, None)
             if c:
                 ob.constraints.remove(c)
-        ob.parent = ob.mb.get_molecule().objects.parent.object
+        ob.parent = ob.mb.get_molecule().objects.parent
         ob.matrix_world = mat
     
     def execute(self, context):
@@ -220,7 +221,7 @@ class MB_OT_make_static(Operator):
                 self.remove_constraints(ob)
             elif ob.mb.type == 'ATOM':
                 for bond in ob.mb.bonds:
-                    self.remove_constraints(bond.object)
+                    self.remove_constraints(bond)
                 
         return {'FINISHED'}
 
@@ -333,7 +334,9 @@ class MB_OT_add_atom(Operator):
                 bpy.data.objects.remove(new_atom)
                 new_bond = context.scene.objects.get(self.new_bond_name)
                 if new_bond:
-                    context.scene.mb.remove_object(new_bond)
+                    mol.remove_object(new_bond)
+                    context.scene.objects.unlink(new_bond)
+                    bpy.data.objects.remove(new_bond)
                     mb_utils.add_bond(context, first_atom, hover_ob)
             return {'FINISHED'}
         
@@ -352,7 +355,7 @@ class MB_OT_add_atom(Operator):
         if hover_ob:
             self.first_atom_name = hover_ob.name
             molecule = hover_ob.mb.get_molecule()
-            self.parent_coord_3d = molecule.objects.parent.object.location
+            self.parent_coord_3d = molecule.objects.parent.location
             self.depth_location = hover_ob.location + self.parent_coord_3d
         else:
             self.first_atom_name = " "
@@ -405,6 +408,7 @@ class MB_OT_add_atom(Operator):
         new_atom.select = True
         return {'FINISHED'}
 
+
 class MB_OT_select_bonded(Operator):
     '''
     Select connected molecule based on mb data
@@ -422,20 +426,18 @@ class MB_OT_select_bonded(Operator):
         # recursive functions
         def atom(ob):
             for b in ob.mb.bonds:
-                bob = b.object
-                if bob not in objects:
-                    objects.append(bob)
-                    bob.select = True
-                    bond(bob)
+                if b not in objects:
+                    objects.append(b)
+                    b.select = True
+                    bond(b)
             return {'FINISHED'}
         
         def bond(ob):
             for a in ob.mb.bonded_atoms:
-                aob = a.object
-                if aob not in objects:
-                    objects.append(aob)
-                    aob.select = True
-                    atom(aob)
+                if a not in objects:
+                    objects.append(a)
+                    a.select = True
+                    atom(a)
             return {'FINISHED'}
         
         objects = []
@@ -450,55 +452,64 @@ class MB_OT_select_bonded(Operator):
                debug_print('mb.type {} not compatible'.format(ob.mb.type),
                            level=2)
 
+
+class MB_OT_select_molecule(Operator):
+    '''
+    Select all objects belonging to molecule based on mb data
+    '''
+    bl_idname = "mb.select_molecule"
+    bl_description = "Select all objects belonging to molecule"
+    bl_label = "Select molecule"
+    bl_options = {'UNDO', 'REGISTER'}
     
+    @classmethod
+    def poll(cls, context):
+        return context.object
+    
+    def execute(self, context):
+        mol = context.object.mb.get_molecule()
+        if not mol:
+            self.report("Active object is not part of a molecule.")
+            return {'CANCELLED'}
+        
+        for ob in mol.objects.get_all_objects():
+            ob.select = True
+        return {'FINISHED'}
+
+
 class MB_OT_center_mol_parent(Operator):
     '''
     Set molecule parent into center of mass of atoms
     '''
     bl_idname = "mb.center_mol_parent"
-    bl_description = "Put origin to geometric center"
-    bl_label = "Center"
+    bl_description = "Put parent to center of mass of molecule"
+    bl_label = "Parent to CoM"
     bl_options = {'UNDO', 'REGISTER'}
     
     molecule_ident = StringProperty()
     
     @classmethod
     def poll(cls, context):
-        try:
-            context.object.mb.get_molecule().name
-            return True
-        except AttributeError:
-            return False
+        return context.object
     
-    def invoke(self, context, event):
-        # get molecule from active object
-        self.molecule_ident = context.object.mb.get_molecule().name
-        return self.execute(context)
-        
     def execute(self, context):
-        if self.molecule_ident:
-            molecule = context.scene.mb.molecules.get(self.molecule_ident)
-            if not molecule:
-                debug_print(
-                    "ERROR in mb.center_mol_parent: Molecule "
-                    "{} not found in scene.".format(self.molecule_ident),
-                    level=0)
-                return {'CANCELLED'}
-            else:
-                origin = Vector((0.0,0.0,0.0))
-                atoms = molecule.objects.atoms
-                locs = [atom.object.location for atom in atoms]
-                center = sum(locs, origin) / len(molecule.objects.atoms)
-                for atom in molecule.objects.atoms:
-                    atom.object.location -= center
-                molecule.objects.parent.object.location = center
-            return {'FINISHED'}
-        else:
+        molecule = context.object.mb.get_molecule()
+        if not molecule:
+        
             debug_print(
-                "ERROR in mb.center_mol_parent: No molecule_ident set."
-                , level=0)
+                "ERROR in mb.center_mol_parent: Molecule "
+                "{} not found in scene.".format(self.molecule_ident),
+                level=0)
             return {'CANCELLED'}
-
+        origin = Vector((0.0,0.0,0.0))
+        atoms = molecule.objects.atoms
+        locs = [atom.location for atom in atoms]
+        center = sum(locs, origin) / len(molecule.objects.atoms)
+        for atom in molecule.objects.atoms:
+            atom.location -= center
+        molecule.objects.parent.location = center
+        return {'FINISHED'}
+        
 
 def get_molecules(self, context):
         lst = []
@@ -513,7 +524,47 @@ def update_draw_unit_cell(self, context):
     else:
         self.has_axes = False
     mb_utils.update_molecule_selection(self, context)
+
+class MB_OT_remove_dipole(Operator):
+    bl_idname = "mb.remove_dipole"
+    bl_label = "Remove dipole"
+    bl_options = {'REGISTER', 'UNDO'}
     
+    @classmethod
+    def poll(self, context):
+        return context.object and context.object.mb.get_molecule()
+    
+    def execute(self, context):
+        mol = context.object.mb.get_molecule()
+        obs = [mol.objects.dipole.empty, 
+               mol.objects.dipole.arrow]
+        for ob in obs:
+            if ob:
+                context.scene.objects.unlink(ob)
+                bpy.data.objects.remove(ob)
+        return {'FINISHED'}
+
+
+class MB_OT_remove_unit_cell(Operator):
+    bl_idname = "mb.remove_unit_cell"
+    bl_label = "Remove unit cell"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    @classmethod
+    def poll(self, context):
+        return context.object and context.object.mb.get_molecule()
+    
+    def execute(self, context):
+        mol = context.object.mb.get_molecule()
+        obs = [mol.objects.unit_cell.uc_cube]
+        obs.extend(mol.objects.unit_cell.objects)
+        
+        for ob in obs:
+            if ob:
+                context.scene.objects.unlink(ob)
+                bpy.data.objects.remove(ob)
+        return {'FINISHED'}
+
 class MB_OT_draw_unit_cell(Operator):
     bl_idname = "mb.draw_unit_cell"
     bl_label = "Draw unit cell of structure"
@@ -525,7 +576,6 @@ class MB_OT_draw_unit_cell(Operator):
     molecules_id = EnumProperty(name="Molecules", items=get_molecules,
                                   update=update_draw_unit_cell)
     has_axes = BoolProperty()
-    
     
     def draw(self, context):
         layout = self.layout
@@ -585,7 +635,7 @@ class MB_OT_draw_dipole(Operator):
                 level=0)
             return {'CANCELLED'}
         
-        mb_utils.draw_dipole(molecule)
+        mb_utils.draw_dipole(mol, self.dipole_vec)
         return {'FINISHED'}
 
 
@@ -613,7 +663,7 @@ class MD_OT_import_modes(bpy.types.Operator):
     
     def invoke(self, context, event):
         molecule = context.object.mb.get_molecule()
-        if molecule.objects.atoms[0].object.animation_data:
+        if molecule.objects.atoms[0].animation_data:
             # TODO allow user a choice
             self.report({'WARNING'}, "Atoms already contain animation data. Will overwrite")
         wm = context.window_manager
@@ -790,23 +840,23 @@ class MD_OT_import_molecules(bpy.types.Operator):
             # Execute main routine
             try:
                 worked = mb_import_export.import_molecule(
-                            context,
-                            self.report,
-                            filepath,
-                            new_molecule,
-                            self.refine_atoms,
-                            self.refine_bonds,
-                            self.bond_material,
-                            self.bond_type,
-                            scale_distances,
-                            self.bond_guess,
-                            self.put_origin,
-                            self.parent_center,
-                            mask_planes,
-                            self.mask_flip,
-                            self.draw_unit_cell,
-                            self.supercell,
-                            )
+                    context,
+                    self.report,
+                    filepath,
+                    new_molecule,
+                    self.refine_atoms,
+                    self.refine_bonds,
+                    self.bond_material,
+                    self.bond_type,
+                    scale_distances,
+                    self.bond_guess,
+                    self.put_origin,
+                    self.parent_center,
+                    mask_planes,
+                    self.mask_flip,
+                    self.draw_unit_cell,
+                    self.supercell,
+                    )
             except:
                 worked = False
                 raise

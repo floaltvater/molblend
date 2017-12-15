@@ -149,33 +149,16 @@ class MolBlendPanel():
     bl_region_type = "TOOLS"
     bl_category = "MolBlend"
 
-
-class MB_PT_tools(MolBlendPanel, Panel):
-    bl_label = "Tools"
+class MB_PT_initialize(MolBlendPanel, Panel):
+    bl_label = "MolBlend"
+    
+    @classmethod
+    def poll(cls, context):
+        return not context.scene.mb.is_initialized
     
     def draw(self, context):
         layout = self.layout
-       
         layout.operator("mb.initialize")
-        if context.scene.mb.is_initialized:
-            modal = mb_operators.MB_OT_modal_add.is_running()
-            label = "ESC to stop" if modal == True else "Draw atoms"
-            layout.operator("mb.modal_add", text=label)
-            #--- tools -----------------------------------------------------------#
-            row = layout.row()
-            col = row.column()
-            col.label("Add")
-            col.label("Geometry")
-            col = row.column()
-            col.prop(context.scene.mb.globals, "element_to_add", text="")
-            col.prop(context.scene.mb.globals, "geometry_to_add", text="")
-            
-            layout.separator()
-            layout.operator("mb.make_static")
-            layout.operator("mb.select_bonded")
-            layout.prop(context.scene.mb.globals, "show_bond_lengths")
-            #layout.prop(context.scene.mb.globals, "show_bond_angles")
-
 
 class MB_PT_import(MolBlendPanel, Panel):
     bl_label = "Import"
@@ -189,26 +172,40 @@ class MB_PT_import(MolBlendPanel, Panel):
         
         mb = context.scene.mb.globals
         layout = self.layout
-        #row = layout.row()
-        #row.label("Import")
         
         row = layout.row()
         row.operator("mb.import_molecules")
-        #row = layout.row()
-        #row.prop(mb.import_props, "filepath")
-        #row = layout.row()
-        #col = row.column()
-        #col.prop(mb.import_props, "modes")
-        #col = row.column()
-        #col.active = mb.import_props.modes
-        #col.prop(mb.import_props, "n_q")
-        #row = layout.row()
-        #row.active = mb.import_props.modes
-        #row.prop(mb.import_props, "modes_path")
-        #row = layout.row()
-        #row.active = initialized
-        #row.operator("mb.import_molecule", text="Import")
 
+
+class MB_PT_tools(MolBlendPanel, Panel):
+    bl_label = "Tools"
+    
+    @classmethod
+    def poll(cls, context):
+        return context.scene.mb.is_initialized
+    
+    def draw(self, context):
+        layout = self.layout
+       
+        modal = mb_operators.MB_OT_modal_add.is_running()
+        label = "ESC to stop" if modal == True else "Draw atoms"
+        layout.operator("mb.modal_add", text=label)
+        #--- tools -----------------------------------------------------------#
+        row = layout.row()
+        split = row.split(0.4)
+        col = split.column()
+        col.label("Add")
+        col.label("Geometry")
+        col = split.column()
+        col.prop(context.scene.mb.globals, "element_to_add", text="")
+        col.prop(context.scene.mb.globals, "geometry_to_add", text="")
+        layout.operator("mb.select_bonded")
+        layout.operator("mb.select_molecule")
+        layout.prop(context.scene.mb.globals, "show_bond_lengths")
+
+        layout.separator()
+        layout.operator("mb.make_static")
+        
 
 class MB_PT_atom(MolBlendPanel, Panel):
     bl_label = "Atom properties"
@@ -271,31 +268,6 @@ class MB_PT_molecule_draw_styles(MolBlendPanel, Panel):
         active_ob = context.object or context.scene.mb.modal_last_active
         mol = active_ob.mb.get_molecule()
         mol.draw_styles(layout)
-
-#TODO implement export
-#class MB_PT_export(MolBlendPanel, Panel):
-    #bl_label = "Export"
-    
-    #def draw(self, context):
-        #initialized = len(context.scene.mb.elements) > 0
-        
-        #mb = context.scene.mb.globals
-        #layout = self.layout
-        
-        #row = layout.row()
-        #row.prop(mb.export_props, "filepath")
-        #row = layout.row()
-        #row.prop(mb.export_props, "file_type")
-        #row = layout.row()
-        #row.prop(mb.export_props, "selection_only")
-        #row = layout.row()
-        #row.prop(mb.export_props, "length_unit")
-        #row = layout.row()
-        #row.active = (mb.export_props.length_unit == 'OTHER')
-        #row.prop(mb.export_props, "length_unit_other")
-        #row = layout.row()
-        #row.active = initialized
-        #row.operator("mb.export_molecule", text="Export")
 
 
 class MB_PT_view(MolBlendPanel, Panel):

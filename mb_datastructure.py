@@ -42,6 +42,19 @@ from bpy.props import (StringProperty,
 
 from molblend.mb_helper import debug_print
 
+
+def get_object_list(colprop):
+    all_obs = []
+    delete = []
+    for i, item in enumerate(colprop):
+        if item.object:
+            all_obs.append(item.object)
+        else:
+            delete.append(i)
+    for d in delete[::-1]:
+        colprop.remove(d)
+    return all_obs
+
 class mb_object_pointer(PropertyGroup):
     #name = StringProperty(name="Object name")
     object = PointerProperty(name="Object", type=bpy.types.Object)
@@ -72,21 +85,79 @@ class mb_atom_mode(PropertyGroup):
     vec = FloatVectorProperty(name="vector", subtype="XYZ")
 
 class mb_dipole(PropertyGroup):
-    empty = PointerProperty(name="Dipole", type=mb_object_pointer)
-    arrow = PointerProperty(name="Vector", type=mb_object_pointer)
-
+    pvt_empty = PointerProperty(name="Dipole", type=mb_object_pointer)
+    @property
+    def empty(self):
+        return self.pvt_empty.object
+    @empty.setter
+    def empty(self, ob):
+        self.pvt_empty.object = ob
+        
+    pvt_arrow = PointerProperty(name="Vector", type=mb_object_pointer)
+    @property
+    def arrow(self):
+        return self.pvt_arrow.object
+    @arrow.setter
+    def arrow(self, ob):
+        self.pvt_arrow.object = ob
+    
 class mb_unit_cell(PropertyGroup):
-    uc_cube = PointerProperty(name="Unit cell base", type=mb_object_pointer)
-    objects = CollectionProperty(name="Unit cell objects", type=mb_object_pointer)
+    pvt_uc_cube = PointerProperty(name="Unit cell base", type=mb_object_pointer)
+    @property
+    def uc_cube(self):
+        return self.pvt_uc_cube.object
+    @uc_cube.setter
+    def uc_cube(self, ob):
+        self.pvt_uc_cube.object = ob
+    
+    pvt_objects = CollectionProperty(name="Unit cell objects", type=mb_object_pointer)
+    @property
+    def objects(self):
+        return get_object_list(self.pvt_objects)
 
 class mb_molecule_objects(PropertyGroup):
-    atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
-    bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
-    parent = PointerProperty(name="Parent", type=mb_object_pointer)
+    pvt_atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
+    pvt_bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
+    pvt_parent = PointerProperty(name="Parent", type=mb_object_pointer)
     dipole = PointerProperty(name="Dipole", type=mb_dipole)
     unit_cell = PointerProperty(name="Unit cell objects", type=mb_unit_cell)
-    other = CollectionProperty(name="Bonds", type=mb_object_pointer)
+    pvt_other = CollectionProperty(name="Bonds", type=mb_object_pointer)
+    
+    @property
+    def parent(self):
+        return self.pvt_parent.object
+    
+    @parent.setter
+    def parent(self, ob):
+        self.pvt_parent.object = ob
+    
+    @property
+    def atoms(self):
+        return get_object_list(self.pvt_atoms)
 
+    @property
+    def bonds(self):
+        return get_object_list(self.pvt_bonds)
+    
+    @property
+    def other(self):
+        return get_object_list(self.pvt_other)
+    
+    def get_all_objects(self):
+        all_obs = []
+        if self.parent:
+            all_obs.append(self.parent)
+        all_obs.extend(self.atoms)
+        all_obs.extend(self.bonds)
+        all_obs.extend(self.other)
+        for ob in (self.dipole.empty,
+                   self.dipole.arrow,
+                   self.unit_cell.uc_cube):
+            if ob:
+                all_obs.append(ob)
+        all_obs.extend(self.unit_cell.objects)
+        return all_obs
+    
 class mb_mode_displacement(PropertyGroup):
     real = FloatVectorProperty(name="real", size=3)
     imag = FloatVectorProperty(name="imag", size=3)
@@ -128,7 +199,11 @@ class mb_object(PropertyGroup):
     molecule_ident = StringProperty(name="Molecule identifier")
     
     # used by type == 'ATOM'
-    bonds = CollectionProperty(type=mb_object_pointer)
+    pvt_bonds = CollectionProperty(type=mb_object_pointer)
+    @property
+    def bonds(self):
+        return get_object_list(self.pvt_bonds)
+
     atom_name = StringProperty(name="Atom name")
     element = StringProperty(
         name="Element", description="Element Symbol",
@@ -137,8 +212,11 @@ class mb_object(PropertyGroup):
         name="Element name", description="Full element name")
     
     # used by type == 'BOND'
-    bonded_atoms = CollectionProperty(type=mb_object_pointer)
-    #modes = CollectionProperty(type=mb_atom_mode)
+    pvt_bonded_atoms = CollectionProperty(type=mb_object_pointer)
+    @property
+    def bonded_atoms(self):
+        return get_object_list(self.pvt_bonded_atoms)
+
     
     supercell = IntVectorProperty(name="supercell", default=(0,0,0),
                                   size=3)
@@ -162,11 +240,11 @@ class mb_object(PropertyGroup):
         
         bond = None
         for existing in self.bonds:
-            if existing.object == ob:
+            if existing == ob:
                 bond = existing
                 break
         else:
-            bond = self.bonds.add()
+            bond = self.pvt_bonds.add()
             bond.object = ob
         return bond
     
@@ -176,8 +254,8 @@ class mb_object(PropertyGroup):
                         "non-ATOM type object", level=1)
             return None
         for i, b in enumerate(self.bonds):
-            if b.object == ob:
-                self.bonds.remove(i)
+            if b == ob:
+                self.pvt_bonds.remove(i)
                 return
     
     def add_bonded_atom(self, ob):
@@ -188,11 +266,11 @@ class mb_object(PropertyGroup):
         
         atom = None
         for existing in self.bonded_atoms:
-            if existing.object == ob:
+            if existing == ob:
                 atom = existing
                 break
         else:
-            atom = self.bonded_atoms.add()
+            atom = self.pvt_bonded_atoms.add()
             atom.object = ob
         return atom
     
@@ -204,8 +282,8 @@ class mb_object(PropertyGroup):
             return
         
         for i, a in enumerate(self.bonded_atoms):
-            if a.object == ob:
-                self.bonded_atoms.remove(i)
+            if a == ob:
+                self.pvt_bonded_atoms.remove(i)
                 return
     
     def draw_properties(self, context, layout, ob):
@@ -227,7 +305,6 @@ class mb_object(PropertyGroup):
                                              key=lambda t: t[-1][-1]):
             row = layout.row()
             row.prop(data, prop, text=label)
-
 
 #class mb_action(PropertyGroup):
     #name = StringProperty(name="Action name")
@@ -337,54 +414,32 @@ class mb_molecule(PropertyGroup):
         row = layout.row()
         row.prop(self, "name_mol", text="")
         row = layout.row()
-        row.label("(parent: {}".format(self.objects.parent.name))
-        row = layout.row()
-        row.label("(parent_ob: {}".format(self.objects.parent.object.name))
-        row = layout.row()
-        row.label("(ident: '{}')".format(self.name))
+        info = "(parent: {}, ".format(self.objects.parent.name)
+        info += "id: '{}')".format(self.name)
+        row.label(info)
         
-        #row = layout.row()
-        #row.active = bool(self.vibrations.max_mode)
-        #row.prop(self.vibrations, "active_mode")
-        #row = layout.row()
-        #row.active = bool(self.vibrations.max_mode)
-        #row.prop(self.vibrations, "mode_scale")
-        
-        if self.objects.parent.object:
+        if self.objects.parent:
             col = layout.column()
-            col.prop(self.objects.parent.object, "location", 
-                     text="Center of mass")
+            col.prop(self.objects.parent, "location", 
+                     text="Parent location")
         row = layout.row()
         row.operator("mb.center_mol_parent")
         
-        if self.objects.dipole.empty.object:
+        if self.objects.dipole.empty:
             col = layout.column()
-            col.prop(self.objects.dipole.empty.object, "location", 
+            col.prop(self.objects.dipole.empty, "location", 
                      text="Dipole")
+            col.operator("mb.remove_dipole")
         else:
             row = layout.row()
             row.operator("mb.draw_dipole")
-        #if not self.objects.unit_cell.uc_cube.object:
+
         row = layout.row()
-        row.operator("mb.draw_unit_cell")
-        #else:
-            #uc_cube =self.objects.unit_cell.uc_cube.object
-            #vgs = [vg for vg in uc_cube.vertex_groups 
-                   #if vg.name in ("a", "b", "c")]
-            #vg_ids = [vg.index for vg in sorted(vgs, key=lambda vg: vg.name)]
-            #verts = []
-            #for vg_id in vg_ids:
-                #vs = [v for v in uc_cube.data.vertices 
-                      #if vg_id in [vg.group for vg in v.groups]]
-                #if len(vs) != 1:
-                    #msg = "ERROR: Something wrong with uc_cube vertext groups"
-                    #debug_print(msg, level=1)
-                    #return
-                #verts.append(vs[0])
-            #for v in verts:
-                #row = layout.row()
-                #row.prop(v, "co")
-            
+        if not self.objects.unit_cell.uc_cube:
+            row.operator("mb.draw_unit_cell")
+        else:
+            col.operator("mb.remove_unit_cell")
+    
     def draw_styles(self, layout):
         #layout.label("Molecule draw style")
         row = layout.row()
@@ -408,7 +463,7 @@ class mb_molecule(PropertyGroup):
                                              key=lambda t: t[-1][-1]):
             row = layout.row()
             row.prop(data, prop)
-        
+    
     def add_object(self, ob):
         '''
         Add an object to the molecule's atoms collection and return the
@@ -416,9 +471,10 @@ class mb_molecule(PropertyGroup):
         collection item.
         '''
         collection = {
-            'ATOM': self.objects.atoms,
-            'BOND': self.objects.bonds,
-            'NONE': self.objects.other
+            'ATOM': self.objects.pvt_atoms,
+            'BOND': self.objects.pvt_bonds,
+            'UC': self.objects.unit_cell.pvt_objects,
+            'NONE': self.objects.pvt_other
             }
         objects = collection[ob.mb.type]
         
@@ -433,37 +489,17 @@ class mb_molecule(PropertyGroup):
     
     def remove_object(self, ob):
         collection = {
-            'ATOM': self.objects.atoms,
-            'BOND': self.objects.bonds,
-            'NONE': self.objects.other
+            'ATOM': self.objects.pvt_atoms,
+            'BOND': self.objects.pvt_bonds,
+            'UC': self.objects.unit_cell.pvt_objects,
+            'NONE': self.objects.pvt_other
             }
         objects = collection[ob.mb.type]
         
-        for i, a in enumerate(objects):
-            if a == ob:
+        for i, item in enumerate(objects):
+            if item.object == ob:
                 objects.remove(i)
                 return
-    
-    def remove_objects(self, ob_list=None):
-        ob_list = ob_list or []
-        objects = {'ATOM': [ob for ob in ob_list if ob.mb.type == 'ATOM'],
-                   'BOND': [ob for ob in ob_list if ob.mb.type == 'BOND'],
-                   'NONE': [ob for ob in ob_list if ob.mb.type == 'NONE']}
-        
-        collections = {'ATOM': self.objects.atoms,
-                      'BOND': self.objects.bonds,
-                      'NONE': self.objects.other}
-        for ob_type, obs in objects.items():
-            # find all the indices of the objects to delete
-            indeces = []
-            for i, a in enumerate(collections[ob_type]):
-                if a in obs:
-                    indeces.append(i)
-            # delete higher numbers first to not mess up the order of the coll.
-            for i in reversed(indeces):
-                collections[ob_type].remove(i)
-        return
-
 
 class mb_element(PropertyGroup):
     name = StringProperty(name="Element")
@@ -603,123 +639,26 @@ class mb_scene(PropertyGroup):
         parent_ob = bpy.data.objects.new(mol.name_mol, None)
         parent_ob.empty_draw_type = 'SPHERE'
         parent_ob.empty_draw_size = 0.3
-        bpy.context.scene.objects.link(parent_ob)
-        mol.objects.parent.object = parent_ob
+        self.id_data.objects.link(parent_ob)
+        mol.objects.parent = parent_ob
         parent_ob.mb.molecule_ident = mol.name
         parent_ob.mb.type = 'PARENT'
         mol.name_mol = name_mol or "Molecule"
         return mol
     
     def remove_molecule(self, mol):
-        # Make sure all objects are deleted first
-        if (0 == len(mol.objects.atoms) == len(mol.objects.bonds)
-              == len(mol.objects.unit_cell) == len(mol.objects.other)):
-            # delete all meshes
-            for me in mol.meshes:
-                bpy.data.meshes.remove(me.data)
-            # delete parent
-            parent = mol.objects.parent.object
-            if parent:
-                if parent.name in bpy.context.scene.objects:
-                    bpy.context.scene.objects.unlink(parent)
-                else:
-                    debug_print("Object {} not in scene {}.".format(
-                        parent.name, bpy.context.scene.name), level=1)
-                try:
-                    bpy.data.objects.remove(parent)
-                except RuntimeError:
-                    debug_print(
-                        "Object {} ".format(parent.name)
-                        + "can not be deleted from bpy.data.objects.",
-                        level=1)
-            # delete dipole
-            for ob in (mol.objects.dipole.empty.object,
-                       mol.objects.dipole.arrow.object):
-                if ob:
-                    if dipole.name in bpy.context.scene.objects:
-                        bpy.context.scene.objects.unlink(dipole)
-                    else:
-                        debug_print("Object {} not in scene {}.".format(
-                            dipole.name, bpy.context.scene.name), level=1)
-                    try:
-                        bpy.data.objects.remove(dipole)
-                    except RuntimeError:
-                        debug_print(
-                            "Object {} ".format(dipole.name)
-                            + "can not be deleted from bpy.data.objects.",
-                            level=1)
-            # Finally delete molecule from scene collection
-            for i, mol_item in enumerate(self.molecules):
-                if mol == mol_item:
-                    mol_id = mol.name
-                    name = mol.name_mol
-                    self.molecules.remove(i)
-                    debug_print("Deleted {} ({}).".format(mol_id, name), 
-                                level=3)
-                    return
-        else:
-            ob_list = ([item.object for item in mol.objects.atoms] +
-                       [item.object for item in mol.objects.bonds] +
-                       [item.object for item in mol.objects.unit_cell] +
-                       [item.object for item in mol.objects.other]
-                       )
-            self.remove_objects(ob_list) # will call remove_molecule again
-            
-    def remove_object(self, ob):
-        if ob.mb.type == 'ATOM':
-            # remove link from bonds
-            for b in ob.mb.bonds:
-                b_ob = b.object
-                if b_ob:
-                    b_ob.mb.remove_bonded_atom(ob)
-        elif ob.mb.type == 'BOND':
-            # remove link from atoms
-            for a in ob.mb.bonded_atoms:
-                a_ob = a.object
-                if a_ob:
-                    a_ob.mb.remove_bond(ob)
-        # remove link from molecule
-        mol = ob.mb.get_molecule()
-        if mol:
-            mol.remove_object(ob)
-        # delete object from blender
-        bpy.context.scene.objects.unlink(ob)
-        bpy.data.objects.remove(ob)
-        # check if object was last object in molecule and delete molecule if so
-        if (mol and 0 == len(mol.objects.atoms) == len(mol.objects.other)
-                      == len(mol.objects.bonds)):
-            self.remove_molecule(mol)
-    
-    def remove_objects(self, ob_list):
-        # now collect all objects per molecule
-        molecules = {}
-        for ob in ob_list:
-            if ob.mb.type == 'ATOM':
-                # remove link from bonds
-                for b in ob.mb.bonds:
-                    b_ob = b.object
-                    if b_ob:
-                        b_ob.mb.remove_bonded_atom(ob)
-            elif ob.mb.type == 'BOND':
-                # remove link from atoms
-                for a in ob.mb.bonded_atoms:
-                    a_ob = a.object
-                    if a_ob:
-                        a_ob.mb.remove_bond(ob)
-            try:
-                molecules[ob.mb.get_molecule()].append(ob)
-            except KeyError:
-                molecules[ob.mb.get_molecule()] = [ob]
+        for ob in mol.objects.get_all_objects():
+            self.id_data.objects.unlink(ob)
+            bpy.data.objects.remove(ob)
         
-        for mol, ob_list in molecules.items():
-            if mol:
-                mol.remove_objects(ob_list)
-            for ob in ob_list:
-                bpy.context.scene.objects.unlink(ob)
-                bpy.data.objects.remove(ob)
-        if (mol and 0 == len(mol.objects.atoms) == len(mol.objects.other)
-                      == len(mol.objects.bonds)):
-            self.remove_molecule(mol)
+        for i, mol_item in enumerate(self.molecules):
+            if mol == mol_item:
+                mol_id = mol.name
+                name = mol.name_mol
+                self.molecules.remove(i)
+                debug_print("Deleted {} ({}).".format(mol_id, name), 
+                            level=3)
+                return
 
 
 def register():

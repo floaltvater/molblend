@@ -98,11 +98,10 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
     
     bond_vecs = []
     for bond in first_atom.mb.bonds:
-        bond_ob = bond.object
-        for atom in bond_ob.mb.bonded_atoms:
-            if (not atom.object == first_atom
-                and not atom.object == new_atom):
-                bond_vecs.append((atom.object.mb.world_location
+        for atom in bond.mb.bonded_atoms:
+            if (not atom == first_atom
+                    and not atom == new_atom):
+                bond_vecs.append((atom.mb.world_location
                                   - first_loc).normalized())
                 break
     

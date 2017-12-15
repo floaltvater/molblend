@@ -93,10 +93,6 @@ def import_modes(context,
         qm = molecule.qpts.add()
         qm.nqpt = qmode.nqpt
         if qmode.qvecs_format == "QE":
-            if qm.nqpt == 1:
-                print(qmode.qvec)
-                print(uc[0][0])
-                print(inv_k_uc)
             qm.qvec = (Vector(qmode.qvec) * 2 * math.pi / uc[0][0]) * inv_k_uc
         else:
             qm.qvec = qmode.qvec
@@ -118,64 +114,9 @@ def import_modes(context,
                 d = m.evecs.add()
                 d.real = disp.real
                 d.imag = disp.imag
-                
-                #driver script -1.365+sin((frame-1)*pi/10)
+    
     for atom in molecule.objects.atoms:
-        #mb_utils.set_mode_drivers(context, atom.object, molecule)
-        mb_utils.create_mode_action(context, atom.object, molecule)
-        
-    #molecule.max_mode = len(frequencies)
-    #modes_col = molecule.modes_col
-    #m = modes_col.add()
-    #m.index = 0
-    #m.name = "mode_0"
-    #for i, freq in enumerate(frequencies):
-        #m = modes_col.add()
-        #m.index = i+1
-        #m.name = "mode_{}".format(i+1)
-        #m.freq = freq
-        
-        #if modes and frequencies and len(modes) == len(frequencies):
-        ## bpy.data.actions.new is very slow. Only make one action per atom
-        ## store mode_vecs in atom object and add drivers to fcurves that
-        ## point to this list
-            
-            #m = new_atom.mb.modes.add()
-            #m.name = 0
-            #m.index = 0
-            #m.freq = 0.0
-            #m.vec = (0, 0, 0)
-            
-            #for i, mode_vec in enumerate(data[3]):
-                #m = new_atom.mb.modes.add()
-                #m.name = i+1
-                #m.index = i+1
-                #m.freq = frequencies[i]
-                #m.vec = mode_vec
-            
-            #anim_data = new_atom.animation_data_create()
-            #atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
-                                        #new_atom.mb.index)
-            #action = bpy.data.actions.new(name="mode_{}".format(atom_id))
-            #anim_data.action = action
-            ##for dim in range(3):
-                ##fcu = action.fcurves.new(data_path="location", index=dim)
-                ##fcu.keyframe_points.add(3)
-                ##for p in range(3):
-                    ##loc = new_atom.location[dim]
-                    ##fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                    ##fcu.keyframe_points[p].interpolation = 'BEZIER'
-            ## make new group
-            #ag = action.groups.new("Location")
-            #for dim in range(3):
-                #fcu = action.fcurves.new(data_path="location", index=dim)
-                #fcu.group = ag
-                #fcu.keyframe_points.add(3)
-                #for p in range(3):
-                    #loc = new_atom.location[dim]
-                    #fcu.keyframe_points[p].co = 1.0 + 10*p, loc
-                    #fcu.keyframe_points[p].interpolation = 'BEZIER'
-
+        mb_utils.create_mode_action(context, atom, molecule)
 
 def import_molecule(context,
                     report,
@@ -199,7 +140,7 @@ def import_molecule(context,
         start = time.time()
         
         all_obs = []
-        all_obs.append(molecule.objects.parent.object)
+        all_obs.append(molecule.objects.parent)
         
         structure = mb_io_files.MB_Structure.from_file(
             filepath,
@@ -236,7 +177,7 @@ def import_molecule(context,
             structure.create_supercell(supercell)
         
         if mask_planes:
-            
+            structure.apply_mask(mask_planes, mask_flip)
         
         if bond_guess:
             structure.guess_bonds(tol=0.2)
@@ -251,7 +192,7 @@ def import_molecule(context,
         else:
             center_of_mass = Vector((0,0,0))
         
-        molecule.objects.parent.object.location = center_of_mass
+        molecule.objects.parent.location = center_of_mass
         debug_print("center", level=4)
         debug_print(time.time() - start, level=5)
         
@@ -268,7 +209,6 @@ def import_molecule(context,
                                          molecule)
             new_atom.mb.supercell = atom.get("supercell", (0,0,0))
             all_obs.append(new_atom)
-            # adjust index to be the same as in imported file
             new_atom.mb.index = index
             molecule.atom_index = index + 1
             if new_atom.mb.index != old_index:
@@ -305,8 +245,8 @@ def import_molecule(context,
             for index2 in other:
                 debug_print("\rbond {}-{}".format(index1, index2), level=4, 
                             end='')
-                new_bond = mb_utils.add_bond(context, atom_obs[index1], 
-                                             atom_obs[index2], 
+                new_bond = mb_utils.add_bond(context, atom_obs[index1],
+                                             atom_obs[index2],
                                              bond_type=bond_type)
                 all_obs.append(new_bond)
         molecule.bond_material = bond_material
@@ -319,17 +259,18 @@ def import_molecule(context,
             debug_print('\n'.join(error), level=1)
         
         if put_origin:
-            molecule.objects.parent.object.location -= center_of_mass
+            molecule.objects.parent.location -= center_of_mass
         
         # select all objects and make parent active
         bpy.ops.object.select_all(action="DESELECT")
-        context.scene.objects.active = molecule.objects.parent.object
+        context.scene.objects.active = molecule.objects.parent
         for ob in all_obs:
             ob.select = True
     except:
         # if something bad happend, delete all objects and re-raise
         for ob in all_obs:
             context.scene.objects.unlink(ob)
+            bpy.data.objects.remove(ob)
         raise
         
     return True
