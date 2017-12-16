@@ -28,11 +28,12 @@ else:
     from molblend import mb_utils
     from molblend import mb_io_files
 
-import time
+import math
 import logging
 
 import bpy
 import bmesh
+from mathutils import Vector, Matrix
 
 from molblend.elements_default import ELEMENTS as ELEMENTS_DEFAULT
 
@@ -142,7 +143,6 @@ def import_molecule(context,
                     ):
     
     try:
-        start = time.time()
         
         all_obs = []
         all_obs.append(molecule.objects.parent)

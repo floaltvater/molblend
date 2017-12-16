@@ -25,6 +25,7 @@ import logging
 from mathutils import Vector, Matrix
 
 from molblend.elements_default import ELEMENTS
+from molblend import mb_utils
 
 logger = logging.getLogger(__name__)
 A_per_Bohr = 0.529177249
@@ -259,7 +260,7 @@ class MB_Structure():
         delete = set()
         for index, atom in self.all_atoms.items():
             if not mb_utils.is_inside_of_planes(mask_planes, 
-                                                atom["coords"],
+                                                atom["coords"][0],
                                                 flip=mask_flip):
                 delete.add(index)
         for index in delete:

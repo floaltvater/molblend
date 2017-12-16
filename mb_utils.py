@@ -1273,7 +1273,8 @@ def set_draw_style(self, context):
     for bond in self.objects.bonds:
         bond.hide = hide
 
-def is_inside_of_planes(planes, l0, flip=False):
+def is_inside_of_planes(planes, loc, flip=False):
+    l0 = Vector(loc)
     for n, p0 in planes:
         vec = p0 - l0
         if (vec).dot(n) < 0:
