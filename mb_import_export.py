@@ -196,7 +196,7 @@ def import_molecule(context,
         
         # add all atoms to scene
         atom_obs = {}
-        error = set()
+        warning = set()
         for index, (old_index, atom) in enumerate(sorted(structure.all_atoms.items())):
             new_atom = mb_utils.add_atom(context, 
                                          atom["coords"][0]-center_of_mass, 
@@ -208,7 +208,7 @@ def import_molecule(context,
             new_atom.mb.index = index
             molecule.atom_index = index + 1
             if new_atom.mb.index != old_index:
-                error.add("WARNING: Indeces will not be the same as imported.")
+                warning.add("Indices will not be the same as imported.")
             
             atom_obs[old_index] = new_atom
             
@@ -239,8 +239,8 @@ def import_molecule(context,
                 all_obs.append(new_bond)
         molecule.bond_material = bond_material
         
-        if error:
-            logger.error('\n'.join(error))
+        if warning:
+            logger.warning('\n'.join(warning))
         
         if put_origin:
             molecule.objects.parent.location -= center_of_mass

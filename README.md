@@ -70,3 +70,4 @@ Please let me know if you have any preferences.
 - Dipoles or unit cell axes might end up having zero dimension due to the
   stretch constraint. Switching the "Plane" in the mb.stretch constraint
   should fix that.
+- Logging is somewhat sparse and not functional for debugging.
