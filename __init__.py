@@ -31,7 +31,7 @@ bl_info = {
     "description": "Work with chemical structures",
     "author": "Florian Brown-Altvater",
     "version": (0,1),
-    "blender": (2,7),
+    "blender": (2,7,9),
     "location": "View3D > Tool Shelf > MolBlend",
     "warning": "under heavy development",
     "wiki_url": "",
