@@ -25,6 +25,7 @@ else:
 import os
 import string
 import random
+import logging
 
 import bpy
 from bpy.types import (PropertyGroup,
@@ -40,8 +41,7 @@ from bpy.props import (StringProperty,
                        CollectionProperty,
                        EnumProperty)
 
-from molblend.mb_helper import debug_print
-
+logger = logging.getLogger(__name__)
 
 def get_object_list(colprop):
     all_obs = []
@@ -252,8 +252,8 @@ class mb_object(PropertyGroup):
     def add_bond(self, ob):
         """Add object to bond collection and return new collection item."""
         if not self.type == 'ATOM':
-            debug_print("WARNING: Something is trying to add bond to "
-                        "non-ATOM type object", level=1)
+            logger.warning("Something is trying to add bond to "
+                           "non-ATOM type object")
             return None
         
         bond = None
@@ -268,8 +268,8 @@ class mb_object(PropertyGroup):
     
     def remove_bond(self, ob):
         if not self.type == 'ATOM':
-            debug_print("WARNING: Something is trying to remove bond from "
-                        "non-ATOM type object", level=1)
+            logger.warning("Something is trying to remove bond from "
+                           "non-ATOM type object")
             return None
         for i, b in enumerate(self.bonds):
             if b == ob:
@@ -278,8 +278,8 @@ class mb_object(PropertyGroup):
     
     def add_bonded_atom(self, ob):
         if not self.type == 'BOND':
-            debug_print("WARNING: Something is trying to add bonded_atom to "
-                        "non-BOND type object", level=1)
+            logger.warning("Something is trying to add bonded_atom to "
+                           "non-BOND type object")
             return
         
         atom = None
@@ -294,9 +294,9 @@ class mb_object(PropertyGroup):
     
     def remove_bonded_atom(self, ob):
         if not self.type == 'BOND':
-            debug_print("WARNING: Something is trying to remove bonded_atom "
-                        "{} ({}) from non-BOND type object {} ({})".format(
-                        ob.name, ob.mb.type, self.name, self.type), level=1)
+            logger.warning("Something is trying to remove bonded_atom "
+                           "{} ({}) from non-BOND type object {} ({})".format(
+                           ob.name, ob.mb.type, self.name, self.type))
             return
         
         for i, a in enumerate(self.bonded_atoms):
@@ -695,8 +695,6 @@ class mb_scene(PropertyGroup):
                 mol_id = mol.name
                 name = mol.name_mol
                 self.molecules.remove(i)
-                debug_print("Deleted {} ({}).".format(mol_id, name), 
-                            level=3)
                 return
 
 

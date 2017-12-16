@@ -31,6 +31,7 @@ else:
 import os
 import sys
 from operator import methodcaller
+import logging
 
 import bpy
 from bpy.types import (Operator,
@@ -49,8 +50,7 @@ from bpy.props import (StringProperty,
 from bpy_extras.io_utils import ImportHelper, ExportHelper
 from mathutils import Vector, Matrix
 
-from molblend.mb_helper import debug_print
-
+logger = logging.getLogger(__name__)
 
 class MB_OT_initialize(Operator):
     bl_idname = 'mb.initialize'
@@ -66,7 +66,6 @@ class MB_OT_initialize(Operator):
         layout.prop(context.user_preferences.system, "use_scripts_auto_execute")
     
     def invoke(self, context, event):
-        debug_print("mb.initialize.invoke", level=6)
         # check if python scripts can be executed. Needed for drivers
         if not context.user_preferences.system.use_scripts_auto_execute:
             return context.window_manager.invoke_props_dialog(self)
@@ -78,7 +77,7 @@ class MB_OT_initialize(Operator):
             self.report({'ERROR'}, "Python scripts auto execute not enabled")
             return {'CANCELLED'}
         
-        debug_print('Initialize MolBlend', level=2)
+        logger.info('Initialize MolBlend')
         wm = context.window_manager
         
         # initialize elements
@@ -183,7 +182,6 @@ class MB_OT_modal_add(Operator):
             return {'CANCELLED'}
 
     def cancel(self, context):
-        debug_print("cancel modal", level=6)
         type(self).is_running_bool = False
         context.window.cursor_modal_set('DEFAULT')
         context.scene.objects.active = context.scene.mb.modal_last_active
@@ -212,9 +210,7 @@ class MB_OT_make_static(Operator):
         ob.matrix_world = mat
     
     def execute(self, context):
-        if not context.selected_editable_objects:
-            debug_print("No objects selected", level=2)
-        for ob in context.selected_editable_objects:
+        for ob in context.selected_objects:
             if ob.mb.type == 'BOND':
                 self.remove_constraints(ob)
             elif ob.mb.type == 'ATOM':
@@ -381,8 +377,7 @@ class MB_OT_add_atom(Operator):
             first_atom = None
         
         if self.first_atom_name.strip() and not first_atom:
-            debug_print('Object "{}" not found.'.format(self.first_atom_name),
-                        level=1)
+            logger.debug('Object "{}" not found.'.format(self.first_atom_name))
             return {'CANCELLED'}
         
         if first_atom:
@@ -445,9 +440,13 @@ class MB_OT_select_bonded(Operator):
                     return atom(ob)
                 elif ob.mb.type == 'BOND':
                     return bond(ob)
-            else:
-               debug_print('mb.type {} not compatible'.format(ob.mb.type),
-                           level=2)
+
+
+def get_molecules(self, context):
+    lst = []
+    for mol in context.scene.mb.molecules:
+        lst.append((mol.name, mol.name_mol, ""))
+    return lst
 
 
 class MB_OT_select_molecule(Operator):
@@ -459,12 +458,19 @@ class MB_OT_select_molecule(Operator):
     bl_label = "Select molecule"
     bl_options = {'UNDO', 'REGISTER'}
     
+    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
+    
     @classmethod
     def poll(cls, context):
         return context.object
     
-    def execute(self, context):
+    def invoke(self, context, event):
         mol = context.object.mb.get_molecule()
+        self.molecule_id = mol.name
+        return self.execute(context)
+    
+    def execute(self, context):
+        mol = context.scene.mb.molecules.get(self.molecule_id)
         if not mol:
             self.report("Active object is not part of a molecule.")
             return {'CANCELLED'}
@@ -526,17 +532,16 @@ class MB_OT_center_mol_parent(Operator):
     
     @classmethod
     def poll(cls, context):
-        return context.object
+        return context.object and context.object.mb.get_molecule()
+    
+    def invoke(self, context, event):
+        mol = context.object.mb.get_molecule()
+        self.molecule_id = mol.name
+        return self.execute(context)
     
     def execute(self, context):
+        mol = context.scene.mb.molecules.get(self.molecule_id)
         molecule = context.object.mb.get_molecule()
-        if not molecule:
-        
-            debug_print(
-                "ERROR in mb.center_mol_parent: Molecule "
-                "{} not found in scene.".format(self.molecule_id),
-                level=0)
-            return {'CANCELLED'}
         origin = Vector((0.0,0.0,0.0))
         atoms = molecule.objects.atoms
         locs = [atom.location for atom in atoms]
@@ -545,13 +550,6 @@ class MB_OT_center_mol_parent(Operator):
             atom.location -= center
         molecule.objects.parent.location = center
         return {'FINISHED'}
-        
-
-def get_molecules(self, context):
-        lst = []
-        for mol in context.scene.mb.molecules:
-            lst.append((mol.name, mol.name_mol, ""))
-        return lst
 
 
 class MB_OT_draw_unit_cell(Operator):
@@ -808,7 +806,9 @@ class MD_OT_import_molecules(bpy.types.Operator):
         
         for filepath in files:
             if not os.path.exists(filepath):
-                debug_print("ERROR: {} not found".format(filepath), level=0)
+                logger.error(
+                    "mb.import_molecules: {} not found".format(filepath)
+                    )
                 return {'CANCELLED'}
         
             new_molecule = context.scene.mb.new_molecule(
@@ -836,7 +836,7 @@ class MD_OT_import_molecules(bpy.types.Operator):
                                 world_mat*mask.data.vertices[pg.vertices[0]].co)
                                 for pg in mask.data.polygons]
             if error_list:
-                debug_print('\n'.join(error_list), level=1)
+                logger.error('\n'.join(error_list))
             
             if self.length_unit == 'OTHER':
                 scale_distances = self.length_unit_other

@@ -29,13 +29,14 @@ else:
     from molblend import mb_io_files
 
 import time
+import logging
 
 import bpy
 import bmesh
 
 from molblend.elements_default import ELEMENTS as ELEMENTS_DEFAULT
-from molblend.mb_helper import debug_print
-from molblend.mb_io_files import *
+
+logger = logging.getLogger(__name__)
 
 #--- Read file functions -----------------------------------------------------#
 def is_inside_of_planes(planes, l0, flip=False):
@@ -54,7 +55,7 @@ def import_modes(context,
                  file_format,
                  molecule):
     
-    debug_print("Reading modes file {}".format(modefilepath), level=4)
+    logger.info("Reading modes file {}".format(modefilepath))
     try:
         qpts = mb_io_files.modes_from_file(modefilepath, 
                                              file_format)
@@ -70,13 +71,17 @@ def import_modes(context,
     nat = len(molecule.objects.atoms)
     for qmode in qpts:
         if qmode.qvecs_format and not molecule["unit_cells"]:
-            debug_print("ERROR: can't convert qvecs to crystal coordinates because no unit cell information is present", level=1)
+            msg = "Can't convert qvecs to crystal coordinates because no unit"
+            msg += " cell information is present"
+            logger.error(msg)
+            report({'ERROR'}, msg)
         for mode in qmode.modes:
             if nat % len(mode.evecs) != 0:
                 msg = "number of displacement vectors "
                 msg += "{}".format(len(mode.evecs))
                 msg += " is different than number of atoms {}".format(nat)
                 msg += " in active molecule."
+                logger.error(msg)
                 report({'ERROR'}, msg)
                 return False
     
@@ -149,11 +154,10 @@ def import_molecule(context,
         
         # some sanity checks
         if not structure.all_atoms:
-            debug_print("ERROR: No atoms found in {}. ".format(filepath) +
-                "Please check file format and/or MolBlend code.",
-                level=1)
-            report({'ERROR'}, "No atoms found in {}.".format(filepath) +
-                "Please check file format and/or MolBlend code.")
+            msg = "No atoms found in {}. ".format(filepath)
+            msg += "Please check file format and/or MolBlend code."
+            logger.error(msg)
+            report({'ERROR'}, msg)
             return False
         
         if structure.axes and not len(structure.axes) == structure.nframes:
@@ -170,8 +174,9 @@ def import_molecule(context,
             for ob in unit_cell_obs[-3:]:
                 mb_utils.check_ob_dimensions(ob)
         elif draw_uc and not molecule["unit_cells"]:
-            debug_print("WARNING: No unit cell vectors read.",
-                        level=1)
+            msg = "No unit cell vectors read."
+            logger.warning(msg)
+            self.report({'WARNING'}, msg)
         
         if sum(supercell) > 3:
             structure.create_supercell(supercell)
@@ -181,11 +186,6 @@ def import_molecule(context,
         
         if bond_guess:
             structure.guess_bonds(tol=0.2)
-            debug_print("guess", level=4)
-            debug_print(time.time() - start, level=5)
-        
-        debug_print("read", level=4)
-        debug_print(time.time() - start, level=5)
         
         if parent_center:
             center_of_mass = structure.get_center_of_mass()
@@ -193,15 +193,11 @@ def import_molecule(context,
             center_of_mass = Vector((0,0,0))
         
         molecule.objects.parent.location = center_of_mass
-        debug_print("center", level=4)
-        debug_print(time.time() - start, level=5)
         
         # add all atoms to scene
         atom_obs = {}
         error = set()
-        debug_print("", level=4)
         for index, (old_index, atom) in enumerate(sorted(structure.all_atoms.items())):
-            debug_print("\ratom {}".format(index), level=4, end='')
             new_atom = mb_utils.add_atom(context, 
                                          atom["coords"][0]-center_of_mass, 
                                          atom["element"],
@@ -234,29 +230,17 @@ def import_molecule(context,
                         fcu.keyframe_points[-1].co = nf + 1, loc
                         fcu.keyframe_points[-1].interpolation = 'LINEAR'
         
-        debug_print("", level=4)
-
-        debug_print("atoms", level=4)
-        debug_print(time.time() - start, level=5)
-        
         # add bonds to scene
-        debug_print("", level=4)
         for index1, other in structure.bonds.items():
             for index2 in other:
-                debug_print("\rbond {}-{}".format(index1, index2), level=4, 
-                            end='')
                 new_bond = mb_utils.add_bond(context, atom_obs[index1],
                                              atom_obs[index2],
                                              bond_type=bond_type)
                 all_obs.append(new_bond)
         molecule.bond_material = bond_material
-        debug_print("", level=4)
-        
-        debug_print("bonds", level=4)
-        debug_print(time.time() - start, level=5)
         
         if error:
-            debug_print('\n'.join(error), level=1)
+            logger.error('\n'.join(error))
         
         if put_origin:
             molecule.objects.parent.location -= center_of_mass

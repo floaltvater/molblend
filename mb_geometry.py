@@ -18,17 +18,18 @@
 
 import math
 from bisect import bisect_left
+import logging
 
 import bpy
 from mathutils import Vector, Matrix
 
 from molblend.elements_default import ELEMENTS as ELEMENTS_DEFAULT
-from molblend.mb_helper import debug_print
+
+logger = logging.getLogger(__name__)
 
 #--- Geometry functions ------------------------------------------------------#
 
 def get_fixed_angle(context, first_loc, coord_3d, angle_list=None):
-    debug_print("mb_utils.get_fixed_angle", level=6)
     angle_list = angle_list or []
     # get current vector between first_atom and the mouse pointer
     bond_vector = coord_3d - first_loc
@@ -73,7 +74,6 @@ def get_fixed_angle(context, first_loc, coord_3d, angle_list=None):
 
 
 def get_fixed_length(context, first_atom, second_atom, coord_3d, length=-1):
-    debug_print("mb_utils.get_fixed_length", level=6)
     if length < 0:
         r1 = context.scene.mb.elements[first_atom.mb.element].covalent
         r2 = context.scene.mb.elements[second_atom.mb.element].covalent
@@ -89,8 +89,6 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
     new bond based on geometry return the position that is closest to the mouse
     pointer (coord_3d)
     '''
-    debug_print("mb_utils.get_fixed_geometry", level=6)
-    
     if geometry == 'NONE':
         return coord_3d
     
@@ -228,8 +226,5 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
 
     # TODO implement other 3D geometries (like tetrahedral, octahedral, etc.
     else:
-        debug_print(
-            "WARNING: Geometry {} not implemented yet.".format(geometry),
-            level=2
-            )
+        logger.error("Geometry {} not implemented yet.".format(geometry))
         return coord_3d

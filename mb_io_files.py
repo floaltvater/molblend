@@ -20,12 +20,13 @@
 import re
 import math
 import itertools
+import logging
 
 from mathutils import Vector, Matrix
 
-from molblend.mb_helper import debug_print
 from molblend.elements_default import ELEMENTS
 
+logger = logging.getLogger(__name__)
 A_per_Bohr = 0.529177249
 
 # These three classes mirror the property structure of mb_molecule. If
@@ -64,7 +65,7 @@ def modes_from_file(modefilepath, file_format):
     if not file_format in read_modes_funcs:
         msg = "ERROR: File format {}".format(file_format)
         msg += " not implemented yet."
-        debug_print(msg, level=1)
+        logger.error(msg)
     
     return read_modes_funcs[file_format](modefilepath)
 
@@ -152,7 +153,6 @@ def _read_qe_dynmat_out(filepath):
                 q = [c*1. for c in (map(float, line.split()[-3:]))]
                 qmode = MB_QMode(q_count, q)
                 qmode.qvecs_format = "QE"
-                debug_print("Reading q-point {}: ({}, {}, {})".format(q_count, *q), level=2)
                 
                 line = next(fin) # stars
                 
@@ -218,11 +218,10 @@ class MB_Structure():
                         except KeyError:
                             self.bonds[index1] = set((index2,))
             if not self.bonds:
-                debug_print("WARNING: No bonds found.", level=1)
+                logger.warning("guess_bonds: No bonds found.")
     
     def create_supercell(self, supercell):
         if self.axes:
-            debug_print("Creating supercell.", level=4)
             max_atom_index = max(self.all_atoms) + 1
             
             n_unit_cell = 0
@@ -248,8 +247,7 @@ class MB_Structure():
                         }
                 n_unit_cell += 1
         else:
-            debug_print("ERROR: Supercell requested, but no unit cell vectors"
-                        + " read.", level=0)
+            logger.error("Supercell requested, but no unit cell vectors read")
     
     def get_center_of_mass(self):
         origin = Vector((0.0,0.0,0.0))
@@ -507,16 +505,16 @@ class MB_Structure():
                             msg = ("WARNING: Didn't understand acell unit in "
                                    + "{} ({})".format(filepath_abi,
                                                       acell_split[-1]))
-                            debug_print(msg, level=1)
+                            logger.warning(msg)
                     acell *= acell_unit
                 elif "natom" in line and re.search("natom +[0-9]+", line):
                     natom = int(line.split()[-1])
                 elif "ndtset" in line and re.search("ndtset +[0-9]+", line):
                     ndtset = int(line.split()[-1])
                     if ndtset > 1:
-                        debug_print("WARNING: More than one dataset present. "
-                            "Will probably result in unwanted behavior.",
-                            level=1)
+                        logger.warning(
+                            "WARNING: More than one dataset present. "
+                            "Will probably result in unwanted behavior.")
                 elif "optcell" in line and re.search("optcell +[0-9]+", line):
                     optcell = int(line.split()[-1])
                 elif ("rprim" in line
@@ -540,8 +538,8 @@ class MB_Structure():
                             typat.extend([int(i) for i in next(fin).split()])
                     except NameError as e:
                         msg = "ERROR: natom should be defined before typat"
-                        debug_print(msg, level=1)
-                        debug_print(e, level=1)
+                        logger.error(msg)
+                        logger.error(e)
                 elif ("xangst" in line
                       and re.search("xangst +( [ .0-9E+-]+){3} *", line)):
                     try:
@@ -553,8 +551,8 @@ class MB_Structure():
                                                   for f in next(fin).split()]))
                     except NameError:
                         msg = "ERROR: natom should be defined before xangst"
-                        debug_print(msg, level=1)
-                        debug_print(e, level=1)
+                        logger.error(msg)
+                        logger.error(e)
                 elif "znucl" in line and re.search("znucl +( [.0-9]+)+", line):
                     znucl = [int(i.split('.')[0]) for i in line.split()[1:]]
                     znucl_str = [""] * len(znucl)
@@ -600,7 +598,7 @@ class MB_Structure():
                             else:
                                 msg = ("WARNING: Scale of Primitive Cell unit"
                                        + " not recognized ({})".format(unit))
-                                debug_print(msg, level=1)
+                                logger.warning(msg)
                                 fac = 1.0
                             rprimd = []
                             for i in range(3):
@@ -658,11 +656,8 @@ class MB_Structure():
                     if "X" in element:
                         element = "Vac"
                     if index in all_atoms:
-                        debug_print(
-                            "ERROR: duplicate atom indeces in {}".format(
-                                filepath_pdb
-                                ),
-                            level=0
+                        logger.error(
+                            "duplicate atom indeces in {}".format(filepath_pdb)
                             )
                     all_atoms[index] = [element, atom_name, location, index]
                     
@@ -678,8 +673,6 @@ class MB_Structure():
                                 strc.bonds[atomID1].add(atomID2)
                 
                 elif line[:6] == 'ENDMDL':
-                    debug_print("ENDMDL found.", level=6)
-                    
                     all_frames.append(all_atoms)
                     strc.nframes += 1
                     all_atoms = {}
@@ -749,16 +742,8 @@ class MB_Structure():
                         cell_matrix = Matrix.Identity(3)
                         if "angstrom" in line.lower():
                             cell_matrix = 1.0
-                            #if scale_distances != 1.0:
-                                #debug_print(
-                                    #"Found coordinates in Angstrom. Overriding unit.",
-                                    #level=1)
                         elif "bohr" in line.lower():
                             cell_matrix = A_per_Bohr * cell_matrix
-                            #if scale_distances != A_per_Bohr:
-                                #debug_print(
-                                    #"Found coordinates in Bohr. Overriding unit.", 
-                                    #level=1)
                         elif "crystal" in line.lower():
                             # process at the end when both atomic coordinates and 
                             # vectors are read for certain
@@ -768,8 +753,6 @@ class MB_Structure():
                             msg = ("Unit of ATOMIC_POSITIONS in "
                                    + "{} is alat. Implement!".format(filepath))
                             raise ValueError(msg)
-                            #alat = int(line.split('=')[-1].strip().strip(",").strip())
-                            #cell_matrix = alat * A_per_Bohr * cell_matrix
                         else:
                             msg = ("Unit of ATOMIC_POSITIONS in "
                                    + "{} unclear.\n".format(filepath)
@@ -815,12 +798,6 @@ class MB_Structure():
             for line in fin:
                 if "number of atoms/cell" in line:
                     n_atoms = int(line.split()[-1])
-                #if "lattice parameter (alat)" in line:
-                    #if line.split()[-1] == 'a.u.':
-                        #fac = A_per_Bohr 
-                    #else:
-                        #raise ValueError("check units in {}".format(filepath))
-                    #alat = float(line.split()[-2]) * fac
                 elif "lattice parameter (alat)" in line:
                     alat = A_per_Bohr * float(line.split()[-2])
                 elif "crystal axes: (cart. coord. in units of alat)" in line:
@@ -880,21 +857,12 @@ class MB_Structure():
                     # double check units and set correct conversion matrix
                     if "angstrom" in line.lower():
                         cell_matrix = 1.0 #Matrix.Identity(3)
-                        #if scale_distances != 1.0:
-                            #debug_print(
-                                #"Found coordinates in Angstrom. Overriding unit.", 
-                                #level=1)
                     elif "bohr" in line.lower():
                         cell_matrix = A_per_Bohr #* Matrix.Identity(3)
-                        #if scale_distances != A_per_Bohr:
-                            #debug_print(
-                                #"Found coordinates in Bohr. Overriding unit.",
-                                #level=1)
                     elif "crystal" in line.lower():
                         # get unit vectors
                         cell_matrix = Matrix(self.axes[-1]).transposed()
                     elif "alat" in line.lower():
-                        #alat = float(line.split('=')[-1].strip().strip(",").strip()) 
                         cell_matrix = alat #* Matrix.Identity(3)
                     else:
                         msg = ("Unit of ATOMIC_POSITIONS in "
@@ -932,94 +900,3 @@ class MB_Structure():
                                 )
         
         return strc
-
-
-
-## TODO combine export functions into one and split different fileformats into
-## write functions
-#def export_xyz(filepath, selection_only, scale_distances):
-    #debug_print("Write to file {}.".format(filepath), level=1)
-    #all_atoms = {}
-    #if selection_only:
-        #objects = bpy.context.selected_objects
-    #else:
-        #objects = bpy.context.scene.objects
-    
-    #n_atoms = 0
-    #for ob in objects:
-        #if ob.mb.type == 'ATOM':
-            #try:
-                #all_atoms[ob.mb.molecule_name].append(
-                    #(ob.mb.index, ob.mb.element, get_world_coordinates(ob)))
-            #except KeyError:
-                #all_atoms[ob.mb.molecule_name] = [(ob.mb.index, ob.mb.element, 
-                                                  #get_world_coordinates(ob))]
-            #n_atoms += 1
-    
-    #with open(filepath, "w") as fout:
-        #fout.write("{}\n".format(n_atoms))
-        #fout.write("This file has been created with Blender "
-                   #"and the MolBlend addon.\n")
-    
-        #for mol_id in sorted(all_atoms):
-            #for i, element, location in sorted(all_atoms[mol_id]):
-                #l = "{}   {:>10.5f}   {:>10.5f}   {:>10.5f}\n"
-                #fout.write(l.format(element, *location))
-        #debug_print("Exported {} atoms.".format(n_atoms), level=1)
-    #return True
-
-
-#def export_pdb(filepath, selection_only, scale_distances):
-    #debug_print("Write to file {}.".format(filepath), level=1)
-    #all_atoms = {}
-    #if selection_only:
-        #objects = bpy.context.selected_objects
-    #else:
-        #objects = bpy.context.scene.objects
-    
-    #n_atoms = 0
-    #for ob in objects:
-        #if ob.mb.type == 'ATOM':
-            #atom_name = ob.mb.atom_name
-            #info = (
-                #ob.mb.index,
-                #atom_name if len(ob.mb.element) != 1 else " " + atom_name,
-                #ob.mb.get_molecule().name[:3].upper(),
-                #get_world_coordinates(ob),
-                #ob.mb.element,
-                #)
-            #try:
-                #all_atoms[ob.mb.molecule_name].append(info)
-            #except KeyError:
-                #all_atoms[ob.mb.molecule_name] = [info]
-            #n_atoms += 1
-        
-    #with open(filepath, "w") as fout:
-        #fout.write("REMARK This pdb file has been created with Blender "
-                  #"and the addon MolBlend\n"
-                  #"REMARK\n"
-                  #"REMARK\n")
-        #index = 1
-        #for mol_id in sorted(all_atoms):
-            #for data in sorted(all_atoms[mol_id]):
-                #i, name, res_name, coords, element = data
-                #l = ("HETATM{ID:>5} {name:<4} {res}     1    {c[0]:8.3f}" 
-                     #"{c[1]:8.3f}{c[2]:8.3f}  1.00  0.00          "
-                     #"{element:>2}\n")
-                #fout.write(l.format(ID=index, name=name[:4], res=res_name, 
-                                    #c=coords, element=element))
-                #index += 1
-                #if index > 99999:
-                    #index = 1
-    #debug_print("Exported {} atoms.".format(n_atoms), level=1)
-    #return True
-
-
-#def export_b4w(filepath):
-    ## need to link all materials to meshes instead of objects
-    ## so first make each mesh single user
-    ## then link the material slots to data
-    ## export to b4w without autosaving blend file
-    ## undo all the changes and revert to state before (or alternatively copy
-    ## selection to new file and do everything there)
-    #debug_print("Blend4Web export not implemented yet.", level=1)
