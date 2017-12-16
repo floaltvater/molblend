@@ -79,6 +79,7 @@ from bpy.props import (StringProperty,
 # -----------------------------------------------------------------------------
 #                               GUI
 ### FIXES
+# TODO When name of Molecule changes, change names of parent, dipoles etc.
 # TODO Duplicating whole molecules doesn't duplicate the MB_Molecule, so atom colors, drawing styles etc are still linked.
 # TODO Initialize on startup/load (like in manuelbastioni).
 # TODO clean up deleting objects. There should be ONE function to call when an object needs to be deleted
@@ -172,9 +173,7 @@ class MB_PT_import(MolBlendPanel, Panel):
         
         mb = context.scene.mb.globals
         layout = self.layout
-        
-        row = layout.row()
-        row.operator("mb.import_molecules")
+        layout.operator("mb.import_molecules")
 
 
 class MB_PT_tools(MolBlendPanel, Panel):
@@ -191,8 +190,7 @@ class MB_PT_tools(MolBlendPanel, Panel):
         label = "ESC to stop" if modal == True else "Draw atoms"
         layout.operator("mb.modal_add", text=label)
         #--- tools -----------------------------------------------------------#
-        row = layout.row()
-        split = row.split(0.4)
+        split = layout.split(0.4)
         col = split.column()
         col.label("Add")
         col.label("Geometry")
@@ -201,6 +199,7 @@ class MB_PT_tools(MolBlendPanel, Panel):
         col.prop(context.scene.mb.globals, "geometry_to_add", text="")
         layout.operator("mb.select_bonded")
         layout.operator("mb.select_molecule")
+        layout.operator("mb.combine_molecules")
         layout.prop(context.scene.mb.globals, "show_bond_lengths")
 
         layout.separator()
@@ -236,6 +235,38 @@ class MB_PT_molecule_properties(MolBlendPanel, Panel):
         active_ob = context.object or context.scene.mb.modal_last_active
         mol = active_ob.mb.get_molecule()
         mol.draw_properties(layout)
+
+
+class MB_PT_molecule_dipole(MolBlendPanel, Panel):
+    bl_label = "Molecule dipole"
+    
+    @classmethod
+    def poll(cls, context):
+        active_ob = context.object or context.scene.mb.modal_last_active
+        return (context.scene.mb.is_initialized 
+                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
+    
+    def draw(self, context):
+        layout = self.layout
+        active_ob = context.object or context.scene.mb.modal_last_active
+        mol = active_ob.mb.get_molecule()
+        mol.draw_dipole_props(layout)
+
+
+class MB_PT_molecule_unit_cell(MolBlendPanel, Panel):
+    bl_label = "Molecule unit cell"
+    
+    @classmethod
+    def poll(cls, context):
+        active_ob = context.object or context.scene.mb.modal_last_active
+        return (context.scene.mb.is_initialized 
+                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
+    
+    def draw(self, context):
+        layout = self.layout
+        active_ob = context.object or context.scene.mb.modal_last_active
+        mol = active_ob.mb.get_molecule()
+        mol.draw_unit_cell_props(layout)
 
 
 class MB_PT_vibration_properties(MolBlendPanel, Panel):

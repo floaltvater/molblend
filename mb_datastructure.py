@@ -47,7 +47,7 @@ def get_object_list(colprop):
     all_obs = []
     delete = []
     for i, item in enumerate(colprop):
-        if item.object:
+        if item.object and item.object.name in bpy.context.scene.objects:
             all_obs.append(item.object)
         else:
             delete.append(i)
@@ -102,13 +102,29 @@ class mb_dipole(PropertyGroup):
         self.pvt_arrow.object = ob
     
 class mb_unit_cell(PropertyGroup):
-    pvt_uc_cube = PointerProperty(name="Unit cell base", type=mb_object_pointer)
+    pvt_a = PointerProperty(name="a", type=mb_object_pointer)
     @property
-    def uc_cube(self):
-        return self.pvt_uc_cube.object
-    @uc_cube.setter
-    def uc_cube(self, ob):
-        self.pvt_uc_cube.object = ob
+    def a(self):
+        return self.pvt_a.object
+    @a.setter
+    def a(self, ob):
+        self.pvt_a.object = ob
+    
+    pvt_b = PointerProperty(name="Unit cell base", type=mb_object_pointer)
+    @property
+    def b(self):
+        return self.pvt_b.object
+    @b.setter
+    def b(self, ob):
+        self.pvt_b.object = ob
+    
+    pvt_c = PointerProperty(name="Unit cell base", type=mb_object_pointer)
+    @property
+    def c(self):
+        return self.pvt_c.object
+    @c.setter
+    def c(self, ob):
+        self.pvt_c.object = ob
     
     pvt_objects = CollectionProperty(name="Unit cell objects", type=mb_object_pointer)
     @property
@@ -152,7 +168,9 @@ class mb_molecule_objects(PropertyGroup):
         all_obs.extend(self.other)
         for ob in (self.dipole.empty,
                    self.dipole.arrow,
-                   self.unit_cell.uc_cube):
+                   self.unit_cell.a,
+                   self.unit_cell.b,
+                   self.unit_cell.c):
             if ob:
                 all_obs.append(ob)
         all_obs.extend(self.unit_cell.objects)
@@ -303,8 +321,7 @@ class mb_object(PropertyGroup):
             }
         for label, (data, prop, i) in sorted(props.items(), 
                                              key=lambda t: t[-1][-1]):
-            row = layout.row()
-            row.prop(data, prop, text=label)
+            layout.prop(data, prop, text=label)
 
 #class mb_action(PropertyGroup):
     #name = StringProperty(name="Action name")
@@ -391,64 +408,78 @@ class mb_molecule(PropertyGroup):
     
     def draw_vibrations(self, layout):
         
-        row = layout.row()
-        row.operator("mb.import_modes")
+        layout.operator("mb.import_modes")
         if self.qpts:
-            row = layout.row()
-            row.template_list("MB_UL_modes", "", self, "qpts", self, 
+            layout.template_list("MB_UL_modes", "", self, "qpts", self, 
                               "active_nqpt",rows=1)
-            row = layout.row()
-            row.prop(self, "active_mode")
-            row = layout.row()
-            row.prop(self, "mode_scale")
-            row = layout.row()
-            row.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
+            layout.prop(self, "active_mode")
+            layout.prop(self, "mode_scale")
+            layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
                      "freq", text="Frequency")
-            row = layout.row()
-            row.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
+            layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
                      "symmetry", text="Symmetry")
         
     
     def draw_properties(self, layout):
         #layout.label("Molecule properties")
-        row = layout.row()
-        row.prop(self, "name_mol", text="")
-        row = layout.row()
+        layout.prop(self, "name_mol", text="")
         info = "(parent: {}, ".format(self.objects.parent.name)
         info += "id: '{}')".format(self.name)
-        row.label(info)
+        layout.label(info)
         
         if self.objects.parent:
             col = layout.column()
             col.prop(self.objects.parent, "location", 
                      text="Parent location")
-        row = layout.row()
-        row.operator("mb.center_mol_parent")
-        
+        layout.operator("mb.center_mol_parent")
+
+    def draw_dipole_props(self, layout):
         if self.objects.dipole.empty:
             col = layout.column()
             col.prop(self.objects.dipole.empty, "location", 
-                     text="Dipole")
-            col.operator("mb.remove_dipole")
+                     text="")
+            mat = self.objects.dipole.arrow.material_slots[0].material
+            if bpy.context.scene.render.engine == 'CYCLES':
+                data = mat.node_tree.nodes['Diffuse BSDF'].inputs[0]
+                prop = "default_value"
+            else:
+                data = mat
+                prop = "diffuse_color"
+            layout.prop(data, prop, text="Color")
+            layout.operator("mb.remove_dipole")
         else:
+            layout.operator("mb.draw_dipole")
+    
+    def draw_unit_cell_props(self, layout):
+        if (self.objects.unit_cell.a 
+                and self.objects.unit_cell.b
+                and self.objects.unit_cell.c):
             row = layout.row()
-            row.operator("mb.draw_dipole")
-
-        row = layout.row()
-        if not self.objects.unit_cell.uc_cube:
-            row.operator("mb.draw_unit_cell")
+            col = row.column()
+            col.prop(self.objects.unit_cell.a, "location", text="a")
+            col = row.column()
+            col.prop(self.objects.unit_cell.b, "location", text="b")
+            col = row.column()
+            col.prop(self.objects.unit_cell.c, "location", text="c")
+            
+            mat = None
+            for ob in self.objects.unit_cell.objects:
+                if ob.material_slots:
+                    mat = ob.material_slots[0].material
+                    break
+            if mat:
+                if bpy.context.scene.render.engine == 'CYCLES':
+                    data = mat.node_tree.nodes['Diffuse BSDF'].inputs[0]
+                    prop = "default_value"
+                else:
+                    data = mat
+                    prop = "diffuse_color"
+                layout.prop(data, prop, text="Color")
+            layout.operator("mb.remove_unit_cell")
         else:
-            col.operator("mb.remove_unit_cell")
+            layout.operator("mb.draw_unit_cell")
     
     def draw_styles(self, layout):
-        #layout.label("Molecule draw style")
-        row = layout.row()
-        row.label(self.name_mol)
-        row = layout.row()
-        row.label("(parent: {}".format(self.objects.parent.name))
-        row = layout.row()
-        row.label("(ident: {}".format(self.name))
-        
         props = {
             "Atom scale": [self.atom_scales[self.draw_style], "val", 10],
             "Bond radius": [self, "bond_radius", 20],
@@ -461,8 +492,7 @@ class mb_molecule(PropertyGroup):
             }
         for label, (data, prop, i) in sorted(props.items(), 
                                              key=lambda t: t[-1][-1]):
-            row = layout.row()
-            row.prop(data, prop)
+            layout.prop(data, prop)
     
     def add_object(self, ob):
         '''
@@ -470,6 +500,10 @@ class mb_molecule(PropertyGroup):
         collection item. If object is already in collection, just return the
         collection item.
         '''
+        ob.mb.molecule_ident = self.name
+        if not ob.parent == self.objects.parent:
+            ob.parent = self.objects.parent
+            ob.matrix_parent_inverse = self.objects.parent.matrix_world.inverted()
         collection = {
             'ATOM': self.objects.pvt_atoms,
             'BOND': self.objects.pvt_bonds,
@@ -488,6 +522,11 @@ class mb_molecule(PropertyGroup):
         return item
     
     def remove_object(self, ob):
+        ob.mb.molecule_ident = ""
+        if ob.parent == self.objects.parent:
+            mat = ob.matrix_world.copy()
+            ob.parent = None
+            ob.matrix_world = mat
         collection = {
             'ATOM': self.objects.pvt_atoms,
             'BOND': self.objects.pvt_bonds,
@@ -495,11 +534,11 @@ class mb_molecule(PropertyGroup):
             'NONE': self.objects.pvt_other
             }
         objects = collection[ob.mb.type]
-        
         for i, item in enumerate(objects):
             if item.object == ob:
                 objects.remove(i)
                 return
+        
 
 class mb_element(PropertyGroup):
     name = StringProperty(name="Element")

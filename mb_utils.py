@@ -21,6 +21,7 @@ from bisect import bisect_left
 
 import bpy
 import bmesh
+import blf
 from bpy.types import Operator
 from bpy.props import (StringProperty,
                        BoolProperty,
@@ -309,6 +310,15 @@ def callback_draw_length(self, context):
                 y = height/2 + height/2 * (prj.y / prj.w)
                 blf.position(font_id, x, y, 0)
                 blf.draw(font_id, "{:6.4f}".format((locs[1]-locs[0]).length))
+        #ob = context.object
+        #if ob.type == "MESH":
+            #for v in ob.data.vertices:
+                #prj = persp_mat * v.co.to_4d()
+                #x = width/2 + width/2 * (prj.x / prj.w)
+                #y = height/2 + height/2 * (prj.y / prj.w)
+                #blf.position(font_id, x, y, 0)
+                #blf.draw(font_id, "{}".format(v.index))
+                
     except:
         debug_print(sys.exc_info()[0], level=1)
         context.scene.mb.globals.show_bond_lengths = False
@@ -465,7 +475,6 @@ def check_ob_dimensions(ob):
         c = ob.constraints.get("mb.stretch", None)
         if c:
             c.keep_axis = toggle[c.keep_axis]
-
 
 #--- Add object functions ----------------------------------------------------#
 def get_atom_id(mol_index, atom_index):
@@ -718,7 +727,7 @@ def get_bond_data(molecule, type='MESH', mesh_name=""):
     return me
 
 
-def get_arrow_data(type='MESH', name="arrow", material=None, 
+def get_arrow_data(type='MESH', name="arrow",
                    radius = 0.1, ring_y = 0.9, ring_scale = 2):
     data = bpy.context.blend_data.meshes.get(name)
     if not data:
@@ -729,7 +738,6 @@ def get_arrow_data(type='MESH', name="arrow", material=None,
             end_fill_type="TRIFAN")
         ob = bpy.context.object
         ob.data.materials.append(None)
-        ob.material_slots[0].material = material
         
         # convert cylinder to arrow
         bm = bmesh.new()
@@ -926,25 +934,34 @@ def create_mode_action(context, atom, molecule):
         fcu.update()
 
 
-def draw_dipole(mol, dipole_vec):
+def draw_dipole(mol, dipole_vec, context):
+    
+    remove_dipole(mol, context)
+    
     # add empty as stretch target
     dipole_ob = bpy.data.objects.new(
         "{}_dipole_target".format(mol.name_mol), None)
     dipole_ob.empty_draw_type = 'SINGLE_ARROW'
     dipole_ob.empty_draw_size = 0.5
-    bpy.context.scene.objects.link(dipole_ob)
+    context.scene.objects.link(dipole_ob)
     mol.objects.dipole.empty = dipole_ob
     dipole_ob.location = dipole_vec
     dipole_ob.parent = mol.objects.parent
     dipole_ob.mb.molecule_ident = mol.name
     
+    material = bpy.data.materials.get('dipole_{}'.format(mol.name))
+    if not material:
+        material = new_material('dipole_{}'.format(mol.name),
+                                color=(1,0,0))
     # add arrow object
     arrow_mesh = get_arrow_data()
-    arrow_ob = bpy.data.objects.new("{}_dipole".format(mol.name_mol),
+    arrow_ob = bpy.data.objects.new("dipole_{}".format(mol.name_mol),
                                     arrow_mesh)
+    arrow_ob.material_slots[0].link = 'OBJECT'
+    arrow_ob.material_slots[0].material = material
     arrow_ob.parent = mol.objects.parent
-    bpy.context.scene.objects.link(arrow_ob)
-    bpy.context.scene.objects.active = arrow_ob
+    context.scene.objects.link(arrow_ob)
+    context.scene.objects.active = arrow_ob
     arrow_ob.mb.molecule_ident = mol.name
     mol.objects.dipole.arrow = arrow_ob
 
@@ -954,23 +971,21 @@ def draw_dipole(mol, dipole_vec):
     c.volume = 'NO_VOLUME'
     c.target = dipole_ob
     
-    check_ob_dimensions(arrow_ob)
+    loc = dipole_ob.location
+    if loc/loc.length == Vector((1,0,0)):
+        c = ob.constraints.get("mb.stretch", None)
+        c.keep_axis = 'PLANE_Z'
+    
+    return [dipole_ob, arrow_ob]
 #--- Unit cell functions -----------------------------------------------------#
 
-def draw_unit_cell(molecule, draw_style='ARROWS'):
+def draw_unit_cell(molecule, context, draw_style='ARROWS'):
     # TODO implement different drawing styles
     
+    mol_uc = molecule.objects.unit_cell
+
     # first remove old unit cell if present
-    if molecule.objects.unit_cell.uc_cube:
-        ob = molecule.objects.unit_cell.uc_cube
-        bpy.context.scene.objects.unlink(ob)
-        bpy.data.objects.remove(ob)
-        molecule.objects.unit_cell.uc_cube = None
-    for ob in molecule.objects.unit_cell.objects:
-        bpy.context.scene.objects.unlink(ob)
-        bpy.data.objects.remove(ob)
-    # "calling" the list again will update it and remove all items
-    molecule.objects.unit_cell.objects
+    remove_unit_cell(molecule, context)
     
     all_obs = []
     
@@ -979,8 +994,10 @@ def draw_unit_cell(molecule, draw_style='ARROWS'):
         return None
     
     unit_vectors = Matrix(molecule["unit_cells"][0])
-
-    me = bpy.data.meshes.new("unit_cell_{}".format(molecule.index))
+    
+    me = bpy.data.meshes.new("unit_cell_{}".format(molecule.name))
+    # setting the coordinates is technically unneccesary, since I'm adding 
+    # drivers later. It does look nicer though then setting everything to 0.
     coords = (
         (0,0,0), #0, O
         unit_vectors[0], #1, x
@@ -1000,10 +1017,81 @@ def draw_unit_cell(molecule, draw_style='ARROWS'):
         (7, 2, 3, 6),
         )
     me.from_pydata(coords, [], faces)
-    uc_cube = bpy.data.objects.new("unit_cell_{}".format(molecule.index), me)
-    bpy.context.scene.objects.link(uc_cube)
+    uc_cube = bpy.data.objects.new("unit_cell_{}".format(molecule.name), me)
+    context.scene.objects.link(uc_cube)
     uc_cube.draw_type = 'WIRE'
     
+    all_obs.append(uc_cube)
+    uc_cube.mb.type = 'UC'
+    uc_cube.parent = molecule.objects.parent
+
+    # add empties
+    for dim, ax in enumerate(unit_vectors):
+        uc_empty = bpy.data.objects.new(
+            "{}_uc_{}".format("abc"[dim], molecule.name), None)
+        uc_empty.empty_draw_type = 'ARROWS'
+        uc_empty.empty_draw_size = 0.5
+        context.scene.objects.link(uc_empty)
+        uc_empty.location = ax
+        uc_empty.parent = molecule.objects.parent
+        uc_empty.mb.molecule_ident = molecule.name
+        uc_empty.mb.type = 'UC'
+        setattr(mol_uc, "abc"[dim], uc_empty)
+        
+        if len(molecule["unit_cells"]) > 1:
+            anim_data = uc_empty.animation_data_create()
+            action = bpy.data.actions.new(
+                name="frames_{}".format(uc_empty.name)
+                )
+            anim_data.action = action
+            ag = action.groups.new("Location")
+            
+            for dim in range(3):
+                fcu = action.fcurves.new(data_path="location", index=dim)
+                fcu.group = ag
+                for nf in range(len(molecule["unit_cells"])):
+                    loc = molecule["unit_cells"][nf][dim]
+                    fcu.keyframe_points.add(1)
+                    fcu.keyframe_points[-1].co = nf + 1, loc
+                    fcu.keyframe_points[-1].interpolation = 'LINEAR'
+    
+    # Now set drivers of vertex coordinates to empties
+    for i, axes in enumerate((
+        #[], #0, O
+        [0], #1, x
+        [0, 1], #2, xy
+        [1], #3, y
+        [2], #4, z
+        [0, 2], #5, xz
+        [1, 2], #6, yz
+        [0, 1, 2], #7, xyz
+        )):
+        
+        v = me.vertices[i+1]
+        fc_list = v.driver_add("co", -1)
+        for dim, fcurve in enumerate(fc_list):
+            drv = fcurve.driver
+            drv.type = 'SCRIPTED'
+            drv.show_debug_info = True
+            
+            expr = []
+            
+            for axdim in axes:
+                var_name = "{}_{}".format('abc'[axdim], 'xyz'[dim])
+                var = drv.variables.get(var_name)
+                if not var:
+                    var = drv.variables.new()
+                    var.name = var_name
+                    var.type = 'TRANSFORMS'
+                targ = var.targets[0]
+                #targ.id_type = 'OBJECT'
+                targ.id = getattr(mol_uc, "abc"[axdim])
+                targ.transform_type = "LOC_{}".format('XYZ'[dim])
+                targ.transform_space = 'LOCAL_SPACE'
+                
+                expr.append(var_name)
+                
+            drv.expression = " + ".join(expr)
     vg = []
     vg.append(uc_cube.vertex_groups.new('a'))
     vg[-1].add([1], 1, 'REPLACE')
@@ -1012,82 +1100,85 @@ def draw_unit_cell(molecule, draw_style='ARROWS'):
     vg.append(uc_cube.vertex_groups.new('c'))
     vg[-1].add([4], 1, 'REPLACE')
     
-    all_obs.append(uc_cube)
-    uc_cube.mb.type = 'UC'
-    molecule.objects.unit_cell.uc_cube = uc_cube
-    uc_cube.parent = molecule.objects.parent
-    
     if 'ARROWS' in draw_style:
         radius = 0.1
         # get material
-        material = bpy.data.materials.get('axes')
+        material = bpy.data.materials.get('axes_{}'.format(molecule.name))
         if not material:
-            material = new_material('axes', color=(1,0,0))
+            material = new_material('axes_{}'.format(molecule.name),
+                                    color=(1,0,0))
         
         # add sphere at origin
         bpy.ops.mesh.primitive_uv_sphere_add(location=(0,0,0), size=radius, 
                                              segments=8, ring_count=8)
-        ob = bpy.context.object
+        ob = context.object
         ob.name = "unit_cell_origin"
         ob.parent = uc_cube
-        ob.parent_type = 'VERTEX'
+        #ob.parent_type = 'VERTEX'
         ob.data.materials.append(None)
+        ob.material_slots[0].link = 'OBJECT'
         ob.material_slots[0].material = material
         all_obs.append(ob)
         
-        arrow_mesh = get_arrow_data(material=material, radius=radius)
+        arrow_mesh = get_arrow_data(radius=radius)
         
-        for di, vec in enumerate(unit_vectors):
-            ob = bpy.data.objects.new(('a', 'b', 'c')[di], arrow_mesh)
+        for dim, vec in enumerate(unit_vectors):
+            ob = bpy.data.objects.new(
+                "{}_uc_arrow_{}".format("abc"[dim], molecule.name),
+                arrow_mesh)
             ob.parent = uc_cube
-            ob.parent_type = 'VERTEX'
-            bpy.context.scene.objects.link(ob)
-            bpy.context.scene.objects.active = ob
+            ob.material_slots[0].link = 'OBJECT'
+            ob.material_slots[0].material = material
+            #ob.parent_type = 'VERTEX'
+            context.scene.objects.link(ob)
+            context.scene.objects.active = ob
             
             c = ob.constraints.new('STRETCH_TO')
             c.name = "mb.stretch"
             c.rest_length = 1.0
             c.volume = 'NO_VOLUME'
+            #c.target = getattr(mol_uc, "abc"[dim])
             c.target = uc_cube
-            c.subtarget = vg[di].name
+            c.subtarget = vg[dim].name
             all_obs.append(ob)
-    
-    if len(molecule["unit_cells"]) > 1:
-        # add one shape key per frame
-        for i, uvs in enumerate(len(molecule["unit_cells"])):
-            shape_key = uc_cube.shape_key_add("{}.{}".format(uc_cube.name, i), 
-                                              from_mix=False)
-            unit_vectors = Matrix(uvs)
-            coords = (
-                (0,0,0), #0, O
-                unit_vectors[0], #1, x
-                unit_vectors[0] + unit_vectors[1], #2, xy
-                unit_vectors[1], #3, y
-                unit_vectors[2], #4, z
-                unit_vectors[0] + unit_vectors[2], #5, xz
-                unit_vectors[1] + unit_vectors[2], #6, yz
-                unit_vectors[0] + unit_vectors[1] + unit_vectors[2], #7, xyz
-                )
-            for vert, coord in zip(uc_cube.data.vertices, coords):
-                shape_key.data[vert.index].co = coord
-        uc_cube.data.shape_keys.use_relative = False
         
-        anim_data = uc_cube.data.shape_keys.animation_data_create()
-        action = bpy.data.actions.new(name="uc_{}".format(molecule.index))
-        anim_data.action = action
-        
-        fcu = action.fcurves.new(data_path="eval_time")
-        for nf, kb in enumerate(uc_cube.data.shape_keys.key_blocks):
-            fcu.keyframe_points.add(1)
-            fcu.keyframe_points[-1].co = nf + 1, kb.frame
-            fcu.keyframe_points[-1].interpolation = 'LINEAR'
+            loc = unit_vectors[dim]
+            if loc/loc.length == Vector((1,0,0)):
+                c.keep_axis = 'PLANE_Z'
     
-    for ob in all_obs[1:]:
+    for ob in all_obs:
         ob.mb.type = 'UC'
         molecule.add_object(ob)
-        
     
     return all_obs
+
+
+def remove_dipole(mol, context):
+    for o in ("empty", "arrow"):
+        ob = getattr(mol.objects.dipole, o, None)
+        if ob:
+            if ob.name in context.scene.objects:
+                context.scene.objects.unlink(ob)
+            bpy.data.objects.remove(ob)
+        setattr(mol.objects.dipole, o, None)
+
+
+def remove_unit_cell(mol, context):
+    mol_uc = mol.objects.unit_cell
+    for ax in "abc":
+        ob = getattr(mol_uc, ax, None)
+        if ob:
+            if ob.name in context.scene.objects:
+                context.scene.objects.unlink(ob)
+            bpy.data.objects.remove(ob)
+        setattr(mol_uc, ax, None)
+    for ob in mol_uc.objects:
+        mol.remove_object(ob)
+        if ob.name in context.scene.objects:
+            context.scene.objects.unlink(ob)
+        bpy.data.objects.remove(ob)
+    # "calling" the list again will update it and remove all items
+    mol_uc.objects
 
 #--- Material functions ------------------------------------------------------#
 

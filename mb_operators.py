@@ -33,7 +33,6 @@ import sys
 from operator import methodcaller
 
 import bpy
-import blf
 from bpy.types import (Operator,
                        PropertyGroup,
                        Menu)
@@ -60,12 +59,11 @@ class MB_OT_initialize(Operator):
     bl_options = {'REGISTER'}
     
     def draw(self, context):
-        row = self.layout.row()
+        layout = self.layout
         row.label("Python scripts auto execute needs "+
                   "to be enabled in order for this "+
                   "script to run.")
-        row = self.layout.row()
-        row.prop(context.user_preferences.system, "use_scripts_auto_execute")
+        layout.prop(context.user_preferences.system, "use_scripts_auto_execute")
     
     def invoke(self, context, event):
         debug_print("mb.initialize.invoke", level=6)
@@ -119,7 +117,7 @@ class MB_OT_modal_add(Operator):
         #print("modal")
         # get 3D Window region
         
-        if context.active_object and context.active_object.mode == "EDIT":
+        if context.object and context.object.mode == "EDIT":
             self.report({'ERROR'}, 
                         "MolBlend modal operator doesn't work in edit mode.")
             return self.cancel(context)
@@ -271,8 +269,7 @@ class MB_OT_add_atom(Operator):
     
     def draw(self, context):
         layout = self.layout
-        row = layout.row()
-        row.prop(self, "element")
+        layout.prop(self, "element")
         col = layout.column()
         col.prop(self, "coord_3d", text="Location")
         col = layout.column()
@@ -477,6 +474,45 @@ class MB_OT_select_molecule(Operator):
         return {'FINISHED'}
 
 
+class MB_OT_combine_molecules(Operator):
+    '''
+    Select all objects belonging to molecule based on mb data
+    '''
+    bl_idname = "mb.combine_molecules"
+    bl_description = "Combine selected molecules into one."
+    bl_label = "Combine molecules"
+    bl_options = {'UNDO', 'REGISTER'}
+    
+    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
+    
+    @classmethod
+    def poll(cls, context):
+        return context.object and context.object.mb.get_molecule()
+    
+    def draw(self, context):
+        mol = context.scene.mb.molecules.get(self.molecule_id)
+        layout = self.layout
+        label = "Do you want to add all selected atoms and bonds to"
+        label += " molecule {} ({})?".format(mol.name_mol, mol.name)
+        layout.label(label)
+    
+    def invoke(self, context, event):
+        mol = context.object.mb.get_molecule()
+        self.molecule_id = mol.name
+        return context.window_manager.invoke_props_dialog(self)
+    
+    def execute(self, context):
+        mol = context.scene.mb.molecules.get(self.molecule_id)
+        
+        for ob in context.selected_objects:
+            if ob.mb.type in ("ATOM", "BOND"):
+                if not ob.mb.get_molecule() == mol:
+                    ob.mb.get_molecule().remove_object(ob)
+                    mol.add_object(ob)
+        
+        return {'FINISHED'}
+
+
 class MB_OT_center_mol_parent(Operator):
     '''
     Set molecule parent into center of mass of atoms
@@ -486,7 +522,7 @@ class MB_OT_center_mol_parent(Operator):
     bl_label = "Parent to CoM"
     bl_options = {'UNDO', 'REGISTER'}
     
-    molecule_ident = StringProperty()
+    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
     
     @classmethod
     def poll(cls, context):
@@ -498,7 +534,7 @@ class MB_OT_center_mol_parent(Operator):
         
             debug_print(
                 "ERROR in mb.center_mol_parent: Molecule "
-                "{} not found in scene.".format(self.molecule_ident),
+                "{} not found in scene.".format(self.molecule_id),
                 level=0)
             return {'CANCELLED'}
         origin = Vector((0.0,0.0,0.0))
@@ -517,13 +553,63 @@ def get_molecules(self, context):
             lst.append((mol.name, mol.name_mol, ""))
         return lst
 
-def update_draw_unit_cell(self, context):
-    mol = context.scene.mb.molecules.get(self.molecule_id)
-    if "unit_cells" in molecule and molecule["unit_cells"]:
-        self.has_axes = True
-    else:
-        self.has_axes = False
-    mb_utils.update_molecule_selection(self, context)
+
+class MB_OT_draw_unit_cell(Operator):
+    bl_idname = "mb.draw_unit_cell"
+    bl_label = "Draw unit cell of structure"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
+    
+    @classmethod
+    def poll(self, context):
+        return context.object and context.object.mb.get_molecule()
+    
+    def invoke(self, context, event):
+        mol = context.object.mb.get_molecule()
+        self.molecule_id = mol.name
+        return self.execute(context)
+    
+    def execute(self, context):
+        mol = context.scene.mb.molecules.get(self.molecule_id)
+        if not "unit_cells" in mol or not mol["unit_cells"]:
+            mol["unit_cells"] = [[Vector((5,0,0)),
+                                 Vector((0,5,0)),
+                                 Vector((0,0,5))]]
+        obs = mb_utils.draw_unit_cell(mol, context)
+        if obs:
+            for ob in obs:
+                ob.select = True
+            context.scene.objects.active = obs[0]
+        
+        return {'FINISHED'}
+
+class MB_OT_draw_dipole(Operator):
+    bl_idname = "mb.draw_dipole"
+    bl_label = "Draw dipole of molecule"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    dipole_vec = FloatVectorProperty(name="Dipole vector", size=3)
+    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
+    
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column()
+        col.prop(self, "dipole_vec")
+        
+    def invoke(self, context, event):
+        if context.object and context.object.mb.get_molecule():
+            self.molecule_id = context.object.mb.get_molecule().name
+        return context.window_manager.invoke_props_dialog(self)
+    
+    def execute(self, context):
+        mol = context.scene.mb.molecules.get(self.molecule_id)
+        obs = mb_utils.draw_dipole(mol, self.dipole_vec, context)
+        for ob in obs:
+            ob.select = True
+        context.scene.objects.active = obs[0]
+        return {'FINISHED'}
+
 
 class MB_OT_remove_dipole(Operator):
     bl_idname = "mb.remove_dipole"
@@ -536,12 +622,9 @@ class MB_OT_remove_dipole(Operator):
     
     def execute(self, context):
         mol = context.object.mb.get_molecule()
-        obs = [mol.objects.dipole.empty, 
-               mol.objects.dipole.arrow]
-        for ob in obs:
-            if ob:
-                context.scene.objects.unlink(ob)
-                bpy.data.objects.remove(ob)
+        mb_utils.remove_dipole(mol, context)
+        if not context.object:
+            context.scene.objects.active = mol.objects.parent
         return {'FINISHED'}
 
 
@@ -556,86 +639,9 @@ class MB_OT_remove_unit_cell(Operator):
     
     def execute(self, context):
         mol = context.object.mb.get_molecule()
-        obs = [mol.objects.unit_cell.uc_cube]
-        obs.extend(mol.objects.unit_cell.objects)
-        
-        for ob in obs:
-            if ob:
-                context.scene.objects.unlink(ob)
-                bpy.data.objects.remove(ob)
-        return {'FINISHED'}
-
-class MB_OT_draw_unit_cell(Operator):
-    bl_idname = "mb.draw_unit_cell"
-    bl_label = "Draw unit cell of structure"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    uc_x = FloatVectorProperty(name="x")
-    uc_y = FloatVectorProperty(name="y")
-    uc_z = FloatVectorProperty(name="z")
-    molecules_id = EnumProperty(name="Molecules", items=get_molecules,
-                                  update=update_draw_unit_cell)
-    has_axes = BoolProperty()
-    
-    def draw(self, context):
-        layout = self.layout
-        row = layout.row()
-        row.prop(self, "molecules_id")
-        if self.has_axes:
-            mol = context.scene.mb.molecules.get(self.molecule_id)
-            for i, ax in enumerate(mol["unit_cells"][0]):
-                row = layout.row()
-                label = "{}: ({:6.3f}, {:6.3f}, {:6.3f})".format("xyz"[i], *ax)
-                row.label(label)
-        else:
-            for ax in ("uc_x", "uc_y", "uc_z"):
-                row = layout.row()
-                row.prop(self, ax)
-        
-    def invoke(self, context, event):
-        if context.object and context.object.mb.get_molecule():
-            mol = context.object.mb.get_molecule()
-            self.molecule_id = mol.name
-            self.has_axes = bool("unit_cells" in mol and mol["unit_cells"])
-        return context.window_manager.invoke_props_dialog(self)
-    
-    def execute(self, context):
-        mol = context.scene.mb.molecules.get(self.molecule_id)
-        if not self.has_axes:
-            mol["unit_cells"] = [Matrix((self.uc_x, self.uc_y, self.uc_z))]
-        mb_utils.draw_unit_cell(mol)
-        return {'FINISHED'}
-
-class MB_OT_draw_dipole(Operator):
-    bl_idname = "mb.draw_dipole"
-    bl_label = "Draw dipole of molecule"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    dipole_vec = FloatVectorProperty(name="Dipole vector", size=3)
-    molecules_id = EnumProperty(name="Molecules", items=get_molecules,
-                                  update=mb_utils.update_molecule_selection)
-    
-    def draw(self, context):
-        layout = self.layout
-        row = layout.row()
-        row.prop(self, "molecules_id")
-        col = layout.column()
-        col.prop(self, "dipole_vec")
-        
-    def invoke(self, context, event):
-        if context.object and context.object.mb.get_molecule():
-            self.molecule_id = context.object.mb.get_molecule().name
-        return context.window_manager.invoke_props_dialog(self)
-    
-    def execute(self, context):
-        mol = context.scene.mb.molecules.get(self.molecule_id)
-        if not mol:
-            debug_print(
-                "ERROR: draw_dipole: {} not found.".format(self.molecule_id),
-                level=0)
-            return {'CANCELLED'}
-        
-        mb_utils.draw_dipole(mol, self.dipole_vec)
+        mb_utils.remove_unit_cell(mol, context)
+        if not context.object:
+            context.scene.objects.active = mol.objects.parent
         return {'FINISHED'}
 
 
@@ -654,8 +660,7 @@ class MD_OT_import_modes(bpy.types.Operator):
     
     def draw(self, context):
         layout = self.layout
-        row = layout.row()
-        row.prop(self, "file_format")
+        layout.prop(self, "file_format")
     
     @classmethod
     def poll(cls, context):
@@ -748,7 +753,7 @@ class MD_OT_import_molecules(bpy.types.Operator):
     length_unit_other = FloatProperty(
         name="Custom Unit",
         description="Enter conversion factor in Angstrom/unit in file",
-        default=1.0, min=0.000001)
+        default=1.0, min=0.000000001)
     bond_guess = BoolProperty(
        name="Guess bonds", description="Guess bonds that are not in the file.",
        default=True)
@@ -869,63 +874,46 @@ class MD_OT_import_molecules(bpy.types.Operator):
 
     def draw(self, context):
         layout = self.layout
-        row = layout.row()
-        row.label("Molecule name")
-        row = layout.row()
-        row.prop(self, "name_mol", text="")
+        layout.label("Molecule name")
+        layout.prop(self, "name_mol", text="")
         
         layout.separator()
-        row = layout.row()
-        row.label("Units")
-        row = layout.row()
-        row.prop(self, "length_unit", text="")
+        layout.label("Units")
+        layout.prop(self, "length_unit", text="")
         row = layout.row()
         row.active = (self.length_unit == 'OTHER')
         row.prop(self, "length_unit_other")
         
         layout.separator()
-        row = layout.row()
-        row.label("Periodic systems")
-        row = layout.row()
-        row.prop(self, "draw_unit_cell")
-        row = layout.row()
-        row.prop(self, "supercell")
+        layout.label("Periodic systems")
+        layout.prop(self, "draw_unit_cell")
+        layout.prop(self, "supercell")
         
         layout.separator()
+        layout.label("Parent location")
         row = layout.row()
-        row.label("Parent location")
-        row = layout.row()
-        col = row.column()
-        col.prop(self, "put_origin")
-        col = row.column()
-        col.prop(self, "parent_center")
+        row.prop(self, "put_origin")
+        row.prop(self, "parent_center")
         
         layout.separator()
+        layout.label(text="Masking object")
         row = layout.row()
-        row.label(text="Masking object")
-        row = layout.row()
-        col = row.column()
-        col.prop_search(self, "use_mask", bpy.data, "objects", text="")
-        col = row.column()
-        col.prop(self, "mask_flip")
-        
+        row.prop_search(self, "use_mask", bpy.data, "objects", text="")
+        row.prop(self, "mask_flip")
         
         layout.separator()
-        row = layout.row()
-        row.label("Draw style")
-        row = layout.row()
-        row.prop(self, "draw_style", text="")
-        row = layout.row()
-        # Atom props
-        col = row.column()
+        layout.label("Draw style")
+        layout.prop(self, "draw_style", text="")
+        
+        split = layout.split()
+        col = split.column()
         col.prop(self, "refine_atoms")
         col.prop(self.atom_scales[self.draw_style], "val", text="Atom scaling")
         col.label(text="Atom radius")
         col.prop(self, "radius_type", text="")
         
-        col = row.column()
+        col = split.column()
         col.prop(self, "refine_bonds")
-        row = layout.row()
         col.prop(self, "bond_radius")
         col.label(text="Bond material")
         col.prop(self, "bond_material", text="")

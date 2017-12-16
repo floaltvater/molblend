@@ -57,16 +57,16 @@ Please let me know if you have any preferences.
   other addons that use Dupliverts etc.
 - Guessing the bonds is not very efficient or stable, since it compares every
   atom pair to the sum of their covalent radii.
-- Deleting objects might lead to unintended consequences, since info attached
-  to still existing objects is not necessarily updated. Please report any
-  issues you run into!
 - Unit handling is not very elegant. Currently the addon works exclusively in
   Angstrom (like guessing bonds), and converts, or tries to convert, imported
   files to that unit.
 - Currently MolBlend doesn't support double/triple bonds, or other even less
   common bonds. But that is why you're working with Blender in the first
   place, right?
-- Duplication of a molecule is like a "deep-duplication" (Alt+D) and most 
-  properties (like atom colors etc.) are linked between the original and the
-  duplicate.
-  properties are still linked to each other.
+- Duplication (Shift+D, Alt+D) of a molecule has various issues, since the 
+  underlying MB_Molecule Property is not updated (doesn't know of the new
+  atoms, atom colors, draw styles are linked between old and new atoms, etc.).
+- It doesn't preserve indices from input files (e.g., PDB files).
+- Dipoles or unit cell axes might end up having zero dimension due to the
+  stretch constraint. Switching the "Plane" in the mb.stretch constraint
+  should fix that.
