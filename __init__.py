@@ -39,13 +39,9 @@ bl_info = {
     "category": "Add Mesh"
 }
 
-if "bpy" in locals():
-    import imp
-    imp.reload(mb_datastructure)
-    imp.reload(mb_operators)
-else:
-    from molblend import mb_datastructure
-    from molblend import mb_operators
+
+from molblend import mb_datastructure
+from molblend import mb_operators
 
 import logging
 import os

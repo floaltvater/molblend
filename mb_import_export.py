@@ -20,13 +20,9 @@
 # - need to clean up file reading (e.g., that everything returns the same thing
 #   in the same format).
 
-if "bpy" in locals():
-    import imp
-    imp.reload(mb_utils)
-    imp.reload(mb_io_files)
-else:
-    from molblend import mb_utils
-    from molblend import mb_io_files
+
+from molblend import mb_utils
+from molblend import mb_io_files
 
 import math
 import logging

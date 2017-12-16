@@ -16,11 +16,8 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-if "bpy" in locals():
-    import imp
-    imp.reload(mb_utils)
-else:
-    from molblend import mb_utils
+
+from molblend import mb_utils
 
 import os
 import string

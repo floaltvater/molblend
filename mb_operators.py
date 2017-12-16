@@ -18,15 +18,10 @@
 # ***** END GPL LICENCE BLOCK *****
 
 
-if "bpy" in locals():
-    import imp
-    imp.reload(mb_utils)
-    imp.reload(mb_geometry)
-    imp.reload(mb_import_export)
-else:
-    from molblend import mb_utils
-    from molblend import mb_geometry
-    from molblend import mb_import_export
+
+from molblend import mb_utils
+from molblend import mb_geometry
+from molblend import mb_import_export
 
 import os
 import sys
