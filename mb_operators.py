@@ -219,6 +219,30 @@ class MB_OT_make_static(Operator):
                 
         return {'FINISHED'}
 
+class MB_OT_apply_scale(Operator):
+    '''
+    Apply and remove scale drivers. This is necessary to export to Sketchfab.
+    '''
+    bl_idname = "mb.apply_scale"
+    bl_label = "Apply scale"
+    bl_options = {'UNDO', 'REGISTER'}
+    bl_description = "apply and remove scale drivers"
+    
+    def invoke(self, context, event):
+        return self.execute(context)
+    
+    #def apply_scale(self, ob):
+        #mat = ob.matrix_world.copy()
+    
+    def execute(self, context):
+        for ob in context.selected_objects:
+            ob.driver_remove('scale', -1)
+            #self.apply_scale(ob)
+                
+        return {'FINISHED'}
+    
+    
+
 class MB_OT_add_atom(Operator):
     '''
     Adds an atom at the current mouse position

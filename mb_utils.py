@@ -90,8 +90,9 @@ class enums():
         ('B4W', "b4w", "standalone HTML with embedded 3D viewer")
         ]
     mode_file_format = [
-        ('XYZ', "xyz", "xyz-style format"),
+        ('ANADDB', "anaddb", "Abinit/anaddb output"),
         ('QE_DYNMAT', "QE dynmat", "Quantum ESPRESSO output"),
+        ('XYZ', "xyz", "xyz-style format"),
         ]
 
 
@@ -872,7 +873,8 @@ def update_mode_action(atom, molecule):
             
             for p in range(9):
                 frame = t0 + 5*p
-                coords = loc + pow(-1, p//2)*vec if p%2 else loc
+                disp = pow(-1, p//2)*vec * molecule.mode_scale
+                coords = loc + disp if p%2 else loc
                 fcu.keyframe_points[p].co = (frame, coords)
                 if p%2 == 0:
                     fcu.keyframe_points[p].handle_left = (frame, loc)

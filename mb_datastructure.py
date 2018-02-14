@@ -201,7 +201,7 @@ class mb_qmode(PropertyGroup):
 class MB_UL_modes(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, 
                   active_propname, index):
-        split = layout.split(0.1)
+        split = layout.split(0.15)
         col = split.column()
         col.label(str(item.nqpt))
         col = split.column()
