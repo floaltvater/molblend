@@ -60,6 +60,7 @@ def modes_from_file(modefilepath, file_format):
     - simple: xyz style file with Nx3 (real) or Nx6 (complex) floats
     """
     read_modes_funcs = {
+        "ANADDB": _read_anaddb_out,
         "QE_DYNMAT": _read_qe_dynmat_out,
         "XYZ": _read_simple_modes
     }
@@ -179,6 +180,39 @@ def _read_qe_dynmat_out(filepath):
                         break
     return all_qpts
 
+
+def _read_anaddb_out(filepath):
+    # read mode file, modes need to be in same order as atoms in input file
+    
+    all_qpts = []
+    with open(filepath, 'r') as fin:
+        line = next(fin)
+        q_count = 0
+        for line in fin:
+            if 'Phonon wavevector' in line:
+                q_count += 1
+                q = [c*1. for c in list(map(float, line.split()[-3:]))]
+                qmode = MB_QMode(q_count, q)
+                qmode.qvecs_format = "anaddb"
+                
+                while not "Eigendisplacements" in line:
+                    line = next(fin)
+                
+                for line in fin:
+                    if "Mode number" in line:
+                        freq = "{:6.2f} cm^-1".format(float(line.split()[-1]) * 219474.6) # Ha to cm-1
+                        qmode.modes.append(MB_Mode(freq))
+                        line = next(fin)
+                        while line[0] != "-" and line[0] != ";":
+                            line = next(fin)
+                        while line[0] == "-" or line[0] == ";":
+                            real = [c*1. for c in list(map(float, line.split()[-3:]))]
+                            line = next(fin)
+                            imag = [c*1. for c in list(map(float, line.split()[-3:]))]
+                            qmode.modes[-1].evecs.append(MB_Mode_Displacement(real, imag))
+                            line = next(fin)
+                all_qpts.append(qmode)
+    return all_qpts
 
 class MB_Structure():
     
@@ -557,7 +591,7 @@ class MB_Structure():
                 elif "znucl" in line and re.search("znucl +( [.0-9]+)+", line):
                     znucl = [int(i.split('.')[0]) for i in line.split()[1:]]
                     znucl_str = [""] * len(znucl)
-                    for el, vals in ELEMENTS_DEFAULT.items():
+                    for el, vals in ELEMENTS.items():
                         if vals["atomic number"] in znucl:
                             znucl_str[znucl.index(vals["atomic number"])] = el
                     elements = [znucl_str[i-1] for i in typat]
@@ -609,8 +643,7 @@ class MB_Structure():
                     elif "== DATASET" in line:
                         break
         if strc.nframes > 1 and len(strc.axes) == 1:
-            strc.axes = [strc.axes for i in range(strc.nframe)]
-        
+            strc.axes = [strc.axes[0] for i in range(strc.nframes)]
         return strc
         
     @classmethod

@@ -151,6 +151,7 @@ class MB_PT_tools(MolBlendPanel, Panel):
 
         layout.separator()
         layout.operator("mb.make_static")
+        layout.operator("mb.apply_scale")
 
 
 class MB_PT_atom(MolBlendPanel, Panel):
