@@ -186,7 +186,6 @@ def _read_anaddb_out(filepath):
     
     all_qpts = []
     with open(filepath, 'r') as fin:
-        line = next(fin)
         q_count = 0
         for line in fin:
             if 'Phonon wavevector' in line:
@@ -194,23 +193,34 @@ def _read_anaddb_out(filepath):
                 q = [c*1. for c in list(map(float, line.split()[-3:]))]
                 qmode = MB_QMode(q_count, q)
                 qmode.qvecs_format = "anaddb"
-                
+                msg = "Reading q-point {}: {:7.4f} {:7.4f} {:7.4f}"
+                logger.debug(msg.format(q_count, *q))
+                while not "Phonon frequencies in cm-1" in line:
+                    line = next(fin)
+                nmodes = 0
+                line = next(fin)
+                while line[0] == "-":
+                    nmodes += len(line[1:].strip().split())
+                    line = next(fin)
+                logger.debug("found "+str(nmodes)+" frequencies")
                 while not "Eigendisplacements" in line:
                     line = next(fin)
                 
-                for line in fin:
-                    if "Mode number" in line:
-                        freq = "{:6.2f} cm^-1".format(float(line.split()[-1]) * 219474.6) # Ha to cm-1
-                        qmode.modes.append(MB_Mode(freq))
+                for nm in range(nmodes):
+                    while not "Mode number" in line:
                         line = next(fin)
-                        while line[0] != "-" and line[0] != ";":
-                            line = next(fin)
-                        while line[0] == "-" or line[0] == ";":
-                            real = [c*1. for c in list(map(float, line.split()[-3:]))]
-                            line = next(fin)
-                            imag = [c*1. for c in list(map(float, line.split()[-3:]))]
-                            qmode.modes[-1].evecs.append(MB_Mode_Displacement(real, imag))
-                            line = next(fin)
+                    
+                    freq = "{:6.2f} cm^-1".format(float(line.split()[-1]) * 219474.6) # Ha to cm-1
+                    qmode.modes.append(MB_Mode(freq))
+                    line = next(fin)
+                    while line[0] != "-" and line[0] != ";":
+                        line = next(fin)
+                    while line[0] == "-" or line[0] == ";":
+                        real = [c*1. for c in list(map(float, line.split()[-3:]))]
+                        line = next(fin)
+                        imag = [c*1. for c in list(map(float, line.split()[-3:]))]
+                        qmode.modes[-1].evecs.append(MB_Mode_Displacement(real, imag))
+                        line = next(fin)
                 all_qpts.append(qmode)
     return all_qpts
 

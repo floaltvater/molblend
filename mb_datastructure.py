@@ -17,8 +17,8 @@
 # ##### END GPL LICENSE BLOCK #####
 
 if "bpy" in locals():
-    import imp
-    imp.reload(mb_utils)
+    import importlib
+    importlib.reload(mb_utils)
 else:
     from molblend import mb_utils
 

@@ -21,9 +21,9 @@
 #   in the same format).
 
 if "bpy" in locals():
-    import imp
-    imp.reload(mb_utils)
-    imp.reload(mb_io_files)
+    import importlib
+    importlib.reload(mb_utils)
+    importlib.reload(mb_io_files)
 else:
     from molblend import mb_utils
     from molblend import mb_io_files
@@ -87,14 +87,17 @@ def import_modes(context,
                 return False
     
     mb_utils.clear_modes(molecule)
+    molecule.active_mode = 0
     
+    # This is only used for Quantum ESPRESSO, to calculate the crystal unit 
+    # cell. The cartesian unit cell is not written in the mode output, so the
+    # conversion can't be done when reading the data.
     uc = Matrix(molecule["unit_cells"][0])*1.889725989
-    #print(uc)
     k_uc = Matrix([uc[(dim+1)%3].cross(uc[(dim+2)%3]) for dim in range(3)])
     fac = 2 * math.pi / uc[0].dot(uc[1].cross(uc[2]))
     k_uc = k_uc * fac
-    
     inv_k_uc = k_uc.inverted()
+    
     for nq, qmode in enumerate(qpts):
         qm = molecule.qpts.add()
         qm.nqpt = qmode.nqpt

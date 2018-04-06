@@ -872,7 +872,7 @@ def update_mode_action(atom, molecule):
             vec = Re[dim]*cos_max - Im[dim]*sin_max
             
             for p in range(9):
-                frame = t0 + 5*p
+                frame = 1 + t0 + 5*p
                 disp = pow(-1, p//2)*vec * molecule.mode_scale
                 coords = loc + disp if p%2 else loc
                 fcu.keyframe_points[p].co = (frame, coords)
@@ -889,7 +889,11 @@ def update_mode_action(atom, molecule):
 def create_mode_action(context, atom, molecule):
     anim_data = atom.animation_data_create()
     atom_id = get_atom_id(molecule.index, atom.mb.index)
-    action = bpy.data.actions.new(name="mode_{}".format(atom_id))
+    acname = "mode_{}".format(atom_id)
+    oldaction = bpy.data.actions.get(acname)
+    if oldaction:
+        bpy.data.actions.remove(oldaction)
+    action = bpy.data.actions.new(acname)
     anim_data.action = action
     # make new group
     ag = action.groups.new("Location")
@@ -960,7 +964,7 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
     all_obs = []
     
     if not "unit_cells" in molecule or not molecule["unit_cells"]:
-        logger.warning("No unit cell information present")
+        logger.error("No unit cell information present")
         return None
     
     unit_vectors = Matrix(molecule["unit_cells"][0])

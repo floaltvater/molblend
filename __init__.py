@@ -40,9 +40,9 @@ bl_info = {
 }
 
 if "bpy" in locals():
-    import imp
-    imp.reload(mb_datastructure)
-    imp.reload(mb_operators)
+    import importlib
+    importlib.reload(mb_datastructure)
+    importlib.reload(mb_operators)
 else:
     from molblend import mb_datastructure
     from molblend import mb_operators
