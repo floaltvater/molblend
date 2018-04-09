@@ -172,7 +172,7 @@ def import_molecule(context,
         
         if draw_uc and molecule["unit_cells"]:
             # read unit cell and create cube
-            unit_cell_obs = mb_utils.draw_unit_cell(molecule)
+            unit_cell_obs = mb_utils.draw_unit_cell(molecule, context)
             all_obs.extend(unit_cell_obs)
             for ob in unit_cell_obs[-3:]:
                 mb_utils.check_ob_dimensions(ob)

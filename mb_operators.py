@@ -60,7 +60,7 @@ class MB_OT_initialize(Operator):
     
     def draw(self, context):
         layout = self.layout
-        row.label("Python scripts auto execute needs "+
+        layout.label("Python scripts auto execute needs "+
                   "to be enabled in order for this "+
                   "script to run.")
         layout.prop(context.user_preferences.system, "use_scripts_auto_execute")

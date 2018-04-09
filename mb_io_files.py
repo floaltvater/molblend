@@ -93,8 +93,8 @@ def _read_simple_modes(modefilepath):
     This format doesn't allow separate q-points.
     """
     
-    # This is a custom file format similar to the xyz file format
-    # It can only contain one q-point
+    # This is a custom file format similar to the xyz file format.
+    # It can only contain one q-point.
     qmode = MB_QMode(1, (0,0,0))
     
     with open(modefilepath, "r") as fin:
@@ -127,15 +127,21 @@ def _read_simple_modes(modefilepath):
                 
                 for i in range(number_atoms):
                     split_line = fin.readline().strip().split()
-                    disp = list(map(float, split_line[1:]))
+                    disp = list(map(float, split_line[:]))
                     if len(disp) == 3:
                         real = disp
                         imag = (0., 0., 0.)
                     elif len(disp) == 6:
                         real = disp[::2]
                         imag = disp[1::2]
-                    new_mode.evecs.append(
-                        MB_Mode_Displacement(real, imag))
+                        #real = disp[:3]
+                        #imag = disp[3:6]
+                    try:
+                        new_mode.evecs.append(
+                            MB_Mode_Displacement(real, imag))
+                    except:
+                        print(len(disp))
+                        raise
                 qmode.modes.append(new_mode)
                 number_atoms = -1
     return [qmode]
