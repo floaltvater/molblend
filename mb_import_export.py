@@ -58,7 +58,7 @@ def import_modes(context,
     
     logger.info("Reading modes file {}".format(modefilepath))
     try:
-        qpts = mb_io_files.modes_from_file(modefilepath, 
+        qpts = mb_io_files.MB_Modes.from_file(modefilepath, 
                                              file_format)
     except:
         raise
@@ -100,7 +100,7 @@ def import_modes(context,
     
     for nq, qmode in enumerate(qpts):
         qm = molecule.qpts.add()
-        qm.nqpt = qmode.nqpt
+        qm.iqpt = qmode.iqpt
         if qmode.qvecs_format == "QE":
             qm.qvec = (Vector(qmode.qvec) * 2 * math.pi / uc[0][0]) * inv_k_uc
         else:

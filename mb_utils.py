@@ -93,6 +93,7 @@ class enums():
         ('ANADDB', "anaddb", "Abinit/anaddb output"),
         ('QE_DYNMAT', "QE dynmat", "Quantum ESPRESSO output"),
         ('XYZ', "xyz", "xyz-style format"),
+        ('PHONOPY', "phonopy", "phonopy/v_sim ascii format"),
         ]
 
 
