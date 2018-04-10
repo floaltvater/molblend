@@ -18,10 +18,15 @@
 # ***** END GPL LICENCE BLOCK *****
 
 
-
-from molblend import mb_utils
-from molblend import mb_geometry
-from molblend import mb_import_export
+if "bpy" in locals():
+    import importlib
+    importlib.reload(mb_utils)
+    importlib.reload(mb_geometry)
+    importlib.reload(mb_import_export)
+else:
+    from molblend import mb_utils
+    from molblend import mb_geometry
+    from molblend import mb_import_export
 
 import os
 import sys
@@ -55,7 +60,7 @@ class MB_OT_initialize(Operator):
     
     def draw(self, context):
         layout = self.layout
-        row.label("Python scripts auto execute needs "+
+        layout.label("Python scripts auto execute needs "+
                   "to be enabled in order for this "+
                   "script to run.")
         layout.prop(context.user_preferences.system, "use_scripts_auto_execute")
@@ -673,7 +678,7 @@ class MD_OT_import_modes(bpy.types.Operator):
     
     file_format = EnumProperty(
         name="File format", description="Choose file format of mode file",
-        items=mb_utils.enums.mode_file_format, default='XYZ')
+        items=mb_utils.enums.mode_file_format, default='ANADDB')
     
     def draw(self, context):
         layout = self.layout
@@ -685,9 +690,11 @@ class MD_OT_import_modes(bpy.types.Operator):
     
     def invoke(self, context, event):
         molecule = context.object.mb.get_molecule()
-        if molecule.objects.atoms[0].animation_data:
-            # TODO allow user a choice
-            self.report({'WARNING'}, "Atoms already contain animation data. Will overwrite")
+        for atom in molecule.objects.atoms:
+            if atom.animation_data:
+                # TODO allow user a choice
+                self.report({'WARNING'}, "Atoms already contain animation data. Will overwrite")
+                break
         wm = context.window_manager
         wm.fileselect_add(self)
         return {'RUNNING_MODAL'}

@@ -16,8 +16,11 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-
-from molblend import mb_utils
+if "bpy" in locals():
+    import importlib
+    importlib.reload(mb_utils)
+else:
+    from molblend import mb_utils
 
 import os
 import string
@@ -198,7 +201,7 @@ class mb_qmode(PropertyGroup):
 class MB_UL_modes(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, 
                   active_propname, index):
-        split = layout.split(0.15)
+        split = layout.split(0.1)
         col = split.column()
         col.label(str(item.nqpt))
         col = split.column()
