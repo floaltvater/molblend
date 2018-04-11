@@ -81,7 +81,7 @@ else:
     term_formatter = logging.Formatter('%(name)s: %(levelname)-8s: %(message)s')
 
 chandler = logging.StreamHandler()
-chandler.setLevel(logging.DEBUG)
+chandler.setLevel(logging.WARNING)
 chandler.setFormatter(term_formatter)
 logger.addHandler(chandler)
 
