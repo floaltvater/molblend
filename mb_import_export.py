@@ -214,7 +214,7 @@ def import_modes(context,
     logger.info("Reading modes file {}".format(modefilepath))
     try:
         qpts = mb_io_files.MB_Modes.from_file(modefilepath, 
-                                             file_format)
+                                              file_format)
     except:
         raise
     
@@ -281,7 +281,12 @@ def import_modes(context,
     
     for atom in molecule.objects.atoms:
         mb_utils.create_mode_action(context, atom, molecule)
-
+    
+    if len(qpts) > 1 and file_format == "PHONOPY":
+        report({'WARNING'}, "Please check if q!=0 modes have been imported"
+               " properly. If not, please notify Flo to fix it.")
+        
+    
 def import_molecule(context,
                     report,
                     filepath,
