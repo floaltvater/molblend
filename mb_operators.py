@@ -470,7 +470,7 @@ class MB_OT_select_bonded(Operator):
 def get_molecules(self, context):
     lst = []
     for mol in context.scene.mb.molecules:
-        lst.append((mol.name, mol.name_mol, ""))
+        lst.append((mol.name, mol.objects.parent.name, ""))
     return lst
 
 
@@ -524,7 +524,7 @@ class MB_OT_combine_molecules(Operator):
         mol = context.scene.mb.molecules.get(self.molecule_id)
         layout = self.layout
         label = "Do you want to add all selected atoms and bonds to"
-        label += " molecule {} ({})?".format(mol.name_mol, mol.name)
+        label += " molecule {} ({})?".format(mol.objects.parent.name, mol.name)
         layout.label(label)
     
     def invoke(self, context, event):
@@ -796,7 +796,7 @@ class MD_OT_import_modes(bpy.types.Operator):
 
 class MD_OT_import_molecules(bpy.types.Operator):
     bl_idname = "mb.import_molecules"
-    bl_label = "Import files"
+    bl_label = "Import structures"
     __doc__ = ""
 
     directory = StringProperty(

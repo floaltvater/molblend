@@ -333,8 +333,6 @@ class mb_object(PropertyGroup):
 class mb_molecule(PropertyGroup):
     index = IntProperty(name="Molecule index")
     name = StringProperty(name="Molecule identifier")
-    name_mol = StringProperty(name="Molecule Name", 
-                              update=mb_utils.update_molecule_name)
     # index that increases with each added atom in the molecule, but doesn't 
     # decrease when atom is deleted. => Not an indicator of size of molecule! 
     # Only guarantees uniqueness for atom names
@@ -421,11 +419,8 @@ class mb_molecule(PropertyGroup):
         
     
     def draw_properties(self, layout):
-        #layout.label("Molecule properties")
-        layout.prop(self, "name_mol", text="")
-        info = "(parent: {}, ".format(self.objects.parent.name)
-        info += "id: '{}')".format(self.name)
-        layout.label(info)
+        layout.prop(self.objects.parent, "name")
+        layout.label("(id: '{}')".format(self.name))
         
         if self.objects.parent:
             col = layout.column()
@@ -647,7 +642,7 @@ class mb_scene(PropertyGroup):
         return ''.join(random.choice(chars) for _ in range(size))
     
     def new_molecule(self,
-                     name_mol=None,
+                     name_mol="Molecule",
                      draw_style=None,
                      radius_type=None,
                      bond_radius=None,
@@ -675,14 +670,13 @@ class mb_scene(PropertyGroup):
             new_scale.name = scale.name
             new_scale.val = scale.val
         # create new empty that will be the parent for the molecule
-        parent_ob = bpy.data.objects.new(mol.name_mol, None)
+        parent_ob = bpy.data.objects.new(name_mol, None)
         parent_ob.empty_draw_type = 'SPHERE'
         parent_ob.empty_draw_size = 0.3
         self.id_data.objects.link(parent_ob)
         mol.objects.parent = parent_ob
         parent_ob.mb.molecule_ident = mol.name
         parent_ob.mb.type = 'PARENT'
-        mol.name_mol = name_mol or "Molecule"
         return mol
     
     def remove_molecule(self, mol):
@@ -692,8 +686,6 @@ class mb_scene(PropertyGroup):
         
         for i, mol_item in enumerate(self.molecules):
             if mol == mol_item:
-                mol_id = mol.name
-                name = mol.name_mol
                 self.molecules.remove(i)
                 return
 

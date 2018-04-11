@@ -264,10 +264,6 @@ def update_molecule_selection(self, context):
         context.scene.objects.active = parent
 
 
-def update_molecule_name(self, context):
-    self.objects.parent.name = self.name_mol
-
-
 def update_show_bond_lengths(self, context):
     if self.show_bond_lengths:
         bpy.ops.mb.show_bond_lengths()
@@ -920,7 +916,7 @@ def draw_dipole(mol, dipole_vec, context):
     
     # add empty as stretch target
     dipole_ob = bpy.data.objects.new(
-        "{}_dipole_target".format(mol.name_mol), None)
+        "{}_dipole_target".format(mol.name), None)
     dipole_ob.empty_draw_type = 'SINGLE_ARROW'
     dipole_ob.empty_draw_size = 0.5
     context.scene.objects.link(dipole_ob)
@@ -935,7 +931,7 @@ def draw_dipole(mol, dipole_vec, context):
                                 color=(1,0,0))
     # add arrow object
     arrow_mesh = get_arrow_data()
-    arrow_ob = bpy.data.objects.new("dipole_{}".format(mol.name_mol),
+    arrow_ob = bpy.data.objects.new("dipole_{}".format(mol.name),
                                     arrow_mesh)
     arrow_ob.material_slots[0].link = 'OBJECT'
     arrow_ob.material_slots[0].material = material
@@ -1301,6 +1297,7 @@ def set_draw_style(self, context):
     hide = (self.draw_style == 'BALLS')
     for bond in self.objects.bonds:
         bond.hide = hide
+
 
 def is_inside_of_planes(planes, loc, flip=False):
     l0 = Vector(loc)

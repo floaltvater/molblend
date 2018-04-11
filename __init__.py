@@ -102,7 +102,7 @@ class MolBlendPanel():
 class MolBlendPropsPanel():
     bl_space_type = "VIEW_3D"
     bl_region_type = "TOOLS"
-    bl_category = "MolBlendProps"
+    bl_category = "Molecule"
 
 class MB_PT_initialize(MolBlendPanel, Panel):
     bl_label = "MolBlend"
@@ -162,22 +162,6 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout.operator("mb.make_static")
         layout.operator("mb.apply_scale")
 
-
-class MB_PT_atom(MolBlendPropsPanel, Panel):
-    bl_label = "Atom properties"
-    
-    @classmethod
-    def poll(cls, context):
-        active_ob = context.object or context.scene.mb.modal_last_active
-        return (context.scene.mb.is_initialized
-                and hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM')
-   
-    def draw(self, context):
-        layout = self.layout
-        active_ob = context.object or context.scene.mb.modal_last_active
-        active_ob.mb.draw_properties(context, layout, active_ob)
-
-
 class MB_PT_molecule_properties(MolBlendPropsPanel, Panel):
     bl_label = "Molecule properties"
     
@@ -194,8 +178,39 @@ class MB_PT_molecule_properties(MolBlendPropsPanel, Panel):
         mol.draw_properties(layout)
 
 
+class MB_PT_molecule_draw_styles(MolBlendPropsPanel, Panel):
+    bl_label = "Draw styles"
+    
+    @classmethod
+    def poll(cls, context):
+        active_ob = context.object or context.scene.mb.modal_last_active
+        return (context.scene.mb.is_initialized
+                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
+    
+    def draw(self, context):
+        layout = self.layout
+        active_ob = context.object or context.scene.mb.modal_last_active
+        mol = active_ob.mb.get_molecule()
+        mol.draw_styles(layout)
+
+
+class MB_PT_atom(MolBlendPropsPanel, Panel):
+    bl_label = "Atom properties"
+    
+    @classmethod
+    def poll(cls, context):
+        active_ob = context.object or context.scene.mb.modal_last_active
+        return (context.scene.mb.is_initialized
+                and hasattr(active_ob, 'mb') and active_ob.mb.type == 'ATOM')
+   
+    def draw(self, context):
+        layout = self.layout
+        active_ob = context.object or context.scene.mb.modal_last_active
+        active_ob.mb.draw_properties(context, layout, active_ob)
+
+
 class MB_PT_molecule_dipole(MolBlendPropsPanel, Panel):
-    bl_label = "Molecule dipole"
+    bl_label = "Dipole"
     
     @classmethod
     def poll(cls, context):
@@ -211,7 +226,7 @@ class MB_PT_molecule_dipole(MolBlendPropsPanel, Panel):
 
 
 class MB_PT_molecule_unit_cell(MolBlendPropsPanel, Panel):
-    bl_label = "Molecule unit cell"
+    bl_label = "Unit cell"
     
     @classmethod
     def poll(cls, context):
@@ -227,7 +242,7 @@ class MB_PT_molecule_unit_cell(MolBlendPropsPanel, Panel):
 
 
 class MB_PT_vibration_properties(MolBlendPropsPanel, Panel):
-    bl_label = "Molecule vibrations"
+    bl_label = "Vibrations"
     
     @classmethod
     def poll(cls, context):
@@ -240,22 +255,6 @@ class MB_PT_vibration_properties(MolBlendPropsPanel, Panel):
         active_ob = context.object or context.scene.mb.modal_last_active
         mol = active_ob.mb.get_molecule()
         mol.draw_vibrations(layout)
-
-
-class MB_PT_molecule_draw_styles(MolBlendPropsPanel, Panel):
-    bl_label = "Molecule draw styles"
-    
-    @classmethod
-    def poll(cls, context):
-        active_ob = context.object or context.scene.mb.modal_last_active
-        return (context.scene.mb.is_initialized
-                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
-    
-    def draw(self, context):
-        layout = self.layout
-        active_ob = context.object or context.scene.mb.modal_last_active
-        mol = active_ob.mb.get_molecule()
-        mol.draw_styles(layout)
 
 
 class MB_PT_view(MolBlendPanel, Panel):
