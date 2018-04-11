@@ -93,6 +93,7 @@ class MB_OT_initialize(Operator):
         # don't show parent lines
         context.space_data.show_relationship_lines = False
         context.scene.mb.is_initialized = True
+        mb_utils.update_all_meshes(None, context)
         return {'FINISHED'}
 
 
@@ -667,6 +668,86 @@ class MB_OT_remove_unit_cell(Operator):
         return {'FINISHED'}
 
 
+class MD_OT_import_cube_iso(bpy.types.Operator):
+    bl_idname = "mb.import_cube_iso"
+    bl_label = "Import iso"
+    bl_description = "Import iso surface from Gaussian cube file"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    directory = StringProperty(
+        name="Directory", description="Directory used for importing the file",
+        maxlen=1024, subtype='FILE_PATH')
+    filepath = StringProperty(
+        name="File Path", description="Filepath used for importing one file",
+        maxlen=1024, subtype='FILE_PATH')
+    files = CollectionProperty(
+        name="File Path",
+        description="List with file names used for importing",
+        type=bpy.types.OperatorFileListElement)
+    
+    iso_val = EnumProperty(
+        name="Iso value",
+        description="How to determine the iso surface value",
+        items=mb_utils.enums.iso_val, default='VOLFRAC')
+    
+    vol_frac = FloatProperty(
+        name="Volume fraction",
+        description="Fraction of volume to enclose in isosurface",
+        default=0.7, min=0.0, max=1.0)
+    absolute = FloatProperty(
+        name="Absolute",
+        description="Value for which to draw iso surface",
+        default=100., min=0.0)
+    origin_to_com = BoolProperty(
+        name="Origin to COM",
+        description="Put the origin of the object into the center of mass",
+        default=False)
+
+    #@classmethod
+    #def poll(cls, context):
+        #return context.object and context.object.mb.get_molecule()
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "iso_val", text="")
+        if self.iso_val == 'VOLFRAC':
+            layout.prop(self, "vol_frac")
+        elif self.iso_val == 'ABSOLUTE':
+            layout.prop(self, "absolute")
+        layout.prop(self, "origin_to_com")
+        
+    def invoke(self, context, event):
+        wm = context.window_manager
+        wm.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    
+    def execute(self, context):
+        files = set([os.path.join(self.directory, f.name) for f in self.files])
+        files.add(bpy.path.abspath(self.filepath))
+        
+        done = False
+        
+        for filepath in files:
+            if not os.path.exists(filepath):
+                logger.error(
+                    "mb.import_molecules: {} not found".format(filepath)
+                    )
+                continue
+            ret = mb_import_export.import_cube_iso(
+                context,
+                self.report,
+                filepath,
+                iso_val=self.iso_val,
+                vol_frac=self.vol_frac,
+                absolute=self.absolute,
+                origin_to_com=self.origin_to_com,
+                )
+            done = ret or done
+        if not done:
+            return {'CANCELLED'}
+        else:
+            return {'FINISHED'}
+        
 class MD_OT_import_modes(bpy.types.Operator):
     bl_idname = "mb.import_modes"
     bl_label = "Import vibrational modes for molecule"
@@ -691,7 +772,7 @@ class MD_OT_import_modes(bpy.types.Operator):
     def invoke(self, context, event):
         molecule = context.object.mb.get_molecule()
         for atom in molecule.objects.atoms:
-            if atom.animation_data:
+            if atom.animation_data and atom.animation_data.action:
                 # TODO allow user a choice
                 self.report({'WARNING'}, "Atoms already contain animation data. Will overwrite")
                 break
@@ -830,12 +911,13 @@ class MD_OT_import_molecules(bpy.types.Operator):
         files = set([os.path.join(self.directory, f.name) for f in self.files])
         files.add(bpy.path.abspath(self.filepath))
         
+        done = False
         for filepath in files:
             if not os.path.exists(filepath):
                 logger.error(
                     "mb.import_molecules: {} not found".format(filepath)
                     )
-                return {'CANCELLED'}
+                continue
         
             new_molecule = context.scene.mb.new_molecule(
                                 name_mol=self.name_mol,
@@ -894,7 +976,11 @@ class MD_OT_import_molecules(bpy.types.Operator):
             finally:
                 if not worked:
                     context.scene.mb.remove_molecule(new_molecule)
-        return {'FINISHED'}
+                done = worked or done
+        if not done:
+            return {'CANCELLED'}
+        else:
+            return {'FINISHED'}
 
 
 

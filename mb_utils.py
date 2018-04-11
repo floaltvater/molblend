@@ -95,14 +95,19 @@ class enums():
         ('XYZ', "xyz", "xyz-style format"),
         ('PHONOPY', "phonopy", "phonopy/v_sim ascii format"),
         ]
+    iso_val = [
+        ('VOLFRAC', "volume fraction", "iso value by fraction of volume"),
+        ('ABSOLUTE', "absolute value", "iso value by absolute value in cube file"),
+        ]
 
 
 #--- Update functions --------------------------------------------------------#
 
 def update_all_meshes(self, context):
-    # TODO this callback might be too heavy for scenes with lots of meshes
-    for me in bpy.data.meshes:
-        me.update()
+    if context.scene.mb.is_initialized:
+        # TODO this callback might be too heavy for scenes with lots of meshes
+        for me in bpy.data.meshes:
+            me.update()
 
 
 def update_active_mode(self, context):
@@ -995,12 +1000,14 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
     uc_cube = bpy.data.objects.new("unit_cell_{}".format(molecule.name), me)
     context.scene.objects.link(uc_cube)
     uc_cube.draw_type = 'WIRE'
+    uc_cube.hide_render = True
     
     all_obs.append(uc_cube)
     uc_cube.mb.type = 'UC'
     uc_cube.parent = molecule.objects.parent
 
     # add empties
+    uc_empties = []
     for dim, ax in enumerate(unit_vectors):
         uc_empty = bpy.data.objects.new(
             "{}_uc_{}".format("abc"[dim], molecule.name), None)
@@ -1011,6 +1018,7 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
         uc_empty.parent = molecule.objects.parent
         uc_empty.mb.molecule_ident = molecule.name
         uc_empty.mb.type = 'UC'
+        uc_empties.append(uc_empty)
         setattr(mol_uc, "abc"[dim], uc_empty)
         
         if len(molecule["unit_cells"]) > 1:
@@ -1125,7 +1133,7 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
         ob.mb.type = 'UC'
         molecule.add_object(ob)
     
-    return all_obs
+    return all_obs + uc_empties
 
 
 def remove_dipole(mol, context):
@@ -1184,8 +1192,22 @@ def new_material(name, color=(0.8, 0.8, 0.8), molecule=None):
     if bpy.context.scene.render.engine == 'CYCLES':
         material.use_nodes = True
         # add driver to rendered color to be the same as display color
-        nodesocketcolor = material.node_tree.nodes['Diffuse BSDF'].inputs[0]
-        nodesocketcolor.default_value[:3] = color
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+        
+        diffuse = nodes['Diffuse BSDF']
+        diffuse.inputs[0].default_value[:3] = color
+        
+        glossy = nodes.new(type='ShaderNodeBsdfGlossy')
+        
+        mix = nodes.new(type='ShaderNodeMixShader')
+        
+        output_mat = nodes['Material Output']
+        
+        links.new(diffuse.outputs[0], mix.inputs[1])
+        links.new(glossy.outputs[0], mix.inputs[2])
+        links.new(mix.outputs[0], output_mat.inputs[0])
+        
         for i in range(3): # not for alpha channel
             fcurve =  material.driver_add('diffuse_color', i)
             drv = fcurve.driver

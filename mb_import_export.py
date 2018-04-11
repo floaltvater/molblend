@@ -16,9 +16,9 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-### TODO
-# - need to clean up file reading (e.g., that everything returns the same thing
-#   in the same format).
+# set path to mcubes. Needs to be of the same python version as Blender.
+# If installed with pip you can get the path with "pip show mcubes".
+mcubes_path = r"/usr/local/lib/python3.5/dist-packages"
 
 if "bpy" in locals():
     import importlib
@@ -30,6 +30,7 @@ else:
 
 import math
 import logging
+import numpy as np
 
 import bpy
 import bmesh
@@ -38,6 +39,19 @@ from mathutils import Vector, Matrix
 from molblend.elements_default import ELEMENTS as ELEMENTS_DEFAULT
 
 logger = logging.getLogger(__name__)
+A_per_Bohr = 0.529177249
+
+# Try to load mcubes module for iso surface creation
+try:
+    import mcubes
+except ImportError:
+    for module, fn in bpy.path.module_names(mcubes_path):
+        if module == "mcubes":
+            import sys
+            if not mcubes_path in sys.path:
+                sys.path.append(mcubes_path)
+            import mcubes
+found_mcubes = ("mcubes" in locals())
 
 #--- Read file functions -----------------------------------------------------#
 def is_inside_of_planes(planes, l0, flip=False):
@@ -49,6 +63,147 @@ def is_inside_of_planes(planes, l0, flip=False):
             return flip
     else:
         return not flip # if flip, point must be inside to not be selected
+
+def import_cube_iso(context,
+                    report,
+                    filepath,
+                    iso_val='VOLFRAC',
+                    vol_frac=0.7,
+                    absolute=100,
+                    origin_to_com=False,
+                    ):
+    """
+    Format specification from 
+    http://h5cube-spec.readthedocs.io/en/latest/cubeformat.html
+    """
+    if not found_mcubes:
+        report({'ERROR'}, "mcubes was not found. Please install and/or set correct"
+                          " path to mcubes in {}".format(__file__))
+        return False
+    bpy.ops.object.select_all(action="DESELECT")
+    
+    with open(filepath, "r") as fin:
+        next(fin)
+        next(fin)
+        ls = next(fin).split()
+        nat = int(ls[0])
+        dset_ids_present = (nat < 0)
+        nat = abs(nat)
+        origin = Vector(list(map(float, ls[1:4])))
+        nval = int(ls[-1]) if len(ls) == 5 else 1
+        if nval != 1 and dset_ids_present:
+            report({'ERROR'}, "{}".filepath +
+                   "NVAL != 1 and NAT < 0 is not compatible.")
+            return False
+        nvoxel = np.zeros(3, dtype=int)
+        voxel_vec = np.zeros((3,3))
+        for i in range(3):
+            n, x, y, z = next(fin).split()
+            nvoxel[i] = int(n)
+            voxel_vec[i,:] = list(map(float, (x, y, z)))
+        
+        if (nvoxel<0).all():
+            unit = 1
+        elif (nvoxel<0).any():
+            msg = (
+                "{} ".format(filepath) +
+                "seems to contain mixed units (+/- mixed in lines 4-6). "
+                "Please make sure either all units are in Bohr (+) or "
+                "Angstrom (-)."
+                )
+            report({'ERROR'}, msg)
+            return False
+        else:
+            unit = A_per_Bohr
+        voxel_vec *= unit
+        
+        # skip atom info
+        for n in range(nat):
+            next(fin)
+        if dset_ids_present:
+            orbitals = []
+            ls = list(map(int, next(fin).split()))
+            m = ls[0]
+            orbitals.extend(ls[1:])
+            while len(orbital) < m:
+                orbitals.extend(list(map(int, next(fin).split())))
+        else:
+            m = 1
+        
+        all_data = np.zeros(np.product(nvoxel)*m*nval)
+        pos = 0
+        for line in fin:
+            ls = line.split()
+            all_data[pos:(pos+len(ls))] = list(map(float, ls))
+            pos += len(ls)
+    
+    all_data = all_data.reshape(list(nvoxel)+[m*nval])
+    all_data = np.rollaxis(all_data, -1, 0)
+    
+    red = (.8, 0, 0)
+    blue = (0, 0, .8)
+    n_gt_1 = (len(all_data) > 1)
+    for n, data in enumerate(all_data):
+        plusminus = (data.min() < 0 and data.max() > 0)
+        for fac in (1, -1): # for positive and negative valued wavefunction
+            part = data[data*fac > 0]*fac
+            if len(part) > 0:
+                if iso_val == 'VOLFRAC':
+                    flat = np.sort(part.flatten())[::-1]
+                    cs = np.cumsum(flat)
+                    # find first index to be larger than the percent volume we want
+                    # to enclose
+                    cut = cs[-1]*vol_frac
+                    idx = np.argmax(cs > cut)
+                    # linearly interpolate (this should be good enough for most 
+                    # purposes
+                    rat = (cs[idx]-cut) / (cs[idx]-cs[idx-1])
+                    iso = rat * (flat[idx-1]-flat[idx]) + flat[idx]
+                elif iso_val == 'ABSOLUTE':
+                    iso = absolute
+                # Use marching cubes to obtain the surface mesh of these ellipsoids
+                verts, faces = mcubes.marching_cubes(data*fac, iso)
+                
+                # convert to cartesian coordinates
+                verts = verts.dot(voxel_vec)
+                
+                verts = verts.tolist()
+                faces = faces.astype(int).tolist()
+                base = bpy.path.display_name_from_filepath(filepath)
+                orb = ("_{}".format(n) if n_gt_1 else "")
+                ext = ("_p" if fac == 1 else "_n") if plusminus else ""
+                name = "{}{}{}".format(base, orb, ext)
+                me = bpy.data.meshes.new(name)
+                me.from_pydata(verts, [], faces)
+
+                ob = bpy.data.objects.new(name, me)
+                context.scene.objects.link(ob)
+                context.scene.objects.active = ob
+                ob.select = True
+                ob.location = origin
+                
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.remove_doubles(threshold=0.06)
+                bpy.ops.mesh.normals_make_consistent()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                
+                bpy.ops.object.shade_smooth()
+                
+                if len(ob.material_slots) < 1:
+                    ob.data.materials.append(None)
+                # get or create element material per molecule
+                material = bpy.data.materials.get(name)
+                if not material:
+                    color = (red if fac == 1 else blue)
+                    # get material color from elements list, and Default if not an element
+                    material = mb_utils.new_material(name, color=color)
+                # finally, assign material to first slot.
+                ob.material_slots[0].link = 'DATA'
+                ob.material_slots[0].material = material
+    
+    if origin_to_com:
+        bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
+                
 
 def import_modes(context,
                  report,
@@ -166,7 +321,7 @@ def import_molecule(context,
         if structure.axes and not len(structure.axes) == structure.nframes:
             raise IOError(("Number of unit vectors ({}) and frames ({})"
                             " does not match").format(len(structure.axes), 
-                                                      len(structure.nframes)))
+                                                      structure.nframes))
 
         molecule["unit_cells"] = structure.axes
         
@@ -255,6 +410,8 @@ def import_molecule(context,
             ob.select = True
     except:
         # if something bad happend, delete all objects and re-raise
+        logger.debug("Trying to delete all newly imported objects.")
+        report({'ERROR'}, "Something went wrong in import. Check console.")
         for ob in all_obs:
             context.scene.objects.unlink(ob)
             bpy.data.objects.remove(ob)

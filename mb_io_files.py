@@ -328,8 +328,8 @@ class MB_Structure():
                             self.bonds[index1].add(index2)
                         except KeyError:
                             self.bonds[index1] = set((index2,))
-            if not self.bonds:
-                logger.warning("guess_bonds: No bonds found.")
+        if not self.bonds:
+            logger.warning("guess_bonds: No bonds found.")
     
     def create_supercell(self, supercell):
         if self.axes:
@@ -389,6 +389,7 @@ class MB_Structure():
             "pdb": cls._read_pdb_file,
             "POSCAR": cls._read_POSCAR_file,
             "ascii": cls._read_phonopy_ascii,
+            "cube": cls._read_cube_file,
             "abinit": cls._read_abinit_output_file,
             "qe_input": cls._read_qe_input_file,
             "qe_output": cls._read_qe_rlx_output_file
@@ -413,6 +414,59 @@ class MB_Structure():
             for atom in structure.all_atoms.values():
                 atom["coords"] = [loc*unit_fac for loc in atom["coords"]]
         return structure
+    
+    @classmethod
+    def _read_cube_file(cls, filepath):
+        """
+        Reading Gaussian cube file format.
+        This code is assuming that either all units are in Bohr (positive 
+        numbers of voxels in lines 4-6) or Angstrom (negative numbers), 
+        including the atomic coordinates. The Gaussian documentation is
+        slightly vague on that.
+        """
+        strc = cls()
+        strc.nframes = 1
+        element_by_number = dict(
+            [(ELEMENTS[element]["atomic number"], element) for element in ELEMENTS]
+            )
+        with open(filepath, "r") as fin:
+            next(fin)
+            next(fin)
+            nat = abs(int(next(fin).split()[0]))
+            nvoxel = np.zeros(3, dtype=int)
+            voxel_vec = np.zeros((3,3))
+            for i in range(3):
+                n, x, y, z = next(fin).split()
+                nvoxel[i] = int(n)
+                voxel_vec[i,:] = list(map(float, (x, y, z)))
+            
+            if (nvoxel<0).all():
+                unit = 1
+            elif (nvoxel<0).any():
+                msg = (
+                    "{} ".format(filepath) +
+                    "seems to contain mixed units (+/- mixed in lines 4-6). "
+                    "Please make sure either all units are in Bohr (+) or "
+                    "Angstrom (-)."
+                    )
+                report({'ERROR'}, msg)
+                return False
+            else:
+                unit = A_per_Bohr
+            
+            unit_cell = voxel_vec * nvoxel[:,np.newaxis] * unit
+            strc.axes = [[Vector(c) for c in unit_cell]]
+            
+            for n in range(nat):
+                nel, _, x, y, z = list(map(float, next(fin).split()))
+                element = element_by_number[nel]
+                
+                strc.all_atoms[n] = {
+                        "element": element,
+                        "name": element,
+                        "coords": [Vector((x, y, z))*A_per_Bohr], # always in Bohr!
+                        "id": n}
+        return strc
     
     @classmethod
     def _read_phonopy_ascii(cls, filepath):

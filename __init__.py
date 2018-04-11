@@ -74,9 +74,9 @@ except:
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-file_formatter = logging.Formatter('%(asctime)s: %(name)-12s: %(levelname)-8s: %(message)s')
+file_formatter = logging.Formatter('%(asctime)s:%(name)-12s:%(levelname)-8s:%(filename)-20s: %(message)s')
 if logger.getEffectiveLevel() == logging.DEBUG:
-    term_formatter = logging.Formatter('%(levelname)-8s:%(filename)-20s: %(message)s')
+    term_formatter = logging.Formatter('%(asctime)s:%(levelname)-8s:%(filename)-20s: %(message)s')
 else:
     term_formatter = logging.Formatter('%(name)s: %(levelname)-8s: %(message)s')
 
@@ -99,6 +99,10 @@ class MolBlendPanel():
     bl_region_type = "TOOLS"
     bl_category = "MolBlend"
 
+class MolBlendPropsPanel():
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "TOOLS"
+    bl_category = "MolBlendProps"
 
 class MB_PT_initialize(MolBlendPanel, Panel):
     bl_label = "MolBlend"
@@ -125,6 +129,7 @@ class MB_PT_import(MolBlendPanel, Panel):
         mb = context.scene.mb.globals
         layout = self.layout
         layout.operator("mb.import_molecules")
+        layout.operator("mb.import_cube_iso")
 
 
 class MB_PT_tools(MolBlendPanel, Panel):
@@ -158,7 +163,7 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout.operator("mb.apply_scale")
 
 
-class MB_PT_atom(MolBlendPanel, Panel):
+class MB_PT_atom(MolBlendPropsPanel, Panel):
     bl_label = "Atom properties"
     
     @classmethod
@@ -173,7 +178,7 @@ class MB_PT_atom(MolBlendPanel, Panel):
         active_ob.mb.draw_properties(context, layout, active_ob)
 
 
-class MB_PT_molecule_properties(MolBlendPanel, Panel):
+class MB_PT_molecule_properties(MolBlendPropsPanel, Panel):
     bl_label = "Molecule properties"
     
     @classmethod
@@ -189,7 +194,7 @@ class MB_PT_molecule_properties(MolBlendPanel, Panel):
         mol.draw_properties(layout)
 
 
-class MB_PT_molecule_dipole(MolBlendPanel, Panel):
+class MB_PT_molecule_dipole(MolBlendPropsPanel, Panel):
     bl_label = "Molecule dipole"
     
     @classmethod
@@ -205,7 +210,7 @@ class MB_PT_molecule_dipole(MolBlendPanel, Panel):
         mol.draw_dipole_props(layout)
 
 
-class MB_PT_molecule_unit_cell(MolBlendPanel, Panel):
+class MB_PT_molecule_unit_cell(MolBlendPropsPanel, Panel):
     bl_label = "Molecule unit cell"
     
     @classmethod
@@ -221,7 +226,7 @@ class MB_PT_molecule_unit_cell(MolBlendPanel, Panel):
         mol.draw_unit_cell_props(layout)
 
 
-class MB_PT_vibration_properties(MolBlendPanel, Panel):
+class MB_PT_vibration_properties(MolBlendPropsPanel, Panel):
     bl_label = "Molecule vibrations"
     
     @classmethod
@@ -237,7 +242,7 @@ class MB_PT_vibration_properties(MolBlendPanel, Panel):
         mol.draw_vibrations(layout)
 
 
-class MB_PT_molecule_draw_styles(MolBlendPanel, Panel):
+class MB_PT_molecule_draw_styles(MolBlendPropsPanel, Panel):
     bl_label = "Molecule draw styles"
     
     @classmethod
