@@ -523,14 +523,14 @@ class MB_OT_combine_molecules(Operator):
     def draw(self, context):
         mol = context.scene.mb.molecules.get(self.molecule_id)
         layout = self.layout
-        label = "Do you want to add all selected atoms and bonds to"
-        label += " molecule {} ({})?".format(mol.objects.parent.name, mol.name)
+        label = "Do you want to combine all selected atoms and bonds in"
+        label += ' molecule "{}" (id={})?'.format(mol.objects.parent.name, mol.name)
         layout.label(label)
     
     def invoke(self, context, event):
         mol = context.object.mb.get_molecule()
         self.molecule_id = mol.name
-        return context.window_manager.invoke_props_dialog(self)
+        return context.window_manager.invoke_props_dialog(self, width=500)
     
     def execute(self, context):
         mol = context.scene.mb.molecules.get(self.molecule_id)
@@ -540,7 +540,7 @@ class MB_OT_combine_molecules(Operator):
                 if not ob.mb.get_molecule() == mol:
                     ob.mb.get_molecule().remove_object(ob)
                     mol.add_object(ob)
-        
+        context.scene.mb.remove_molecule(mol, only_if_empty=True)
         return {'FINISHED'}
 
 

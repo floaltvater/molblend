@@ -533,7 +533,7 @@ class mb_molecule(PropertyGroup):
             if item.object == ob:
                 objects.remove(i)
                 return
-        
+
 
 class mb_element(PropertyGroup):
     name = StringProperty(name="Element")
@@ -679,15 +679,20 @@ class mb_scene(PropertyGroup):
         parent_ob.mb.type = 'PARENT'
         return mol
     
-    def remove_molecule(self, mol):
-        for ob in mol.objects.get_all_objects():
-            self.id_data.objects.unlink(ob)
-            bpy.data.objects.remove(ob)
-        
-        for i, mol_item in enumerate(self.molecules):
-            if mol == mol_item:
-                self.molecules.remove(i)
-                return
+    def remove_molecule(self, mol, only_if_empty=False):
+        """only_if_empty: only remove if it has no atoms or bonds
+        """
+        if ((not mol.objects.atoms and not mol.objects.bonds)
+            or not only_if_empty:
+            
+            for ob in mol.objects.get_all_objects():
+                self.id_data.objects.unlink(ob)
+                bpy.data.objects.remove(ob)
+            
+            for i, mol_item in enumerate(self.molecules):
+                if mol == mol_item:
+                    self.molecules.remove(i)
+                    return
 
 
 def register():
