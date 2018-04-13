@@ -683,7 +683,7 @@ class mb_scene(PropertyGroup):
         """only_if_empty: only remove if it has no atoms or bonds
         """
         if ((not mol.objects.atoms and not mol.objects.bonds)
-            or not only_if_empty:
+            or not only_if_empty):
             
             for ob in mol.objects.get_all_objects():
                 self.id_data.objects.unlink(ob)

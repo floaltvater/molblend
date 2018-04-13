@@ -465,7 +465,7 @@ class MB_OT_select_bonded(Operator):
                     return atom(ob)
                 elif ob.mb.type == 'BOND':
                     return bond(ob)
-
+        return {'CANCELLED'}
 
 def get_molecules(self, context):
     lst = []
@@ -534,13 +534,19 @@ class MB_OT_combine_molecules(Operator):
     
     def execute(self, context):
         mol = context.scene.mb.molecules.get(self.molecule_id)
-        
+        old_mols = set()
         for ob in context.selected_objects:
             if ob.mb.type in ("ATOM", "BOND"):
                 if not ob.mb.get_molecule() == mol:
+                    old_mols.add(ob.mb.get_molecule())
                     ob.mb.get_molecule().remove_object(ob)
                     mol.add_object(ob)
-        context.scene.mb.remove_molecule(mol, only_if_empty=True)
+                    if ob.mb.type == 'ATOM':
+                        mb_utils.set_atom_drivers(context, ob, mol)
+                    if ob.mb.type == 'BOND':
+                        mb_utils.set_bond_drivers(context, ob, mol)
+        for old_mol in old_mols:
+            context.scene.mb.remove_molecule(old_mol, only_if_empty=True)
         return {'FINISHED'}
 
 
