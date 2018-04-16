@@ -251,19 +251,6 @@ def update_export_file_type(self, context):
             self.filepath = self.filepath + ext
 
 
-def update_molecule_selection(self, context):
-    mol = context.scene.mb.molecules.get(self.molecule_id)
-    if mol:
-        for ob in context.selected_objects:
-            ob.select = False
-        for col in (mol.objects.atoms, mol.objects.bonds, mol.objects.other):
-            for ob in col:
-                ob.select = True
-        parent = mol.objects.parent
-        parent.select = True
-        context.scene.objects.active = parent
-
-
 def update_show_bond_lengths(self, context):
     if self.show_bond_lengths:
         bpy.ops.mb.show_bond_lengths()
@@ -272,6 +259,21 @@ def update_show_bond_lengths(self, context):
 def update_show_bond_angles(self, context):
     if self.show_bond_angles:
         bpy.ops.mb.show_bond_angles()
+
+
+def update_radius_type(self, context):
+    for atom in self.objects.atoms:
+        set_atom_drivers(context, atom, self)
+
+
+def update_draw_style(self, context):
+    for atom in self.objects.atoms:
+        set_atom_drivers(context, atom, self)
+    
+    hide = (self.draw_style == 'BALLS')
+    for bond in self.objects.bonds:
+        bond.hide = hide
+
 
 #--- General functions -------------------------------------------------------#
 
@@ -471,11 +473,11 @@ def add_atom(context, location, element, atom_name, molecule):
     
     # set mb properties
     new_atom.mb.name = new_atom.name
-    new_atom.mb.molecule_ident = molecule.name
     new_atom.mb.atom_name = atom_name
     
     # parent to molecule origin
     new_atom.parent = molecule.objects.parent
+    new_atom.mb.parent = molecule.objects.parent
     
     # updating the element will call update_atom_element, which assigns a mesh,
     # and sets all the drivers
@@ -514,7 +516,6 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
     # set mb properties
     new_bond.mb.type = 'BOND'
     new_bond.mb.name = new_bond.name
-    new_bond.mb.molecule_ident = first_mol.name
     new_bond.mb.add_bonded_atom(first_atom)
     new_bond.mb.add_bonded_atom(second_atom)
     
@@ -524,7 +525,8 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
     
     # add it to first molecule collection
     first_mol.add_object(new_bond)
-    
+    new_bond.mb.parent = first_mol.objects.parent
+
     if bond_type == "CONSTRAINT":
         # don't parent, as parenting also affects the scale
         c = new_bond.constraints.new('COPY_LOCATION')
@@ -804,10 +806,10 @@ def set_atom_drivers(context, atom, molecule):
             var.name = 'atom_scale' # name to use in scripting
             var.type = 'SINGLE_PROP'
         targ = var.targets[0]
-        targ.id_type = 'SCENE'
-        targ.id = context.scene
-        targ.data_path = 'mb.molecules["{}"].atom_scales["{}"].val'.format(
-                         molecule.name, molecule.draw_style)
+        targ.id_type = 'OBJECT'
+        targ.id = atom
+        targ.data_path = 'mb.parent.mb.molecule.atom_scales["{}"].val'.format(
+                            molecule.draw_style)
         
         var = drv.variables.get('bond_radius')
         if not var:
@@ -815,9 +817,9 @@ def set_atom_drivers(context, atom, molecule):
             var.name = 'bond_radius' # name to use in scripting
             var.type = 'SINGLE_PROP'
         targ = var.targets[0]
-        targ.id_type = 'SCENE'
-        targ.id = context.scene
-        targ.data_path = 'mb.molecules["{}"].bond_radius'.format(molecule.name)
+        targ.id_type = 'OBJECT'
+        targ.id = atom
+        targ.data_path = 'mb.parent.mb.molecule.bond_radius'.format(molecule.name)
         
         if molecule.draw_style in ('BALLS', 'BAS'):
             drv.expression = "max(atom_radius * atom_scale, bond_radius)"
@@ -839,9 +841,9 @@ def set_bond_drivers(context, bond, molecule):
             var.name = 'bond_radius' # name to use in scripting
             var.type = 'SINGLE_PROP'
         targ = var.targets[0]
-        targ.id_type = 'SCENE'
-        targ.id = context.scene
-        targ.data_path = 'mb.molecules["{}"].bond_radius'.format(
+        targ.id_type = 'OBJECT'
+        targ.id = bond
+        targ.data_path = 'mb.parent.mb.molecule.bond_radius'.format(
                             molecule.name)
 
 def clear_modes(molecule):
@@ -923,7 +925,6 @@ def draw_dipole(mol, dipole_vec, context):
     mol.objects.dipole.empty = dipole_ob
     dipole_ob.location = dipole_vec
     dipole_ob.parent = mol.objects.parent
-    dipole_ob.mb.molecule_ident = mol.name
     
     material = bpy.data.materials.get('dipole_{}'.format(mol.name))
     if not material:
@@ -938,7 +939,6 @@ def draw_dipole(mol, dipole_vec, context):
     arrow_ob.parent = mol.objects.parent
     context.scene.objects.link(arrow_ob)
     context.scene.objects.active = arrow_ob
-    arrow_ob.mb.molecule_ident = mol.name
     mol.objects.dipole.arrow = arrow_ob
 
     c = arrow_ob.constraints.new('STRETCH_TO')
@@ -1012,7 +1012,6 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
         context.scene.objects.link(uc_empty)
         uc_empty.location = ax
         uc_empty.parent = molecule.objects.parent
-        uc_empty.mb.molecule_ident = molecule.name
         uc_empty.mb.type = 'UC'
         uc_empties.append(uc_empty)
         setattr(mol_uc, "abc"[dim], uc_empty)
@@ -1180,9 +1179,9 @@ def new_material(name, color=(0.8, 0.8, 0.8), molecule=None):
             var.name = 'diffuse_color' # name to use in scripting
             var.type = 'SINGLE_PROP'
             targ = var.targets[0]
-            targ.id_type = 'SCENE'
-            targ.id = bpy.context.scene
-            targ.data_path = 'mb.molecules["{}"].bond_color[{}]'.format(
+            targ.id_type = 'OBJECT'
+            targ.id = molecule.objects.parent
+            targ.data_path = 'mb.molecule.bond_color[{}]'.format(
                              molecule.name, i)
     
     if bpy.context.scene.render.engine == 'CYCLES':
@@ -1283,20 +1282,6 @@ def assign_bond_material(ob):
     ob.material_slots[1].link = 'OBJECT'
     ob.material_slots[0].material = first_mat
     ob.material_slots[1].material = second_mat
-
-
-def update_radius_type(self, context):
-    for atom in self.objects.atoms:
-        set_atom_drivers(context, atom, self)
-
-
-def set_draw_style(self, context):
-    for atom in self.objects.atoms:
-        set_atom_drivers(context, atom, self)
-    
-    hide = (self.draw_style == 'BALLS')
-    for bond in self.objects.bonds:
-        bond.hide = hide
 
 
 def is_inside_of_planes(planes, loc, flip=False):

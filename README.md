@@ -145,10 +145,10 @@ and typing `import mcubes` in the Blender Python console.
   files to that unit.
 - Currently MolBlend doesn't support double/triple bonds, or other even less
   common bonds.
-- Duplication (Shift+D, Alt+D) of a molecule has various issues, since the 
-  underlying MB_Molecule Property is not updated (doesn't know of the new
-  atoms, atom colors, draw styles are linked between old and new atoms, etc.).
-  A custom MolBlend duplicate operator might be in the future.
+- Duplication (Shift+D, Alt+D) and combining of molecules doesn't update the
+  materials accordingly. I.e., when duplicating, the materials of original and
+  new molecule are linked, and when combining, the materials will not be
+  linked.
 - MolBlend doesn't necessarily preserve indices that are explicitly written 
   in input files (like PDB files). It does preserve the order of atoms though.
 - Dipoles or unit cell axes might end up having zero dimension due to the

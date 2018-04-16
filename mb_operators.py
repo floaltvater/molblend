@@ -469,71 +469,66 @@ class MB_OT_select_bonded(Operator):
 
 def get_molecules(self, context):
     lst = []
-    for mol in context.scene.mb.molecules:
-        lst.append((mol.name, mol.objects.parent.name, ""))
+    for ob in bpy.data.objects:
+        if ob.mb.type == 'PARENT':
+            mol = ob.mb.molecule
+            lst.append((mol.name, ob.name, ""))
     return lst
 
 
 class MB_OT_select_molecule(Operator):
     '''
-    Select all objects belonging to molecule based on mb data
+    Select all objects belonging to molecules of selected objects
     '''
     bl_idname = "mb.select_molecule"
-    bl_description = "Select all objects belonging to molecule"
+    bl_description = "Select all objects belonging to molecules of selected objects"
     bl_label = "Select molecule"
     bl_options = {'UNDO', 'REGISTER'}
-    
-    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
     
     @classmethod
     def poll(cls, context):
         return context.object
     
     def invoke(self, context, event):
-        mol = context.object.mb.get_molecule()
-        self.molecule_id = mol.name
         return self.execute(context)
     
     def execute(self, context):
-        mol = context.scene.mb.molecules.get(self.molecule_id)
-        if not mol:
-            self.report("Active object is not part of a molecule.")
-            return {'CANCELLED'}
-        
-        for ob in mol.objects.get_all_objects():
-            ob.select = True
+        molecules = set()
+        for ob in context.selected_objects:
+            molecules.add(ob.mb.get_molecule())
+        for mol in molecules:
+            for ob in mol.objects.get_all_objects():
+                ob.select = True
         return {'FINISHED'}
 
 
 class MB_OT_combine_molecules(Operator):
     '''
-    Select all objects belonging to molecule based on mb data
+    Combine selected molecules into one
     '''
     bl_idname = "mb.combine_molecules"
     bl_description = "Combine selected molecules into one."
     bl_label = "Combine molecules"
     bl_options = {'UNDO', 'REGISTER'}
     
-    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
-    
     @classmethod
     def poll(cls, context):
         return context.object and context.object.mb.get_molecule()
     
     def draw(self, context):
-        mol = context.scene.mb.molecules.get(self.molecule_id)
+        mol = context.object.mb.get_molecule()
+        self.molecule_id = mol.name
         layout = self.layout
         label = "Do you want to combine all selected atoms and bonds in"
-        label += ' molecule "{}" (id={})?'.format(mol.objects.parent.name, mol.name)
+        label += ' molecule "{}" (id={})?'.format(mol.objects.parent.name, 
+                                                  mol.name)
         layout.label(label)
     
     def invoke(self, context, event):
-        mol = context.object.mb.get_molecule()
-        self.molecule_id = mol.name
         return context.window_manager.invoke_props_dialog(self, width=500)
     
     def execute(self, context):
-        mol = context.scene.mb.molecules.get(self.molecule_id)
+        mol = context.object.mb.get_molecule()
         old_mols = set()
         for ob in context.selected_objects:
             if ob.mb.type in ("ATOM", "BOND"):
@@ -541,10 +536,7 @@ class MB_OT_combine_molecules(Operator):
                     old_mols.add(ob.mb.get_molecule())
                     ob.mb.get_molecule().remove_object(ob)
                     mol.add_object(ob)
-                    if ob.mb.type == 'ATOM':
-                        mb_utils.set_atom_drivers(context, ob, mol)
-                    if ob.mb.type == 'BOND':
-                        mb_utils.set_bond_drivers(context, ob, mol)
+                    mb_utils.update_draw_style(mol, context)
         for old_mol in old_mols:
             context.scene.mb.remove_molecule(old_mol, only_if_empty=True)
         return {'FINISHED'}
@@ -559,19 +551,14 @@ class MB_OT_center_mol_parent(Operator):
     bl_label = "Parent to CoM"
     bl_options = {'UNDO', 'REGISTER'}
     
-    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
-    
     @classmethod
     def poll(cls, context):
         return context.object and context.object.mb.get_molecule()
     
     def invoke(self, context, event):
-        mol = context.object.mb.get_molecule()
-        self.molecule_id = mol.name
         return self.execute(context)
     
     def execute(self, context):
-        mol = context.scene.mb.molecules.get(self.molecule_id)
         molecule = context.object.mb.get_molecule()
         origin = Vector((0.0,0.0,0.0))
         atoms = molecule.objects.atoms
@@ -588,19 +575,15 @@ class MB_OT_draw_unit_cell(Operator):
     bl_label = "Draw unit cell of structure"
     bl_options = {'REGISTER', 'UNDO'}
     
-    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
-    
     @classmethod
     def poll(self, context):
         return context.object and context.object.mb.get_molecule()
     
     def invoke(self, context, event):
-        mol = context.object.mb.get_molecule()
-        self.molecule_id = mol.name
         return self.execute(context)
     
     def execute(self, context):
-        mol = context.scene.mb.molecules.get(self.molecule_id)
+        mol = context.object.mb.get_molecule()
         if not "unit_cells" in mol or not mol["unit_cells"]:
             mol["unit_cells"] = [[Vector((5,0,0)),
                                  Vector((0,5,0)),
@@ -619,7 +602,10 @@ class MB_OT_draw_dipole(Operator):
     bl_options = {'REGISTER', 'UNDO'}
     
     dipole_vec = FloatVectorProperty(name="Dipole vector", size=3)
-    molecule_id = EnumProperty(name="Molecules", items=get_molecules)
+    
+    @classmethod
+    def poll(self, context):
+        return context.object and context.object.mb.get_molecule()
     
     def draw(self, context):
         layout = self.layout
@@ -627,12 +613,10 @@ class MB_OT_draw_dipole(Operator):
         col.prop(self, "dipole_vec")
         
     def invoke(self, context, event):
-        if context.object and context.object.mb.get_molecule():
-            self.molecule_id = context.object.mb.get_molecule().name
         return context.window_manager.invoke_props_dialog(self)
     
     def execute(self, context):
-        mol = context.scene.mb.molecules.get(self.molecule_id)
+        mol = context.object.mb.get_molecule()
         obs = mb_utils.draw_dipole(mol, self.dipole_vec, context)
         for ob in obs:
             ob.select = True

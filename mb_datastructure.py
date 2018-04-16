@@ -207,127 +207,7 @@ class MB_UL_modes(UIList):
         col = split.column()
         col.label("q=({:5.3f}, {:5.3f}, {:5.3f})".format(*item.qvec))
 
-class mb_object(PropertyGroup):
-    index = IntProperty(name="Index")
-    name = StringProperty(name="Object name")
-    type = EnumProperty(
-        name="type", description="Select the object type",
-        items=mb_utils.enums.object_types, default='NONE')
-    
-    molecule_ident = StringProperty(name="Molecule identifier")
-    
-    # used by type == 'ATOM'
-    pvt_bonds = CollectionProperty(type=mb_object_pointer)
-    @property
-    def bonds(self):
-        return get_object_list(self.pvt_bonds)
 
-    atom_name = StringProperty(name="Atom name")
-    element = StringProperty(
-        name="Element", description="Element Symbol",
-        update=mb_utils.update_atom_element)
-    element_long = StringProperty(
-        name="Element name", description="Full element name")
-    
-    # used by type == 'BOND'
-    pvt_bonded_atoms = CollectionProperty(type=mb_object_pointer)
-    @property
-    def bonded_atoms(self):
-        return get_object_list(self.pvt_bonded_atoms)
-
-    
-    supercell = IntVectorProperty(name="supercell", default=(0,0,0),
-                                  size=3)
-    
-    @property
-    def object(self):
-        return self.id_data
-    @property
-    def world_location(self):
-        return self.id_data.matrix_world.to_translation()
-    
-    def get_molecule(self):
-        return bpy.context.scene.mb.molecules.get(self.molecule_ident)
-    
-    def add_bond(self, ob):
-        """Add object to bond collection and return new collection item."""
-        if not self.type == 'ATOM':
-            logger.warning("Something is trying to add bond to "
-                           "non-ATOM type object")
-            return None
-        
-        bond = None
-        for existing in self.bonds:
-            if existing == ob:
-                bond = existing
-                break
-        else:
-            bond = self.pvt_bonds.add()
-            bond.object = ob
-        return bond
-    
-    def remove_bond(self, ob):
-        if not self.type == 'ATOM':
-            logger.warning("Something is trying to remove bond from "
-                           "non-ATOM type object")
-            return None
-        for i, b in enumerate(self.bonds):
-            if b == ob:
-                self.pvt_bonds.remove(i)
-                return
-    
-    def add_bonded_atom(self, ob):
-        if not self.type == 'BOND':
-            logger.warning("Something is trying to add bonded_atom to "
-                           "non-BOND type object")
-            return
-        
-        atom = None
-        for existing in self.bonded_atoms:
-            if existing == ob:
-                atom = existing
-                break
-        else:
-            atom = self.pvt_bonded_atoms.add()
-            atom.object = ob
-        return atom
-    
-    def remove_bonded_atom(self, ob):
-        if not self.type == 'BOND':
-            logger.warning("Something is trying to remove bonded_atom "
-                           "{} ({}) from non-BOND type object {} ({})".format(
-                           ob.name, ob.mb.type, self.name, self.type))
-            return
-        
-        for i, a in enumerate(self.bonded_atoms):
-            if a == ob:
-                self.pvt_bonded_atoms.remove(i)
-                return
-    
-    def draw_properties(self, context, layout, ob):
-        element = context.scene.mb.elements[self.element]
-        mat = ob.material_slots[0].material
-        if context.scene.render.engine == 'CYCLES':
-            atom_color = [mat.node_tree.nodes['Diffuse BSDF'].inputs[0],
-                          "default_value", 40]
-        else:
-            atom_color = [mat, "diffuse_color", 40]
-            
-        props = {
-            "Element": [self, "element", 10],
-            "Name": [self, "atom_name", 20],
-            "Atom radius": [element, "covalent", 30],
-            "Atom color": atom_color,
-            }
-        for label, (data, prop, i) in sorted(props.items(), 
-                                             key=lambda t: t[-1][-1]):
-            layout.prop(data, prop, text=label)
-
-#class mb_action(PropertyGroup):
-    #name = StringProperty(name="Action name")
-    #mode_vector = FloatVectorProperty(
-        #name="Mode vector",
-        #description="Original mode vector for atom as read from file")
 
 
 class mb_molecule(PropertyGroup):
@@ -355,7 +235,7 @@ class mb_molecule(PropertyGroup):
     draw_style = EnumProperty(
         name="Display style", description="Style to draw atoms and bonds",
         items=mb_utils.enums.molecule_styles, default='BAS',
-        update=mb_utils.set_draw_style
+        update=mb_utils.update_draw_style
         )
     radius_type = EnumProperty(
         name="Radius type", description="Type of radius to use as reference",
@@ -495,10 +375,10 @@ class mb_molecule(PropertyGroup):
         collection item. If object is already in collection, just return the
         collection item.
         '''
-        ob.mb.molecule_ident = self.name
-        if not ob.parent == self.objects.parent:
-            ob.parent = self.objects.parent
-            ob.matrix_parent_inverse = self.objects.parent.matrix_world.inverted()
+        ob.mb.parent = self.id_data
+        if not ob.parent == self.id_data:
+            ob.parent = self.id_data
+            ob.matrix_parent_inverse = self.id_data.matrix_world.inverted()
         collection = {
             'ATOM': self.objects.pvt_atoms,
             'BOND': self.objects.pvt_bonds,
@@ -517,7 +397,6 @@ class mb_molecule(PropertyGroup):
         return item
     
     def remove_object(self, ob):
-        ob.mb.molecule_ident = ""
         if ob.parent == self.objects.parent:
             mat = ob.matrix_world.copy()
             ob.parent = None
@@ -533,6 +412,147 @@ class mb_molecule(PropertyGroup):
             if item.object == ob:
                 objects.remove(i)
                 return
+
+
+class mb_object(PropertyGroup):
+    index = IntProperty(name="Index")
+    name = StringProperty(name="Object name")
+    type = EnumProperty(
+        name="type", description="Select the object type",
+        items=mb_utils.enums.object_types, default='NONE')
+    
+    #pvt_parent = PointerProperty(name="Molecule parent",
+                                 #type=mb_object_pointer)
+    
+    #@property
+    #def parent(self):
+        #return self.pvt_parent.object
+    
+    #@parent.setter
+    #def parent(self, ob):
+        #self.pvt_parent.object = ob
+    parent = PointerProperty(name="Molecule parent",
+                             type=bpy.types.Object)
+    
+    # used by type == 'ATOM'
+    pvt_bonds = CollectionProperty(type=mb_object_pointer)
+    @property
+    def bonds(self):
+        return get_object_list(self.pvt_bonds)
+
+    atom_name = StringProperty(name="Atom name")
+    element = StringProperty(
+        name="Element", description="Element Symbol",
+        update=mb_utils.update_atom_element)
+    element_long = StringProperty(
+        name="Element name", description="Full element name")
+    
+    # used by type == 'BOND'
+    pvt_bonded_atoms = CollectionProperty(type=mb_object_pointer)
+    @property
+    def bonded_atoms(self):
+        return get_object_list(self.pvt_bonded_atoms)
+    
+    supercell = IntVectorProperty(name="supercell", default=(0,0,0),
+                                  size=3)
+    
+    # used by type == 'PARENT'
+    molecule = PointerProperty(type=mb_molecule)
+    
+    @property
+    def object(self):
+        return self.id_data
+    @property
+    def world_location(self):
+        return self.id_data.matrix_world.to_translation()
+    
+    def get_molecule(self):
+        try:
+            return self.parent.mb.molecule
+        except AttributeError:
+            logger.error("get_molecule() was called on {}".format(str(self)))
+            raise
+            
+    
+    def add_bond(self, ob):
+        """Add object to bond collection and return new collection item."""
+        if not self.type == 'ATOM':
+            logger.warning("Something is trying to add bond to "
+                           "non-ATOM type object")
+            return None
+        
+        bond = None
+        for existing in self.bonds:
+            if existing == ob:
+                bond = existing
+                break
+        else:
+            bond = self.pvt_bonds.add()
+            bond.object = ob
+        return bond
+    
+    def remove_bond(self, ob):
+        if not self.type == 'ATOM':
+            logger.warning("Something is trying to remove bond from "
+                           "non-ATOM type object")
+            return None
+        for i, b in enumerate(self.bonds):
+            if b == ob:
+                self.pvt_bonds.remove(i)
+                return
+    
+    def add_bonded_atom(self, ob):
+        if not self.type == 'BOND':
+            logger.warning("Something is trying to add bonded_atom to "
+                           "non-BOND type object")
+            return
+        
+        atom = None
+        for existing in self.bonded_atoms:
+            if existing == ob:
+                atom = existing
+                break
+        else:
+            atom = self.pvt_bonded_atoms.add()
+            atom.object = ob
+        return atom
+    
+    def remove_bonded_atom(self, ob):
+        if not self.type == 'BOND':
+            logger.warning("Something is trying to remove bonded_atom "
+                           "{} ({}) from non-BOND type object {} ({})".format(
+                           ob.name, ob.mb.type, self.name, self.type))
+            return
+        
+        for i, a in enumerate(self.bonded_atoms):
+            if a == ob:
+                self.pvt_bonded_atoms.remove(i)
+                return
+    
+    def draw_properties(self, context, layout, ob):
+        element = context.scene.mb.elements[self.element]
+        mat = ob.material_slots[0].material
+        if context.scene.render.engine == 'CYCLES':
+            atom_color = [mat.node_tree.nodes['Diffuse BSDF'].inputs[0],
+                          "default_value", 40]
+        else:
+            atom_color = [mat, "diffuse_color", 40]
+            
+        props = {
+            "Element": [self, "element", 10],
+            "Name": [self, "atom_name", 20],
+            "Atom radius": [element, "covalent", 30],
+            "Atom color": atom_color,
+            }
+        for label, (data, prop, i) in sorted(props.items(), 
+                                             key=lambda t: t[-1][-1]):
+            layout.prop(data, prop, text=label)
+
+#class mb_action(PropertyGroup):
+    #name = StringProperty(name="Action name")
+    #mode_vector = FloatVectorProperty(
+        #name="Mode vector",
+        #description="Original mode vector for atom as read from file")
 
 
 class mb_element(PropertyGroup):
@@ -637,7 +657,6 @@ class mb_scn_info(PropertyGroup):
 class mb_scene(PropertyGroup):
     is_initialized = BoolProperty(default=False)
     elements = CollectionProperty(type=mb_element)
-    molecules = CollectionProperty(type=mb_molecule)
     # index that increases with each added molecule, but doesn't decrease when
     # molecule is deleted.
     molecule_count = IntProperty(name="Molecule counter")
@@ -660,11 +679,18 @@ class mb_scene(PropertyGroup):
                      refine_atoms=None,
                      refine_bonds=None,
                      atom_scales=None):
-        mol = self.molecules.add()
         
+        # create new empty that will be the parent for the molecule
+        parent_ob = bpy.data.objects.new(name_mol, None)
+        parent_ob.empty_draw_type = 'SPHERE'
+        parent_ob.empty_draw_size = 0.3
+        parent_ob.mb.type = 'PARENT'
+        parent_ob.mb.parent = parent_ob
+        self.id_data.objects.link(parent_ob)
+        
+        # now populate the molecule data
+        mol = parent_ob.mb.molecule
         new_id = self.id_generator()
-        while new_id in self.molecules:
-            new_id = self.id_generator()
         mol.name = new_id
         
         mol.index = self.molecule_count
@@ -680,14 +706,9 @@ class mb_scene(PropertyGroup):
             new_scale = mol.atom_scales.add()
             new_scale.name = scale.name
             new_scale.val = scale.val
-        # create new empty that will be the parent for the molecule
-        parent_ob = bpy.data.objects.new(name_mol, None)
-        parent_ob.empty_draw_type = 'SPHERE'
-        parent_ob.empty_draw_size = 0.3
-        self.id_data.objects.link(parent_ob)
+        
         mol.objects.parent = parent_ob
-        parent_ob.mb.molecule_ident = mol.name
-        parent_ob.mb.type = 'PARENT'
+        
         return mol
     
     def remove_molecule(self, mol, only_if_empty=False):
@@ -695,15 +716,15 @@ class mb_scene(PropertyGroup):
         """
         if ((not mol.objects.atoms and not mol.objects.bonds)
             or not only_if_empty):
+            parent = mol.objects.parent
             
             for ob in mol.objects.get_all_objects():
-                self.id_data.objects.unlink(ob)
-                bpy.data.objects.remove(ob)
+                if ob != parent:
+                    self.id_data.objects.unlink(ob)
+                    bpy.data.objects.remove(ob)
             
-            for i, mol_item in enumerate(self.molecules):
-                if mol == mol_item:
-                    self.molecules.remove(i)
-                    return
+            self.id_data.objects.unlink(parent)
+            bpy.data.objects.remove(parent)
 
 
 def register():
