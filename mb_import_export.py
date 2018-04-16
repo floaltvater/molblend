@@ -18,7 +18,9 @@
 
 # set path to mcubes. Needs to be of the same python version as Blender.
 # If installed with pip you can get the path with "pip show mcubes".
+# pymcubes path ###############################################################
 mcubes_path = r"/usr/local/lib/python3.5/dist-packages"
+###############################################################################
 
 if "bpy" in locals():
     import importlib
@@ -45,12 +47,19 @@ A_per_Bohr = 0.529177249
 try:
     import mcubes
 except ImportError:
-    for module, fn in bpy.path.module_names(mcubes_path):
-        if module == "mcubes":
-            import sys
-            if not mcubes_path in sys.path:
-                sys.path.append(mcubes_path)
-            import mcubes
+    import os
+    if os.path.exists(mcubes_path):
+        for module, fn in bpy.path.module_names(mcubes_path):
+            if module == "mcubes":
+                import sys
+                if not mcubes_path in sys.path:
+                    sys.path.append(mcubes_path)
+                try:
+                    import mcubes
+                except ImportError:
+                    logger.warning("mcubes could not be imported. Is it installed for python 3.5?")
+    else:
+        logger.error("Path to mcubes library doesn't exists. If you want to use isosurfaces, please install pymcubes and adjust the mcubes_path in mb_import_export.py.")
 found_mcubes = ("mcubes" in locals())
 
 #--- Read file functions -----------------------------------------------------#
@@ -185,9 +194,23 @@ def import_cube_iso(context,
                 bpy.ops.object.mode_set(mode='EDIT')
                 bpy.ops.mesh.remove_doubles(threshold=0.06)
                 bpy.ops.mesh.normals_make_consistent()
+                bpy.ops.mesh.delete_loose()
                 bpy.ops.object.mode_set(mode='OBJECT')
                 
                 bpy.ops.object.shade_smooth()
+                
+                print("adding subsurf")
+                mod = ob.modifiers.new("Subsurf", 'SUBSURF')
+                print("done")
+                
+                print("adding mod")
+                mod = ob.modifiers.new("Remesh", 'REMESH')
+                mod.octree_depth = 8
+                mod.scale = 0.99
+                mod.use_smooth_shade = True
+                mod.use_remove_disconnected = False
+                mod.mode = 'SMOOTH'
+                print("done")
                 
                 if len(ob.material_slots) < 1:
                     ob.data.materials.append(None)

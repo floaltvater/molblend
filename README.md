@@ -1,8 +1,34 @@
 # MolBlend
 
-This addon for Blender (>2.79) primarily helps to import molecular structures
-of (almost) any kind. In addition it adds some basic functionality to add to
-imported structures, or even draw molecules from scratch.
+This addon for Blender (>=2.79) makes it possible to import molecular 
+structures of (almost) any kind as well as isosurfaces from Gaussian cube 
+files.
+Visualization styles can be adjusted dynamically and are highly customizable.
+In addition MolBlend adds operators to add and change atoms and bonds of 
+imported structures, or even draw everything from scratch.
+
+**WARNING** This addon is still under heavy development. Future updates and 
+bug fixes are not guaranteed to be backwards compatible.
+Starting with the version from 2018-04-16 the addon appends the current git 
+commit ID to scene.mb.info.git_commits when the file is saved.
+If you need to work on a file that has been created with an older revision, 
+you can look up the last commit id by entering 
+`C.scene.mb.info.git_commits[-1]` in the Python console.
+
+If you downloaded the
+addon with git, navigate to the MolBlend folder in a terminal and run 
+`git branch` and note the branch name with the star in front of it (probably
+`master`). Then run `git checkout <commit id>` with the commit ID you saw in
+the Blender Python console. When you are done, go back to the most recent 
+version with `git checkout <branch with star>` with the branch name from
+earlier (without the star). Note that you have to restart Blender after
+running the `git checkout` commands for the different versions to take effect.
+
+Alternatively, go to https://github.com/floaltvater/molblend, click on 
+"XX commits", find the commit you need (by comparing the first 7 letters)
+and click on "<>" next to the commit ID. Then download as zip file and install
+as addon. Make sure Blender sees the correct version that you need (and restart
+if necessary).
 
 ## Import
 ### File formats
@@ -15,10 +41,12 @@ containing vibrations or phonon modes. Currently Quantum ESPRESSO, Abinit
 (anaddb), phonopy and a custom "XYZ" format are supported.
 
 MolBlend can also read the volume data in cube files to create isosurfaces.
-However, to use this feature, you have to install pymcubes on your computer
-and change the path to its library in mb_import_export.py. Make sure that 
+However, to use this feature, you have to install pymcubes 
+(https://github.com/pmneila/PyMCubes)
+and change the path to its library in `mb_import_export.py`. Make sure that 
 the python version for which you install pymcubes is the same as the one
-Blender uses (for Blender 2.79 it is python 3.5).
+Blender uses (for Blender 2.79 it is python 3.5). (See below for more
+instructions.)
 
 I decided to implement all file imports by myself to avoid having to install
 any external dependencies.
@@ -68,12 +96,48 @@ they are connected or not.
 Exporting the structures to different file formats is planned for the future.
 Please let me know if you have any preferences.
 
+## Installing pymcubes
+
+Blender comes with its own bundled Python and numpy. For 2.79 this is 
+Python 3.5. and numpy 1.11. In order to use the isosurface import, you will
+need to install the pymcubes module for these versions. Luckily this is 
+possible through pip. Since the version requirements are rather strict, I 
+recommend installation in a separate environment. Below I use anaconda (
+inspired by https://blender.stackexchange.com/a/76124), but 
+virtualenv should do the job just as well.
+
+First let's create the environment
+```bash
+conda create --name conda-python3.5-blender python=3.5.3
+```
+Then activate the environment to install the packages
+```bash
+source activate conda-python3.5-blender
+```
+When installing we turn the cache off so pip doesn't just use other
+versions it installed previously.
+```
+pip install Cython
+pip install numpy=1.11.2 --no-cache-dirs
+pip install pymcubes --no-cache-dirs
+```
+Finally, we need to get the directory to the pymcubes module.
+```
+pip show pymcubes | grep Location | cut -d":" -f2
+```
+Now open `mb_import_export.py` with the editor of your choice and change the
+`mcubes_path` variable at the very top to match the directory that was printed
+out in the last step.
+
+You can check whether or not Blender finds pymcubes by activating this addon
+and typing `import mcubes` in the Blender Python console.
+
 ## Known issues
 
 - Since every atom and every bond is its own object, large structures soon
   slow down the usage of Blender. Usability depends on the machine you are on.
-  To work with huge structures, look into Bioblender (bioblender.org), or 
-  other addons that use Dupliverts etc.
+  To work with huge structures (like big proteins), look into Bioblender 
+  (bioblender.org), or other addons that use Dupliverts etc.
 - Guessing the bonds is not very efficient or stable, since it compares every
   atom pair to the sum of their covalent radii plus some tolerance.
 - Unit handling is not very elegant. Currently the addon works exclusively in

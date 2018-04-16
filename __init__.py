@@ -21,10 +21,11 @@
 #
 #  Start of project              : 2014-03-28
 
-#  Acknowledgements 
-#  ================
+#  Acknowledgements/Inspirations
+#  =============================
 #  Fluid Designer scripts
 #  pbd/xyz-import addons by Clemens Barth
+#  cellblender
 
 bl_info = {
     "name": "MolBlend",
@@ -49,6 +50,7 @@ else:
 
 import logging
 import os
+import subprocess
 
 import bpy
 from bpy.types import Panel
@@ -60,6 +62,7 @@ from bpy.props import (StringProperty,
                        FloatVectorProperty,
                        PointerProperty,
                        CollectionProperty)
+from bpy.app.handlers import persistent
 
 log_path = os.path.join(bpy.context.user_preferences.filepaths.temporary_directory, "molblend_log.txt")
 log_is_writeable = True
@@ -161,6 +164,7 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout.separator()
         layout.operator("mb.make_static")
         layout.operator("mb.apply_scale")
+
 
 class MB_PT_molecule_properties(MolBlendPropsPanel, Panel):
     bl_label = "Molecule properties"
@@ -280,14 +284,96 @@ class MB_PT_view(MolBlendPanel, Panel):
         row.operator("screen.region_quadview", text="Quadview")
 
 
+def add_handler(handler_list, handler_function):
+    """ Only add a handler if it's not already in the list """
+    if not handler_function in handler_list:
+        handler_list.append(handler_function)
+
+
+def remove_handler(handler_list, handler_function):
+    """ Only remove a handler if it's in the list """
+    if handler_function in handler_list:
+        handler_list.remove(handler_function)
+
+
+def _minimal_ext_cmd(cmd):
+    script_file = os.path.realpath(__file__)
+    cwd = os.path.dirname(script_file)
+    # construct minimal environment
+    env = {}
+    for k in ['SYSTEMROOT', 'PATH']:
+        v = os.environ.get(k)
+        if v is not None:
+            env[k] = v
+    # LANGUAGE is used on win32
+    env['LANGUAGE'] = 'C'
+    env['LANG'] = 'C'
+    env['LC_ALL'] = 'C'
+    pop = subprocess.Popen(cmd, stdout=subprocess.PIPE, env=env, cwd=cwd)
+    out = pop.communicate()[0]
+    return out
+
+
+def git_version():
+    # Return the git revision as a string
+    try:
+        out = _minimal_ext_cmd(['git', 'rev-parse', 'HEAD'])
+        GIT_REVISION = out.strip().decode('ascii')
+    except OSError:
+        GIT_REVISION = "Unknown"
+    return GIT_REVISION
+
+
+def git_date():
+    # Return the git commit date as a unix time stamp string.
+    try:
+        out = _minimal_ext_cmd(['git', 'show', '-s', '--format=%ct', 'HEAD'])
+        GIT_TIMESTAMP = out.strip().decode('ascii')
+        out = _minimal_ext_cmd(['git', 'show', '-s', '--format=%cd', 
+                                '--date=short', 'HEAD'])
+        GIT_DATE = out.strip().decode('ascii')
+    except OSError:
+        GIT_DATE = "Unknown"
+        GIT_TIMESTAMP = "Unknown"
+    return GIT_TIMESTAMP, GIT_DATE
+
+
+@persistent
+def load_handler(dummy):
+    for scn in bpy.data.scenes:
+        if scn.mb.is_initialized:
+            current, date = git_date()
+            if scn.mb.info.git_commits[-1].time_stamp > current:
+                logger.warning("This file was saved with a newer MolBlend"
+                               " git revision than currently in use.")
+
+
+@persistent
+def save_handler(dummy):
+    for scn in bpy.data.scenes:
+        if scn.mb.is_initialized:
+            commits = scn.mb.info.git_commits
+            current = git_version()
+            if len(commits) == 0 or current != commits[-1].commit_id:
+                c = commits.add()
+                c.commit_id = current
+                c.time_stamp, c.date = git_date()
+
+
 def register():
     bpy.utils.register_module(__name__)
     mb_datastructure.register()
+    
+    add_handler(bpy.app.handlers.load_post, load_handler)
+    add_handler(bpy.app.handlers.save_pre, save_handler)
 
 
 def unregister():
     bpy.utils.unregister_module(__name__)
     mb_datastructure.unregister()
+    
+    remove_handler(bpy.app.handlers.load_post, load_handler)
+    remove_handler(bpy.app.handlers.save_pre, save_handler)
 
 
 if __name__ == "__main__":

@@ -624,6 +624,16 @@ class mb_scn_globals(PropertyGroup):
         items=mb_utils.enums.geometries, default='NONE')
 
 
+class mb_git_commit(PropertyGroup):
+    commit_id = StringProperty(name="git commit id")
+    date = StringProperty(name="git commit date")
+    time_stamp = StringProperty(name="git commit time stamp")
+
+
+class mb_scn_info(PropertyGroup):
+    git_commits = CollectionProperty(type=mb_git_commit)
+
+
 class mb_scene(PropertyGroup):
     is_initialized = BoolProperty(default=False)
     elements = CollectionProperty(type=mb_element)
@@ -632,6 +642,7 @@ class mb_scene(PropertyGroup):
     # molecule is deleted.
     molecule_count = IntProperty(name="Molecule counter")
     globals = PointerProperty(type=mb_scn_globals)
+    info = PointerProperty(type=mb_scn_info)
     # store last active object for modal operator
     modal_last_active = PointerProperty(name="Last active", 
                                         type=bpy.types.Object)
