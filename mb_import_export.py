@@ -125,6 +125,7 @@ def import_cube_iso(context,
         else:
             unit = A_per_Bohr
         voxel_vec *= unit
+        origin *= unit
         
         # skip atom info
         for n in range(nat):
@@ -173,6 +174,8 @@ def import_cube_iso(context,
                 # Use marching cubes to obtain the surface mesh of these ellipsoids
                 verts, faces = mcubes.marching_cubes(data*fac, iso)
                 
+                # displace by have a voxel to account for the voxel volume
+                verts += np.array((0.5, 0.5, 0.5))
                 # convert to cartesian coordinates
                 verts = verts.dot(voxel_vec)
                 
@@ -199,18 +202,18 @@ def import_cube_iso(context,
                 
                 bpy.ops.object.shade_smooth()
                 
-                print("adding subsurf")
                 mod = ob.modifiers.new("Subsurf", 'SUBSURF')
-                print("done")
+                mod.show_viewport = False
+                mod.show_render = False
                 
-                print("adding mod")
                 mod = ob.modifiers.new("Remesh", 'REMESH')
                 mod.octree_depth = 8
                 mod.scale = 0.99
                 mod.use_smooth_shade = True
                 mod.use_remove_disconnected = False
                 mod.mode = 'SMOOTH'
-                print("done")
+                mod.show_viewport = False
+                mod.show_render = False
                 
                 if len(ob.material_slots) < 1:
                     ob.data.materials.append(None)
@@ -346,19 +349,19 @@ def import_molecule(context,
             report({'ERROR'}, msg)
             return False
         
+        logger.debug("Found {} frames in {}".format(structure.nframes,
+                                                    filepath))
         if structure.axes and not len(structure.axes) == structure.nframes:
             raise IOError(("Number of unit vectors ({}) and frames ({})"
                             " does not match").format(len(structure.axes), 
                                                       structure.nframes))
-
         molecule["unit_cells"] = structure.axes
         
         if draw_uc and molecule["unit_cells"]:
             # read unit cell and create cube
             unit_cell_obs = mb_utils.draw_unit_cell(molecule, context)
             all_obs.extend(unit_cell_obs)
-            for ob in unit_cell_obs[-3:]:
-                mb_utils.check_ob_dimensions(ob)
+            molecule.objects.unit_cell.origin.location = structure.origin
         elif draw_uc and not molecule["unit_cells"]:
             msg = "No unit cell vectors read."
             logger.warning(msg)

@@ -296,6 +296,7 @@ class MB_Structure():
         self.all_atoms = {}
         self.bonds = {}
         self.axes = []
+        self.origin = [.0, .0, .0]
     
     def guess_bonds(self, tol=0.2):
         '''
@@ -432,7 +433,9 @@ class MB_Structure():
         with open(filepath, "r") as fin:
             next(fin)
             next(fin)
-            nat = abs(int(next(fin).split()[0]))
+            ls = next(fin).split()
+            nat = abs(int(ls[0]))
+            origin = Vector(list(map(float, ls[1:4])))
             nvoxel = np.zeros(3, dtype=int)
             voxel_vec = np.zeros((3,3))
             for i in range(3):
@@ -456,6 +459,9 @@ class MB_Structure():
             
             unit_cell = voxel_vec * nvoxel[:,np.newaxis] * unit
             strc.axes = [[Vector(c) for c in unit_cell]]
+            
+            origin *= unit
+            strc.origin = origin
             
             for n in range(nat):
                 nel, _, x, y, z = list(map(float, next(fin).split()))

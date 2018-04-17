@@ -45,7 +45,8 @@ class enums():
         ('NONE', "None", "None"),
         ('ATOM', "Atom", "Atom"),
         ('BOND', "Bond", "Bond"),
-        ('UC', "unit cell", "unit cell"),
+        ('UC', "Unit cell", "Unit cell"),
+        ('DIPOLE', "Dipole", "Dipole"),
         ('PARENT', "Parent", "Parent"),
         ]
     mesh_types = [
@@ -706,78 +707,108 @@ def get_bond_data(molecule, type='MESH', mesh_name=""):
 
 def get_arrow_data(type='MESH', name="arrow",
                    radius = 0.1, ring_y = 0.9, ring_scale = 2):
+    if type == 'MESH':
+        data = bpy.context.blend_data.meshes.get(name)
+        if not data:
+            # Make arrow mesh
+            bpy.ops.mesh.primitive_cylinder_add(
+                location=(0,0,0), radius=radius, vertices=8, depth=1,
+                end_fill_type="TRIFAN")
+            ob = bpy.context.object
+            ob.data.materials.append(None)
+            
+            # convert cylinder to arrow
+            bm = bmesh.new()
+            bm.from_mesh(ob.data)
+            
+            # rotate and shrink first, then add another row of vertices
+            for vert in bm.verts:
+                # rotate 90 degrees around x, and shift along y axis
+                tmp_co = vert.co.copy()
+                vert.co.y = -tmp_co.z + .5
+                vert.co.z = tmp_co.y
+                if vert.co.y > 0.01:
+                    vert.select = False
+            new_verts = []
+            for edge in bm.edges:
+                if edge.calc_length() == 1.0:
+                    if hasattr(edge, "ensure_lookup_table"):
+                        edge.ensure_lookup_table()
+                    e, v = bmesh.utils.edge_split(edge, edge.verts[0], 0.5)
+                    new_verts.append(v)
+            n_verts = len(new_verts)
+            
+            # bad hack, but don't understand how bmesh.utils.face_split works
+            # remove faces with 6 verts
+            for f in bm.faces:
+                if len(f.verts) == 6:
+                    bm.faces.remove(f)
+            
+            # now sort bm.verts
+            # v.co.y is either 0, 0.5, or 1.0.
+            # So multiply y with at least 4pi to sort by y value first
+            key = lambda v: v.co.y * 15 + math.atan2(v.co.x, v.co.z)
+            verts_sorted = sorted(
+                (v for v in bm.verts if (0 < v.co.length and v.co.length != 1.0)), 
+                key=key
+                )
+            
+            # add new faces
+            for i in range(2*n_verts):
+                v1 = verts_sorted[i]
+                v2 = verts_sorted[(i + 1)%n_verts + n_verts*(i//n_verts)]
+                v3 = verts_sorted[(i + 1)%n_verts + n_verts*(i//n_verts + 1)]
+                v4 = verts_sorted[i + n_verts]
+                f = bm.faces.new((v1, v2, v3, v4))
+            
+            # now shape the arrow head
+            for vert in bm.verts:
+                if vert.co.y == 1.0 and not vert.co.length == 1.0:
+                    vert.co.y = ring_y
+                    vert.co.x = vert.co.x * ring_scale
+                    vert.co.z = vert.co.z * ring_scale
+                elif vert.co.y == 0.5:
+                    vert.co.y = ring_y
+            
+            # make everything smooth
+            for f in bm.faces:
+                f.smooth = True
+            
+            bm.to_mesh(ob.data)
+            bm.free()
+            data = ob.data
+            data.name = name
+            bpy.context.scene.objects.unlink(ob)
+        return data
+
+
+def get_arrow_head_data(name="arrow_head",
+                        radius=0.2, depth=0.5):
     data = bpy.context.blend_data.meshes.get(name)
     if not data:
-        # Make arrow mesh
-        bpy.ops.mesh.primitive_cylinder_add(
-            location=(0,0,0), radius=radius, vertices=8, depth=1,
-            end_fill_type="TRIFAN")
-        ob = bpy.context.object
-        ob.data.materials.append(None)
-        
-        # convert cylinder to arrow
-        bm = bmesh.new()
-        bm.from_mesh(ob.data)
-        
-        # rotate and shrink first, then add another row of vertices
-        for vert in bm.verts:
-            # rotate 90 degrees around x, and shift along y axis
-            tmp_co = vert.co.copy()
-            vert.co.y = -tmp_co.z + .5
-            vert.co.z = tmp_co.y
-            if vert.co.y > 0.01:
-                vert.select = False
-        new_verts = []
-        for edge in bm.edges:
-            if edge.calc_length() == 1.0:
-                if hasattr(edge, "ensure_lookup_table"):
-                    edge.ensure_lookup_table()
-                e, v = bmesh.utils.edge_split(edge, edge.verts[0], 0.5)
-                new_verts.append(v)
-        n_verts = len(new_verts)
-        
-        # bad hack, but don't understand how bmesh.utils.face_split works
-        # remove faces with 6 verts
-        for f in bm.faces:
-            if len(f.verts) == 6:
-                bm.faces.remove(f)
-        
-        # now sort bm.verts
-        # v.co.y is either 0, 0.5, or 1.0.
-        # So multiply y with at least 4pi to sort by y value first
-        key = lambda v: v.co.y * 15 + math.atan2(v.co.x, v.co.z)
-        verts_sorted = sorted(
-            (v for v in bm.verts if (0 < v.co.length and v.co.length != 1.0)), 
-            key=key
-            )
-        
-        # add new faces
-        for i in range(2*n_verts):
-            v1 = verts_sorted[i]
-            v2 = verts_sorted[(i + 1)%n_verts + n_verts*(i//n_verts)]
-            v3 = verts_sorted[(i + 1)%n_verts + n_verts*(i//n_verts + 1)]
-            v4 = verts_sorted[i + n_verts]
-            f = bm.faces.new((v1, v2, v3, v4))
-        
-        # now shape the arrow head
-        for vert in bm.verts:
-            if vert.co.y == 1.0 and not vert.co.length == 1.0:
-                vert.co.y = ring_y
-                vert.co.x = vert.co.x * ring_scale
-                vert.co.z = vert.co.z * ring_scale
-            elif vert.co.y == 0.5:
-                vert.co.y = ring_y
-        
-        # make everything smooth
-        for f in bm.faces:
-            f.smooth = True
-        
-        bm.to_mesh(ob.data)
-        bm.free()
+        bpy.ops.mesh.primitive_cone_add(
+            location=(0,0,0), radius1=radius, 
+            vertices=16, depth=depth,
+            end_fill_type="NGON")
+        ob = bpy.context.active_object
+        bpy.ops.object.shade_smooth()
         data = ob.data
+        for v in data.vertices:
+            v.co[2] -= depth/2.
         data.name = name
         bpy.context.scene.objects.unlink(ob)
     return data
+
+
+def get_arrow_bevel_circle(name="arrow_bevel",
+                           radius=0.1):
+    ob = bpy.context.blend_data.objects.get(name)
+    if not ob:
+        bpy.ops.curve.primitive_bezier_circle_add(
+            location=(0,0,0), radius=radius)
+        ob = bpy.context.active_object
+        ob.name = name
+    return ob
 
 
 #--- Driver setting functions ------------------------------------------------#
@@ -916,54 +947,175 @@ def draw_dipole(mol, dipole_vec, context):
     
     remove_dipole(mol, context)
     
+    radius = 0.08
+    head_radius = .2
+    head_depth = .5
+    
+    all_obs = []
+    # add empty as origin
+    origin_ob = bpy.data.objects.new("Dipole_{}".format(mol.name), 
+                                     None)
+    origin_ob.empty_draw_size = 0.5
+    context.scene.objects.link(origin_ob)
+    origin_ob.parent = mol.objects.parent
+    mol.objects.dipole.origin = origin_ob
+    origin_ob.mb.parent = mol.objects.parent
+    all_obs.append(origin_ob)
+    
     # add empty as stretch target
     dipole_ob = bpy.data.objects.new(
-        "{}_dipole_target".format(mol.name), None)
+        "dipole_target_{}".format(mol.name), None)
     dipole_ob.empty_draw_type = 'SINGLE_ARROW'
     dipole_ob.empty_draw_size = 0.5
     context.scene.objects.link(dipole_ob)
-    mol.objects.dipole.empty = dipole_ob
+    mol.objects.dipole.target = dipole_ob
     dipole_ob.location = dipole_vec
-    dipole_ob.parent = mol.objects.parent
+    dipole_ob.parent = origin_ob
+    dipole_ob.mb.parent = mol.objects.parent
+    all_obs.append(dipole_ob)
     
     material = bpy.data.materials.get('dipole_{}'.format(mol.name))
     if not material:
         material = new_material('dipole_{}'.format(mol.name),
                                 color=(1,0,0))
+    head_mesh = get_arrow_head_data(
+            name='dipole_head_{}'.format(mol.name),
+            radius=head_radius, depth=head_depth
+            )
+    bevel_ob = get_arrow_bevel_circle(
+        radius=radius,
+        name="dipole_bevel_{}".format(mol.name)
+        )
     # add arrow object
-    arrow_mesh = get_arrow_data()
-    arrow_ob = bpy.data.objects.new("dipole_{}".format(mol.name),
-                                    arrow_mesh)
-    arrow_ob.material_slots[0].link = 'OBJECT'
-    arrow_ob.material_slots[0].material = material
-    arrow_ob.parent = mol.objects.parent
-    context.scene.objects.link(arrow_ob)
-    context.scene.objects.active = arrow_ob
-    mol.objects.dipole.arrow = arrow_ob
-
-    c = arrow_ob.constraints.new('STRETCH_TO')
-    c.name = "mb.stretch"
-    c.rest_length = 1.0
-    c.volume = 'NO_VOLUME'
-    c.target = dipole_ob
+    curve_ob, head_ob = draw_arrow(
+        context, origin_ob, dipole_ob, head_mesh, bevel_ob, material=material,
+        name_pre="dipole", name_post=mol.name
+        )
     
-    loc = dipole_ob.location
-    if loc/loc.length == Vector((1,0,0)):
-        c = ob.constraints.get("mb.stretch", None)
-        c.keep_axis = 'PLANE_Z'
+    for ob in (bevel_ob, curve_ob, head_ob):
+        ob.parent = origin_ob
+        all_obs.append(ob)
+        mol.add_object(ob, parent_to_mol=False, type='DIPOLE')
     
-    return [dipole_ob, arrow_ob]
+    return [origin_ob, dipole_ob, curve_ob, head_ob]
 #--- Unit cell functions -----------------------------------------------------#
 
-def draw_unit_cell(molecule, context, draw_style='ARROWS'):
-    # TODO implement different drawing styles
+
+def draw_arrow(context, origin, target, head_mesh, bevel_ob,
+               material=None,
+               name_pre="", name_post=""):
+    if name_pre:
+        name_pre = "{}_".format(name_pre)
+    if name_post:
+        name_post = "_{}".format(name_post)
     
+    cu = bpy.data.curves.new(
+        "{}bz{}".format(name_pre, name_post),
+        type='CURVE'
+        )
+    cu.dimensions = '3D'
+    cu.resolution_u = 1
+    bz = cu.splines.new('BEZIER')
+    bz.bezier_points.add(2-len(bz.bezier_points))
+    bz.bezier_points[0].co = (0, 0, 0)
+    
+    # add driver to second point
+    bp = bz.bezier_points[1]
+    fc_list = bp.driver_add("co", -1)
+    for dim, fcurve in enumerate(fc_list):
+        drv = fcurve.driver
+        drv.type = 'AVERAGE'
+        drv.show_debug_info = True
+
+        var_name = name_pre
+        var = drv.variables.get(var_name)
+        if not var:
+            var = drv.variables.new()
+            var.name = var_name
+            var.type = 'TRANSFORMS'
+        targ = var.targets[0]
+        targ.id = target
+        targ.transform_type = "LOC_{}".format('XYZ'[dim])
+        targ.transform_space = 'LOCAL_SPACE'
+    
+    curve_ob = bpy.data.objects.new(
+        "{}bz{}".format(name_pre, name_post), cu)
+    context.scene.objects.link(curve_ob)
+    if material:
+        curve_ob.data.materials.append(None)
+        curve_ob.material_slots[0].link = 'OBJECT'
+        curve_ob.material_slots[0].material = material
+    
+    head_ob = bpy.data.objects.new(
+        "{}arrowhead{}".format(name_pre, name_post),
+        head_mesh)
+    context.scene.objects.link(head_ob)
+    if material:
+        head_ob.data.materials.append(None)
+        head_ob.material_slots[0].link = 'OBJECT'
+        head_ob.material_slots[0].material = material
+    mod = head_ob.modifiers.new(name='mb.bevel', type='BEVEL')
+    mod.width = 0.01
+    mod.segments = 3
+    mod.limit_method = 'ANGLE'
+    mod.angle_limit = 90
+    
+    # The next two constraints are needed to keep arrowhead in place
+    # even if unit cell is moved
+    c = head_ob.constraints.new('COPY_LOCATION')
+    c.name = "mb.loc"
+    c.target = curve_ob
+    c.target_space = 'LOCAL'
+    c.owner_space = 'WORLD'
+    
+    c = head_ob.constraints.new('COPY_ROTATION')
+    c.name = "mb.rot"
+    c.target = curve_ob
+    c.target_space = 'LOCAL'
+    c.owner_space = 'WORLD'
+    
+    # puts the arrow head at the end of the path
+    c = head_ob.constraints.new('FOLLOW_PATH')
+    c.name = "mb.head"
+    c.target = curve_ob
+    c.use_curve_follow = True
+    c.use_fixed_location = True
+    c.offset_factor = 1.0
+    c.forward_axis = 'FORWARD_Z'
+    c.up_axis = 'UP_Y'
+    
+    cu.bevel_object = bevel_ob
+    cu.bevel_factor_mapping_start = 'SPLINE'
+    cu.bevel_factor_mapping_end = 'SPLINE'
+    # add driver to bevel end so that bevel ends just after head begins
+    fcurve = cu.driver_add('bevel_factor_end')
+    drv = fcurve.driver
+    drv.type = 'SCRIPTED'
+    drv.show_debug_info = True
+
+    var_name = 'length'
+    var = drv.variables.get(var_name)
+    if not var:
+        var = drv.variables.new()
+        var.name = var_name
+        var.type = 'LOC_DIFF'
+    targ = var.targets[0]
+    targ.id = origin
+    targ = var.targets[1]
+    targ.id = target
+    drv.expression = "1 - {}/length + 0.01".format(head_ob.dimensions[2])
+    
+    return [curve_ob, head_ob]
+
+def draw_unit_cell(molecule, context, draw_style='ARROWS'):
+
     mol_uc = molecule.objects.unit_cell
 
     # first remove old unit cell if present
     remove_unit_cell(molecule, context)
     
     all_obs = []
+    special_obs = []
     
     if not "unit_cells" in molecule or not molecule["unit_cells"]:
         logger.error("No unit cell information present")
@@ -971,7 +1123,19 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
     
     unit_vectors = Matrix(molecule["unit_cells"][0])
     
-    me = bpy.data.meshes.new("unit_cell_{}".format(molecule.name))
+    # first create new empty as origin
+    uc_origin = bpy.data.objects.new("Unit_cell_{}".format(molecule.name), 
+                                     None)
+    uc_origin.empty_draw_type = "CUBE"
+    uc_origin.empty_draw_size = 0.3
+    context.scene.objects.link(uc_origin)
+    uc_origin.parent = molecule.objects.parent
+    special_obs.append(uc_origin)
+    mol_uc.origin = uc_origin
+    
+    # now create the unit cell frame
+    # upper case so it shows up at the top of the outliner list
+    me = bpy.data.meshes.new("Unit_cell_{}".format(molecule.name))
     # setting the coordinates is technically unneccesary, since I'm adding 
     # drivers later. It does look nicer though then setting everything to 0.
     coords = (
@@ -993,28 +1157,30 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
         (7, 2, 3, 6),
         )
     me.from_pydata(coords, [], faces)
-    uc_cube = bpy.data.objects.new("unit_cell_{}".format(molecule.name), me)
+    uc_cube = bpy.data.objects.new("uc_frame_{}".format(molecule.name), me)
     context.scene.objects.link(uc_cube)
-    uc_cube.draw_type = 'WIRE'
-    uc_cube.hide_render = True
+    uc_cube.parent = uc_origin
+
+    # instead of drawing in wireframe, add wireframe modifier, so it's ready
+    # to be rendered
+    mod = uc_cube.modifiers.new("mb.wireframe", 'WIREFRAME')
+    mod.thickness = 0.1
+    mod.crease_weight = 1.0
+    mod.offset = -1
     
     all_obs.append(uc_cube)
-    uc_cube.mb.type = 'UC'
-    uc_cube.parent = molecule.objects.parent
 
     # add empties
-    uc_empties = []
-    for dim, ax in enumerate(unit_vectors):
+    for axdim, ax in enumerate(unit_vectors):
         uc_empty = bpy.data.objects.new(
-            "{}_uc_{}".format("abc"[dim], molecule.name), None)
+            "{}_uc_{}".format("abc"[axdim], molecule.name), None)
         uc_empty.empty_draw_type = 'ARROWS'
         uc_empty.empty_draw_size = 0.5
         context.scene.objects.link(uc_empty)
         uc_empty.location = ax
-        uc_empty.parent = molecule.objects.parent
-        uc_empty.mb.type = 'UC'
-        uc_empties.append(uc_empty)
-        setattr(mol_uc, "abc"[dim], uc_empty)
+        uc_empty.parent = uc_origin
+        special_obs.append(uc_empty)
+        setattr(mol_uc, "abc"[axdim], uc_empty)
         
         if len(molecule["unit_cells"]) > 1:
             anim_data = uc_empty.animation_data_create()
@@ -1028,7 +1194,7 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
                 fcu = action.fcurves.new(data_path="location", index=dim)
                 fcu.group = ag
                 for nf in range(len(molecule["unit_cells"])):
-                    loc = molecule["unit_cells"][nf][dim]
+                    loc = molecule["unit_cells"][nf][axdim][dim]
                     fcu.keyframe_points.add(1)
                     fcu.keyframe_points[-1].co = nf + 1, loc
                     fcu.keyframe_points[-1].interpolation = 'LINEAR'
@@ -1079,7 +1245,9 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
     vg[-1].add([4], 1, 'REPLACE')
     
     if 'ARROWS' in draw_style:
-        radius = 0.1
+        radius = 0.08
+        head_radius = .2
+        head_depth = .5
         # get material
         material = bpy.data.materials.get('axes_{}'.format(molecule.name))
         if not material:
@@ -1089,60 +1257,67 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
         # add sphere at origin
         bpy.ops.mesh.primitive_uv_sphere_add(location=(0,0,0), size=radius, 
                                              segments=8, ring_count=8)
-        ob = context.object
-        ob.name = "unit_cell_origin"
-        ob.parent = uc_cube
+        sphere_ob = context.object
+        sphere_ob.name = "unit_cell_origin_{}".format(molecule.name)
         #ob.parent_type = 'VERTEX'
-        ob.data.materials.append(None)
-        ob.material_slots[0].link = 'OBJECT'
-        ob.material_slots[0].material = material
-        all_obs.append(ob)
+        sphere_ob.data.materials.append(None)
+        sphere_ob.material_slots[0].link = 'OBJECT'
+        sphere_ob.material_slots[0].material = material
+        all_obs.append(sphere_ob)
         
-        arrow_mesh = get_arrow_data(radius=radius)
-        
-        for dim, vec in enumerate(unit_vectors):
-            ob = bpy.data.objects.new(
-                "{}_uc_arrow_{}".format("abc"[dim], molecule.name),
-                arrow_mesh)
-            ob.parent = uc_cube
-            ob.material_slots[0].link = 'OBJECT'
-            ob.material_slots[0].material = material
-            #ob.parent_type = 'VERTEX'
-            context.scene.objects.link(ob)
-            context.scene.objects.active = ob
-            
-            c = ob.constraints.new('STRETCH_TO')
-            c.name = "mb.stretch"
-            c.rest_length = 1.0
-            c.volume = 'NO_VOLUME'
-            #c.target = getattr(mol_uc, "abc"[dim])
-            c.target = uc_cube
-            c.subtarget = vg[dim].name
-            all_obs.append(ob)
-        
-            loc = unit_vectors[dim]
-            if loc/loc.length == Vector((1,0,0)):
-                c.keep_axis = 'PLANE_Z'
+        head_mesh = get_arrow_head_data(
+            name='arrow_head_{}'.format(molecule.name),
+            radius=head_radius, depth=head_depth
+            )
+        bevel_ob = get_arrow_bevel_circle(
+            radius=radius,
+            name="arrow_bevel_{}".format(molecule.name)
+            )
+        all_obs.append(bevel_ob)
+        for axdim, vec in enumerate(unit_vectors):
+            origin = uc_origin
+            target = getattr(mol_uc, "abc"[axdim])
+
+            arrow_obs = draw_arrow(context, origin, target,
+                                   head_mesh, bevel_ob, material=material,
+                                   name_pre="{}_uc".format("abc"[axdim]),
+                                   name_post=molecule.name)
+            all_obs.extend(arrow_obs)
     
     for ob in all_obs:
-        ob.mb.type = 'UC'
-        molecule.add_object(ob)
+        ob.parent = uc_origin
+        ob.mb.parent = molecule.objects.parent
+        molecule.add_object(ob, parent_to_mol=False, type='UC')
     
-    return all_obs + uc_empties
+    for ob in special_obs:
+        ob.mb.type = 'UC'
+        ob.mb.parent = molecule.objects.parent
+    
+    return all_obs + special_obs
 
 
 def remove_dipole(mol, context):
-    for o in ("empty", "arrow"):
+    for o in ("origin", "target"):
         ob = getattr(mol.objects.dipole, o, None)
         if ob:
             if ob.name in context.scene.objects:
                 context.scene.objects.unlink(ob)
             bpy.data.objects.remove(ob)
         setattr(mol.objects.dipole, o, None)
+    for ob in mol.objects.dipole.objects:
+        mol.remove_object(ob)
+        if ob.name in context.scene.objects:
+            context.scene.objects.unlink(ob)
+        bpy.data.objects.remove(ob)
 
 
 def remove_unit_cell(mol, context):
     mol_uc = mol.objects.unit_cell
+    ob = mol_uc.origin
+    if ob:
+        if ob.name in context.scene.objects:
+            context.scene.objects.unlink(ob)
+        bpy.data.objects.remove(ob)
     for ax in "abc":
         ob = getattr(mol_uc, ax, None)
         if ob:
@@ -1155,8 +1330,6 @@ def remove_unit_cell(mol, context):
         if ob.name in context.scene.objects:
             context.scene.objects.unlink(ob)
         bpy.data.objects.remove(ob)
-    # "calling" the list again will update it and remove all items
-    mol_uc.objects
 
 #--- Material functions ------------------------------------------------------#
 

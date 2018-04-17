@@ -596,6 +596,55 @@ class MB_OT_draw_unit_cell(Operator):
         
         return {'FINISHED'}
 
+class MB_OT_toggle_unit_cell_arrows(Operator):
+    bl_idname = "mb.toggle_unit_cell_arrows"
+    bl_label = "Toggle unit cell arrows"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    @classmethod
+    def poll(self, context):
+        return (context.object and context.object.mb.get_molecule()
+                and context.object.mb.get_molecule().objects.unit_cell.a)
+    
+    def invoke(self, context, event):
+        return self.execute(context)
+    
+    def execute(self, context):
+        mol = context.object.mb.get_molecule()
+        # determine toggle value from last object in list
+        hide = None
+        for ob in mol.objects.unit_cell.objects:
+            if ob and not 'frame' in ob.name:
+                hide = (not ob.hide) if hide == None else hide
+                ob.hide = hide
+                ob.hide_render = hide
+        
+        return {'FINISHED'}
+
+class MB_OT_toggle_unit_cell_frame(Operator):
+    bl_idname = "mb.toggle_unit_cell_frame"
+    bl_label = "Toggle unit cell arrows"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    @classmethod
+    def poll(self, context):
+        return (context.object and context.object.mb.get_molecule()
+                and context.object.mb.get_molecule().objects.unit_cell.a)
+    
+    def invoke(self, context, event):
+        return self.execute(context)
+    
+    def execute(self, context):
+        mol = context.object.mb.get_molecule()
+        # determine toggle value from last object in list
+        for ob in mol.objects.unit_cell.objects:
+            if ob and 'frame' in ob.name:
+                ob.hide = (not ob.hide)
+                ob.hide_render = ob.hide
+                break
+        
+        return {'FINISHED'}
+    
 class MB_OT_draw_dipole(Operator):
     bl_idname = "mb.draw_dipole"
     bl_label = "Draw dipole of molecule"

@@ -52,7 +52,10 @@ def get_object_list(colprop):
         else:
             delete.append(i)
     for d in delete[::-1]:
-        colprop.remove(d)
+        try:
+            colprop.remove(d)
+        except AttributeError:
+            pass
     return all_obs
 
 class mb_object_pointer(PropertyGroup):
@@ -85,23 +88,37 @@ class mb_atom_mode(PropertyGroup):
     vec = FloatVectorProperty(name="vector", subtype="XYZ")
 
 class mb_dipole(PropertyGroup):
-    pvt_empty = PointerProperty(name="Dipole", type=mb_object_pointer)
+    pvt_origin = PointerProperty(name="origin", type=mb_object_pointer)
     @property
-    def empty(self):
-        return self.pvt_empty.object
-    @empty.setter
-    def empty(self, ob):
-        self.pvt_empty.object = ob
+    def origin(self):
+        return self.pvt_origin.object
+    @origin.setter
+    def origin(self, ob):
+        self.pvt_origin.object = ob
+    
+    pvt_target = PointerProperty(name="Dipole", type=mb_object_pointer)
+    @property
+    def target(self):
+        return self.pvt_target.object
+    @target.setter
+    def target(self, ob):
+        self.pvt_target.object = ob
         
-    pvt_arrow = PointerProperty(name="Vector", type=mb_object_pointer)
+    pvt_objects = CollectionProperty(name="Dipole arrow objects", 
+                                     type=mb_object_pointer)
     @property
-    def arrow(self):
-        return self.pvt_arrow.object
-    @arrow.setter
-    def arrow(self, ob):
-        self.pvt_arrow.object = ob
+    def objects(self):
+        return get_object_list(self.pvt_objects)
     
 class mb_unit_cell(PropertyGroup):
+    pvt_origin = PointerProperty(name="origin", type=mb_object_pointer)
+    @property
+    def origin(self):
+        return self.pvt_origin.object
+    @origin.setter
+    def origin(self, ob):
+        self.pvt_origin.object = ob
+
     pvt_a = PointerProperty(name="a", type=mb_object_pointer)
     @property
     def a(self):
@@ -110,7 +127,7 @@ class mb_unit_cell(PropertyGroup):
     def a(self, ob):
         self.pvt_a.object = ob
     
-    pvt_b = PointerProperty(name="Unit cell base", type=mb_object_pointer)
+    pvt_b = PointerProperty(name="b", type=mb_object_pointer)
     @property
     def b(self):
         return self.pvt_b.object
@@ -118,7 +135,7 @@ class mb_unit_cell(PropertyGroup):
     def b(self, ob):
         self.pvt_b.object = ob
     
-    pvt_c = PointerProperty(name="Unit cell base", type=mb_object_pointer)
+    pvt_c = PointerProperty(name="c", type=mb_object_pointer)
     @property
     def c(self):
         return self.pvt_c.object
@@ -166,8 +183,10 @@ class mb_molecule_objects(PropertyGroup):
         all_obs.extend(self.atoms)
         all_obs.extend(self.bonds)
         all_obs.extend(self.other)
-        for ob in (self.dipole.empty,
-                   self.dipole.arrow,
+        for ob in (self.dipole.origin,
+                   self.dipole.target,
+                   self.dipole.objects,
+                   self.unit_cell.origin,
                    self.unit_cell.a,
                    self.unit_cell.b,
                    self.unit_cell.c):
@@ -301,7 +320,8 @@ class mb_molecule(PropertyGroup):
     def draw_properties(self, layout):
         layout.prop(self.objects.parent, "name")
         layout.label("(id: '{}')".format(self.name))
-        
+        if 'unit_cells' in self and len(self['unit_cells']) > 1:
+            layout.label("Number of frames: {}".format(len(self['unit_cells'])))
         if self.objects.parent:
             col = layout.column()
             col.prop(self.objects.parent, "location", 
@@ -309,18 +329,24 @@ class mb_molecule(PropertyGroup):
         layout.operator("mb.center_mol_parent")
 
     def draw_dipole_props(self, layout):
-        if self.objects.dipole.empty:
+        if (self.objects.dipole.target and 
+            self.objects.dipole.target.name in bpy.context.scene.objects):
             col = layout.column()
-            col.prop(self.objects.dipole.empty, "location", 
+            col.prop(self.objects.dipole.target, "location", 
                      text="")
-            mat = self.objects.dipole.arrow.material_slots[0].material
-            if bpy.context.scene.render.engine == 'CYCLES':
-                data = mat.node_tree.nodes['Diffuse BSDF'].inputs[0]
-                prop = "default_value"
-            else:
-                data = mat
-                prop = "diffuse_color"
-            layout.prop(data, prop, text="Color")
+            mat = None
+            for ob in self.objects.dipole.objects:
+                if ob.material_slots:
+                    mat = ob.material_slots[0].material
+                    break
+            if mat:
+                if bpy.context.scene.render.engine == 'CYCLES':
+                    data = mat.node_tree.nodes['Diffuse BSDF'].inputs[0]
+                    prop = "default_value"
+                else:
+                    data = mat
+                    prop = "diffuse_color"
+                layout.prop(data, prop, text="Color")
             layout.operator("mb.remove_dipole")
         else:
             layout.operator("mb.draw_dipole")
@@ -337,12 +363,16 @@ class mb_molecule(PropertyGroup):
             col = row.column()
             col.prop(self.objects.unit_cell.c, "location", text="c")
             
-            mat = None
+            ob_frame = None
+            ob_not_frame = None
             for ob in self.objects.unit_cell.objects:
-                if ob.material_slots:
-                    mat = ob.material_slots[0].material
-                    break
-            if mat:
+                if 'frame' in ob.name:
+                    ob_frame = ob
+                elif 'arrowhead' in ob.name:
+                    ob_arrow = ob
+            
+            if ob_arrow and ob_arrow.material_slots:
+                mat = ob.material_slots[0].material
                 if bpy.context.scene.render.engine == 'CYCLES':
                     data = mat.node_tree.nodes['Diffuse BSDF'].inputs[0]
                     prop = "default_value"
@@ -350,6 +380,20 @@ class mb_molecule(PropertyGroup):
                     data = mat
                     prop = "diffuse_color"
                 layout.prop(data, prop, text="Color")
+            
+            layout.prop(ob_frame.modifiers['mb.wireframe'], 'thickness',
+                        text="Frame thickness")
+        
+            if ob_arrow.hide:
+                txt = "Show arrows"
+            else:
+                txt = "Hide arrows"
+            layout.operator("mb.toggle_unit_cell_arrows", text=txt)
+            if ob_frame.hide:
+                txt = "Show frame"
+            else:
+                txt = "Hide frame"
+            layout.operator("mb.toggle_unit_cell_frame", text=txt)
             layout.operator("mb.remove_unit_cell")
         else:
             layout.operator("mb.draw_unit_cell")
@@ -369,20 +413,23 @@ class mb_molecule(PropertyGroup):
                                              key=lambda t: t[-1][-1]):
             layout.prop(data, prop)
     
-    def add_object(self, ob):
+    def add_object(self, ob, parent_to_mol=True, type=None):
         '''
         Add an object to the molecule's atoms collection and return the
         collection item. If object is already in collection, just return the
         collection item.
         '''
-        ob.mb.parent = self.id_data
-        if not ob.parent == self.id_data:
+        if type != None:
+            ob.mb.type = type
+        ob.mb.parent = self.objects.parent
+        if parent_to_mol and not ob.parent == self.id_data:
             ob.parent = self.id_data
             ob.matrix_parent_inverse = self.id_data.matrix_world.inverted()
         collection = {
             'ATOM': self.objects.pvt_atoms,
             'BOND': self.objects.pvt_bonds,
             'UC': self.objects.unit_cell.pvt_objects,
+            'DIPOLE': self.objects.dipole.pvt_objects,
             'NONE': self.objects.pvt_other
             }
         objects = collection[ob.mb.type]
@@ -405,6 +452,7 @@ class mb_molecule(PropertyGroup):
             'ATOM': self.objects.pvt_atoms,
             'BOND': self.objects.pvt_bonds,
             'UC': self.objects.unit_cell.pvt_objects,
+            'DIPOLE': self.objects.dipole.pvt_objects,
             'NONE': self.objects.pvt_other
             }
         objects = collection[ob.mb.type]
@@ -470,9 +518,7 @@ class mb_object(PropertyGroup):
         try:
             return self.parent.mb.molecule
         except AttributeError:
-            logger.error("get_molecule() was called on {}".format(str(self)))
-            raise
-            
+            return None
     
     def add_bond(self, ob):
         """Add object to bond collection and return new collection item."""
@@ -722,9 +768,10 @@ class mb_scene(PropertyGroup):
                 if ob != parent:
                     self.id_data.objects.unlink(ob)
                     bpy.data.objects.remove(ob)
-            
-            self.id_data.objects.unlink(parent)
-            bpy.data.objects.remove(parent)
+            if parent:
+                if parent in self.id_data.objects:
+                    self.id_data.objects.unlink(parent)
+                bpy.data.objects.remove(parent)
 
 
 def register():

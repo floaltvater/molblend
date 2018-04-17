@@ -102,8 +102,8 @@ Blender comes with its own bundled Python and numpy. For 2.79 this is
 Python 3.5. and numpy 1.11. In order to use the isosurface import, you will
 need to install the pymcubes module for these versions. Luckily this is 
 possible through pip. Since the version requirements are rather strict, I 
-recommend installation in a separate environment. Below I use anaconda (
-inspired by https://blender.stackexchange.com/a/76124), but 
+recommend installation in a separate environment. Below I use anaconda 
+(inspired by https://blender.stackexchange.com/a/76124), but 
 virtualenv should do the job just as well.
 
 First let's create the environment
@@ -134,6 +134,9 @@ and typing `import mcubes` in the Blender Python console.
 
 ## Known issues
 
+- If parts of Molecules are deleted by hand that shouldn't be (like the
+  Molecule parent, parts of the unit cell, etc. things can break. I am working
+  on an operator that tries to fix molecules again if that happens on accident.
 - Since every atom and every bond is its own object, large structures soon
   slow down the usage of Blender. Usability depends on the machine you are on.
   To work with huge structures (like big proteins), look into Bioblender 
@@ -143,6 +146,15 @@ and typing `import mcubes` in the Blender Python console.
 - Unit handling is not very elegant. Currently the addon works exclusively in
   Angstrom (like guessing bonds), and converts, or tries to convert, imported
   files to that unit.
+- Imported isosurfaces often have very uneven meshes, which show up as kinks
+  when rendered. This is a drawback of the marching cubes algorithm used. I
+  couldn't find a better algorithm that is readily available as a (relatively
+  easy to install) python package. As a workaround, the script adds two 
+  modifiers to each isosurface that are both disabled by default. Simply go to
+  the modifiers panel and activate them (toggling the render and eye symbol on)
+  if you want nicer looking isosurfaces. Be warned, however, that the result is
+  not guaranteed to be sscientifically accurate. (Luckily, modifiers are non-
+  destructive...)
 - Currently MolBlend doesn't support double/triple bonds, or other even less
   common bonds.
 - Duplication (Shift+D, Alt+D) and combining of molecules doesn't update the
