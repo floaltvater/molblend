@@ -86,12 +86,15 @@ else:
 chandler = logging.StreamHandler()
 chandler.setLevel(logging.DEBUG)
 chandler.setFormatter(term_formatter)
-logger.addHandler(chandler)
 
 if log_is_writeable:
     fhandler = logging.FileHandler(log_path, mode ='w')
     fhandler.setLevel(logging.INFO)
     fhandler.setFormatter(file_formatter)
+
+# avoid duplicate handlers if addon is reloaded in Blender (via F8)
+if not len(logger.handlers):
+    logger.addHandler(chandler)
     logger.addHandler(fhandler)
 
 logger.info("Writing log to file {}".format(log_path))

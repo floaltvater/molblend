@@ -574,7 +574,7 @@ class MB_Structure():
             
             for i, element in enumerate(elements):
                 line = next(fin)
-                coords = list(map(float, line.split()))
+                coords = list(map(float, line.split()[:3]))
                 location = cell_matrix * Vector(coords)
                 
                 atom_name = "{}{}".format(element.capitalize(), i)
@@ -767,9 +767,13 @@ class MB_Structure():
             if ionmov > 0:
                 for line in fin:
                     if "Iteration" in line:
-                        strc.nframes += 1
-                        while "---OUTPUT" not in line:
-                            line = next(fin)
+                        try:
+                            while "---OUTPUT" not in line:
+                                line = next(fin)
+                        except StopIteration:
+                            msg = "File {} ended prematurely"
+                            logger.warning(msg.format(filepath_abi))
+                            break
                         next(fin)
                         next(fin)
                         for i in range(natom):
@@ -780,8 +784,13 @@ class MB_Structure():
                         # now find cell
                         if optcell > 0:
                             stop = "Real space primitive translations (rprimd)"
-                            while stop not in line:
-                                line = next(fin)
+                            try:
+                                while stop not in line:
+                                    line = next(fin)
+                            except StopIteration:
+                                msg = "File {} ended prematurely"
+                                logger.warning(msg.format(filepath_abi))
+                                break
                             pattern = "\(rprimd\) \[([a-z]+)\]"
                             unit = re.search(pattern, line).group(1)
                             if unit.lower() == "bohr":
@@ -798,6 +807,7 @@ class MB_Structure():
                                 xyz = [float(f) for f in next(fin).split()]
                                 rprimd.append(Vector(xyz) * fac)
                             strc.axes.append(rprimd)
+                        strc.nframes += 1
                     elif "== DATASET" in line:
                         break
         if strc.nframes > 1 and len(strc.axes) == 1:

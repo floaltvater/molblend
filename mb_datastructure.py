@@ -26,6 +26,7 @@ import os
 import string
 import random
 import logging
+import numpy as np
 
 import bpy
 from bpy.types import (PropertyGroup,
@@ -357,11 +358,20 @@ class mb_molecule(PropertyGroup):
                 and self.objects.unit_cell.c):
             row = layout.row()
             col = row.column()
-            col.prop(self.objects.unit_cell.a, "location", text="a")
+            avec = self.objects.unit_cell.a
+            bvec = self.objects.unit_cell.b
+            cvec = self.objects.unit_cell.c
+            col.prop(avec, "location", text="a")
             col = row.column()
-            col.prop(self.objects.unit_cell.b, "location", text="b")
+            col.prop(bvec, "location", text="b")
             col = row.column()
-            col.prop(self.objects.unit_cell.c, "location", text="c")
+            col.prop(cvec, "location", text="c")
+            
+            # unit cell volume
+            vol = np.absolute(np.dot(avec.location, 
+                                     np.cross(bvec.location,
+                                              cvec.location)))
+            layout.label("Volume: {:5.3f} {}".format(vol, u"\u212B\u00B3"))
             
             ob_frame = None
             ob_not_frame = None
@@ -383,7 +393,7 @@ class mb_molecule(PropertyGroup):
             
             layout.prop(ob_frame.modifiers['mb.wireframe'], 'thickness',
                         text="Frame thickness")
-        
+            
             if ob_arrow.hide:
                 txt = "Show arrows"
             else:
