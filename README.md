@@ -101,15 +101,25 @@ Please let me know if you have any preferences.
 Blender comes with its own bundled Python and numpy. For 2.79 this is 
 Python 3.5. and numpy 1.11. In order to use the isosurface import, you will
 need to install the pymcubes module for these versions. Luckily this is 
-possible through pip. Since the version requirements are rather strict, I 
-recommend installation in a separate environment. Below I use anaconda 
-(inspired by https://blender.stackexchange.com/a/76124), but 
-virtualenv should do the job just as well.
+possible through pip (a python package manager). Since the version 
+requirements are rather strict, I recommend installation in a separate 
+environment. Below I have instructions using anaconda (inspired by 
+https://blender.stackexchange.com/a/76124) 
+or virtualenv and Blender's python executable (thanks, Felipe!).
 
-First let's create the environment
+If you have another way to install it, or suggestions on how to improve
+these instructions, please let me know!
+
+**Disclaimer:** These are not fail-safe instructions and I take no 
+responsibility if you mess up your system by following them.
+
+### Using anaconda
+
+First let's create the environment.
 ```bash
 conda create --name conda-python3.5-blender python=3.5.3
 ```
+You can use any other name besides `conda-python3.5-blender`. 
 Then activate the environment to install the packages
 ```bash
 source activate conda-python3.5-blender
@@ -118,8 +128,8 @@ When installing we turn the cache off so pip doesn't just use other
 versions it installed previously.
 ```
 pip install Cython
-pip install numpy=1.11.2 --no-cache-dirs
-pip install pymcubes --no-cache-dirs
+pip install numpy==1.11.2 --no-cache-dir
+pip install pymcubes --no-cache-dir
 ```
 Finally, we need to get the directory to the pymcubes module.
 ```
@@ -131,6 +141,25 @@ out in the last step.
 
 You can check whether or not Blender finds pymcubes by activating this addon
 and typing `import mcubes` in the Blender Python console.
+
+### Using virtualenv and Blender's python executable
+
+(Courtesy of Felipe Jornada. This apparently worked on OSX 10.11.6 (Capitain),
+where installation with the macports python installation didn't work. 
+
+1) Use get-pip.py to install pip using the python3.5 binary shipped with 
+   Blender.
+
+2) Use this custom pip to install virtualenv, and create a new virtual 
+   environment.
+
+3) Install Cython, pymcubes + dependencies. Since Blender does not ship with
+   Python3 headers, I had to use the following command to install pymcubes:
+```
+CC=clang CXX=clang++ CPATH="/opt/local/Library/Frameworks/Python.framework/Versions/3.5/include/python3.5m" python venv/bin/pip install pymcubes
+```
+
+4) Adjust the path to pymcubes in your molblend script.
 
 ## Known issues
 
