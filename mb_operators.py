@@ -890,6 +890,8 @@ class MD_OT_import_molecules(bpy.types.Operator):
     #scale_distances = FloatProperty (
         #name = "Distances", default=1.0, min=0.0001,
         #description = "Scale factor for all distances")
+    auto_unit = BoolProperty(default=True,
+        description="If checked unit of atom coordinates is read from file.")
     length_unit = EnumProperty(
         name="Unit",
         description="Unit in input file, will be converted to Angstrom",
@@ -1000,6 +1002,7 @@ class MD_OT_import_molecules(bpy.types.Operator):
                     self.refine_bonds,
                     self.bond_material,
                     self.bond_type,
+                    self.auto_unit,
                     scale_distances,
                     self.bond_guess,
                     self.put_origin,
@@ -1030,9 +1033,12 @@ class MD_OT_import_molecules(bpy.types.Operator):
         
         layout.separator()
         layout.label("Units")
-        layout.prop(self, "length_unit", text="")
+        layout.prop(self, "auto_unit", text="Automatic units")
         row = layout.row()
-        row.active = (self.length_unit == 'OTHER')
+        row.active = (not self.auto_unit)
+        row.prop(self, "length_unit", text="")
+        row = layout.row()
+        row.active = (not self.auto_unit and self.length_unit == 'OTHER')
         row.prop(self, "length_unit_other")
         
         layout.separator()

@@ -290,12 +290,29 @@ class MB_Modes(list):
         return all_qpts
 
 class MB_Structure():
+    """
+    This is a class for reading and importing structure files. It handles
+    unit conversions and bond guessing.
     
+    Variables:
+    nframes:        Number of frames. Each atom must have nframes coordinates,
+                    and if axes are present, there must be nframes of them.
+    all_atoms:      dictionary of all atoms that contains element, name
+                    coordinates, id, and the supercell the atom is in
+    atom_unit:      unit of atom coordinates at read time
+    bonds:          bond information contained in file, and after guessing
+    axes:           unit cell axes of structure if present
+    axes_unit:      unit of axes at read time
+    origin:         where the origin of the unit cell sits 
+                    (in units of axes_unit)
+    """
     def __init__(self):
         self.nframes = 0
         self.all_atoms = {}
+        self.atom_unit = ""
         self.bonds = {}
         self.axes = []
+        self.axes_unit = ""
         self.origin = [.0, .0, .0]
     
     def guess_bonds(self, tol=0.2):
@@ -384,6 +401,7 @@ class MB_Structure():
     
     @classmethod
     def from_file(cls, filepath,
+                  auto_unit=True,
                   unit_fac=1.0):
         read_funcs = {
             "xyz": cls._read_xyz_file,
@@ -411,9 +429,51 @@ class MB_Structure():
         
         structure = read_funcs[fmt](filepath)
         
-        if unit_fac != 1.0:
-            for atom in structure.all_atoms.values():
-                atom["coords"] = [loc*unit_fac for loc in atom["coords"]]
+        if structure.axes and not len(structure.axes) == structure.nframes:
+            raise IOError(("Number of unit vectors ({}) and frames ({})"
+                            " does not match").format(len(structure.axes), 
+                                                      structure.nframes))
+        # now convert all numbers
+        unit = {
+            "angstrom": 1.0,
+            "bohr": A_per_Bohr
+            }
+        if len(structure.axes):
+            try:
+                fac = unit[structure.axes_unit]
+            except KeyError:
+                msg = "Axes unit '{}' unknown. This is probably a bug in {}"
+                msg = msg.format(structure.axes_unit, read_funcs[fmt].__name__)
+                raise KeyError(msg)
+            for i in range(len(structure.axes)):
+                structure.axes[i] = list(fac * np.array(structure.axes[i]))
+            structure.origin *= fac
+        
+        if structure.atom_unit == "crystal":
+            if not auto_unit:
+                msg = "It looks like atom coordinates are in crystal units,"
+                msg += " while user requested '{}'.".format(unit_fac)
+                logger.warning(msg)
+            else:
+                if not structure.axes:
+                    msg = "Atom unit in crystal, but no axes present. "
+                    msg += "Probably a bug in {}".format(read_funcs[fmt].__name__)
+                    raise IOError(msg)
+                cell_mats = [Matrix(ax).transposed() for ax in strc.axes]
+        else:
+            fac = unit[structure.atom_unit] if auto_unit else unit_fac
+            cell_mats = [fac] * structure.nframes
+        
+        for atom in structure.all_atoms.values():
+            if not len(cell_mats) == len(atom['coords']):
+                msg = "List of conversion factors has wrong length ({}) "
+                msg += "compared to number of coordinates ({}). "
+                msg += "This should not have happened..."
+                raise ValueError(msg.format(len(cell_mats),
+                                            len(atom['coords'])))
+            for n, (m, c) in enumerate(zip(cell_mats, atom['coords'])):
+                atom['coords'][n] = m * Vector(c)
+        
         return structure
     
     @classmethod
@@ -444,7 +504,7 @@ class MB_Structure():
                 voxel_vec[i,:] = list(map(float, (x, y, z)))
             
             if (nvoxel<0).all():
-                unit = 1
+                strc.axes_unit = "angstrom"
             elif (nvoxel<0).any():
                 msg = (
                     "{} ".format(filepath) +
@@ -455,12 +515,11 @@ class MB_Structure():
                 report({'ERROR'}, msg)
                 return False
             else:
-                unit = A_per_Bohr
+                strc.axes_unit = "bohr"
             
-            unit_cell = voxel_vec * nvoxel[:,np.newaxis] * unit
+            unit_cell = voxel_vec * nvoxel[:,np.newaxis]
             strc.axes = [[Vector(c) for c in unit_cell]]
             
-            origin *= unit
             strc.origin = origin
             
             for n in range(nat):
@@ -470,8 +529,9 @@ class MB_Structure():
                 strc.all_atoms[n] = {
                         "element": element,
                         "name": element,
-                        "coords": [Vector((x, y, z))*A_per_Bohr], # always in Bohr!
+                        "coords": [Vector((x, y, z))], # always in Bohr!
                         "id": n}
+        strc.atom_unit = "bohr"
         return strc
     
     @classmethod
@@ -513,21 +573,18 @@ class MB_Structure():
             z = Vector((dzx, dzy, dzz))
             strc.axes([[x, y, z]])
         
-        cell_matrix = Matrix.Identity(3)
         if "reduced" in keywords:
-            cell_matrix = Matrix(strc.axes[0]).transposed()
+            strc.atom_unit = "crystal"
         for s in ("bohr", "bohrd0", "atomic", "atomicd0"):
             if s in keywords:
-                cell_matrix = cell_matrix*A_per_Bohr
-        if cell_matrix != Matrix.Identity(3):
-            for atom in strc.all_atoms.values():
-                atom['coords'] = [cell_matrix*c for c in atom['coords']]
+                strc.axes_unit = "bohr"
+                strc.atom_unit = strc.atom_unit or "bohr"
         if "freeBC" in keywords:
             # unit cell for 0D system doesn't make sense and might be
             # zero anyway, leading to all kinds of problems
             strc.axes = []
         
-            
+        
     @classmethod
     def _read_POSCAR_file(cls, filepath_vasp):
         
@@ -567,22 +624,21 @@ class MB_Structure():
             # The next character determines format of coordinates.
             # - in cartesian coordinates
             if line[0] in "CcKk":
-                cell_matrix = Matrix.Identity(3)
+                strc.atom_units = "angstrom"
             # - fractional coordinates
             elif line[0] in "Dd":
-                cell_matrix = Matrix(strc.axes).transposed()
+                strc.atom_units = "crystal"
             
             for i, element in enumerate(elements):
                 line = next(fin)
                 coords = list(map(float, line.split()[:3]))
-                location = cell_matrix * Vector(coords)
-                
                 atom_name = "{}{}".format(element.capitalize(), i)
                 strc.all_atoms[i] = {"element": element,
                                      "name": atom_name,
-                                     "coords": [location],
+                                     "coords": [coords],
                                      "id": i}
         strc.axes = [strc.axes]
+        strc.axes_unit = "angstrom"
         strc.nframes += 1
         return strc
     
@@ -688,18 +744,19 @@ class MB_Structure():
                       and re.search("acell +( [ .0-9E+-]+){3}.*", line)):
                     acell_split = line.split()
                     acell = Vector([float(f) for f in acell_split[1:4]])
-                    acell_unit = A_per_Bohr
+                    acell_unit = "bohr"
                     if len(acell_split) == 5:
                         if acell_split[-1].startswith("Ang"):
-                            acell_unit = 1.0
+                            acell_unit = "angstrom"
                         elif acell_split[-1] == "Bohr":
-                            acell_unit = A_per_Bohr
+                            acell_unit = "bohr"
                         else:
                             msg = ("WARNING: Didn't understand acell unit in "
                                    + "{} ({})".format(filepath_abi,
                                                       acell_split[-1]))
                             logger.warning(msg)
-                    acell *= acell_unit
+                            acell_unit = "angstrom"
+                    strc.axes_unit = acell_unit
                 elif "natom" in line and re.search("natom +[0-9]+", line):
                     natom = int(line.split()[-1])
                 elif "ndtset" in line and re.search("ndtset +[0-9]+", line):
@@ -733,17 +790,18 @@ class MB_Structure():
                         msg = "ERROR: natom should be defined before typat"
                         logger.error(msg)
                         logger.error(e)
-                elif ("xangst" in line
-                      and re.search("xangst +( [ .0-9E+-]+){3} *", line)):
+                elif ("xcart" in line
+                      and re.search("xcart +( [ .0-9E+-]+){3} *", line)):
                     try:
-                        xangst = []
+                        xcart = []
                         ls = line.split()
-                        xangst.append(Vector([float(f) for f in ls[1:4]]))
-                        while len(xangst) < natom:
-                            xangst.append(Vector([float(f) 
+                        strc.atom_unit = "bohr"
+                        xcart.append(Vector([float(f) for f in ls[1:4]]))
+                        while len(xcart) < natom:
+                            xcart.append(Vector([float(f) 
                                                   for f in next(fin).split()]))
                     except NameError:
-                        msg = "ERROR: natom should be defined before xangst"
+                        msg = "ERROR: natom should be defined before xcart"
                         logger.error(msg)
                         logger.error(e)
                 elif "znucl" in line and re.search("znucl +( [.0-9]+)+", line):
@@ -757,7 +815,7 @@ class MB_Structure():
                 elif "== DATASET" in line:
                     # compile all information
                     strc.nframes += 1
-                    for i, (el, location) in enumerate(zip(elements, xangst)):
+                    for i, (el, location) in enumerate(zip(elements, xcart)):
                         atom_name = "{}{}".format(el.capitalize(), i)
                         strc.all_atoms[i] = {"element": el,
                                              "name": atom_name,
@@ -778,7 +836,7 @@ class MB_Structure():
                         next(fin)
                         for i in range(natom):
                             ls = next(fin).split()
-                            coord = Vector([float(f) for f in ls]) * A_per_Bohr
+                            coord = Vector([float(f) for f in ls])
                             strc.all_atoms[i]["coords"].append(coord)
                         
                         # now find cell
@@ -793,10 +851,14 @@ class MB_Structure():
                                 break
                             pattern = "\(rprimd\) \[([a-z]+)\]"
                             unit = re.search(pattern, line).group(1)
-                            if unit.lower() == "bohr":
-                                fac = A_per_Bohr
-                            elif unit.lower().startswith("ang"):
+                            if unit.lower()[:3] == strc.axes_unit[:3]:
                                 fac = 1.0
+                            elif (unit.lower().startswith("ang")
+                                  and strc.axes == "bohr"):
+                                fac = 1.0/A_per_Bohr
+                            elif (unit.lower() == "bohr"
+                                  and strc.axes == "angstrom"):
+                                fac = A_per_Bohr
                             else:
                                 msg = ("WARNING: Scale of Primitive Cell unit"
                                        + " not recognized ({})".format(unit))
@@ -822,10 +884,10 @@ class MB_Structure():
         
         strc = cls()
         
-        
         all_frames = []
         all_atoms = {}
         double = False
+        strc.atom_unit = "angstrom"
         with open(filepath_pdb, "r") as fin:
             i = -1
             for line in fin:
@@ -844,6 +906,7 @@ class MB_Structure():
                     cz = math.sqrt(c*c - cx*cx - cy*cy)
                     cvec = Vector((cx,cy,cz))
                     strc.axes.append([avec, bvec, cvec])
+                    strc.axes_unit = "angstrom"
                 
                 elif line[:6] == 'HETATM' or line[:4] == 'ATOM':
                     i += 1
@@ -910,7 +973,7 @@ class MB_Structure():
                         )
         
         if strc.nframes > 1 and len(strc.axes) == 1:
-            strc.axes = [strc.axes for i in range(strc.nframe)]
+            strc.axes = [strc.axes for i in range(strc.nframes)]
         
         return strc
     
@@ -932,24 +995,22 @@ class MB_Structure():
                         alat = float(al)
                     elif "CELL_PARAMETERS" in keyval.upper():
                         if re.search("bohr|cubic", line):
-                            unit = A_per_Bohr
+                            strc.axes_unit = "bohr"
                         else:
-                            unit = 1.0
+                            strc.axes_unit = "angstrom"
                         for i in range(3):
                             line = next(fin)
                             coords = list(map(float, line.split()))
-                            strc.axes.append(Vector(coords) * unit)
+                            strc.axes.append(Vector(coords))
                     elif "ATOMIC_POSITIONS" in keyval.upper():
-                        # set correct conversion matrix
-                        cell_matrix = Matrix.Identity(3)
                         if "angstrom" in line.lower():
-                            cell_matrix = 1.0
+                            strc.atom_unit = "angstrom"
                         elif "bohr" in line.lower():
-                            cell_matrix = A_per_Bohr * cell_matrix
+                            strc.atom_unit = "bohr"
                         elif "crystal" in line.lower():
                             # process at the end when both atomic coordinates and 
                             # vectors are read for certain
-                            crystal_units = True
+                            strc.atom_unit = "crystal"
                             # get unit vectors
                         elif "alat" in line.lower():
                             msg = ("Unit of ATOMIC_POSITIONS in "
@@ -967,7 +1028,6 @@ class MB_Structure():
                             line = line.strip()
                             split_line = line.split()
                             coords = list(map(float, split_line[1:4]))
-                            location = cell_matrix * Vector(coords)
 
                             element = split_line[0]
                             atom_name = "{}{}".format(element.capitalize(), i)
@@ -978,13 +1038,8 @@ class MB_Structure():
                             
                             strc.all_atoms[i] = {"element": element,
                                                  "name": atom_name,
-                                                 "coords": [location],
+                                                 "coords": [coords],
                                                  "id": i}
-            if crystal_units:
-                cell_matrix = Matrix(strc.axes).transposed()
-                for i in strc.all_atoms:
-                    location = cell_matrix * strc.all_atoms[i]["coords"][0]
-                    strc.all_atoms[i]["coords"][0] = location
 
         strc.axes = [strc.axes]
         strc.nframes += 1
@@ -992,23 +1047,28 @@ class MB_Structure():
     
     @classmethod
     def _read_qe_rlx_output_file(cls, filepath):
+        # This doesn't abide 100% by the rule: read the raw numbers first,
+        # convert afterwards, since the units might be jumbled. Will convert
+        # everything into Angstrom
         
         strc = cls()
         
+        strc.axes_unit = "angstrom"
+        strc.atom_unit = "angstrom"
         with open(filepath, 'r') as fin:
             # read all parameters
             for line in fin:
                 if "number of atoms/cell" in line:
                     n_atoms = int(line.split()[-1])
                 elif "lattice parameter (alat)" in line:
-                    alat = A_per_Bohr * float(line.split()[-2])
+                    alat = float(line.split()[-2]) * A_per_Bohr
                 elif "crystal axes: (cart. coord. in units of alat)" in line:
                     unit_vectors = []
                     for i in range(3):
                         line = fin.readline()
                         coords = list(map(float, line.split()[3:6]))
                         unit_vectors.append(Vector(coords) * alat)
-                    self.axes.append(unit_vectors)
+                    strc.axes.append(unit_vectors)
                 elif "Cartesian axes" in line:
                     break
             
@@ -1043,8 +1103,8 @@ class MB_Structure():
                     # vc-relax calculation
                     if "alat" in line:
                         pattern = r"CELL_PARAMETERS \(alat=(.+)\)$"
-                        alat = float(re.match(pattern,
-                                            line).group(1)) * A_per_Bohr
+                        alat = A_per_Bohr * float(re.match(pattern,
+                                                           line).group(1))
                     elif "angstrom" in line:
                         alat = 1.0
                     unit_vectors = []
@@ -1052,7 +1112,7 @@ class MB_Structure():
                         line = fin.readline()
                         coords = list(map(float, line.split()))
                         unit_vectors.append(Vector(coords) * alat)
-                    self.axes.append(unit_vectors)
+                    strc.axes.append(unit_vectors)
                 
                 if "ATOMIC_POSITIONS" in line:
                     strc.nframes += 1
@@ -1063,7 +1123,7 @@ class MB_Structure():
                         cell_matrix = A_per_Bohr #* Matrix.Identity(3)
                     elif "crystal" in line.lower():
                         # get unit vectors
-                        cell_matrix = Matrix(self.axes[-1]).transposed()
+                        cell_matrix = Matrix(strc.axes[-1]).transposed()
                     elif "alat" in line.lower():
                         cell_matrix = alat #* Matrix.Identity(3)
                     else:

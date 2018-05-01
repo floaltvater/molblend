@@ -321,6 +321,7 @@ def import_molecule(context,
                     refine_bonds,
                     bond_material,
                     bond_type,
+                    auto_unit,
                     scale_distances,
                     bond_guess,
                     put_origin,
@@ -338,6 +339,7 @@ def import_molecule(context,
         
         structure = mb_io_files.MB_Structure.from_file(
             filepath,
+            auto_unit=auto_unit,
             unit_fac=scale_distances,
             )
         
@@ -351,10 +353,7 @@ def import_molecule(context,
         
         logger.debug("Found {} frames in {}".format(structure.nframes,
                                                     filepath))
-        if structure.axes and not len(structure.axes) == structure.nframes:
-            raise IOError(("Number of unit vectors ({}) and frames ({})"
-                            " does not match").format(len(structure.axes), 
-                                                      structure.nframes))
+
         molecule["unit_cells"] = structure.axes
         
         if draw_uc and molecule["unit_cells"]:
