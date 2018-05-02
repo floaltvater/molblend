@@ -287,6 +287,36 @@ class MB_PT_view(MolBlendPanel, Panel):
         row.operator("screen.region_quadview", text="Quadview")
 
 
+class MB_PT_info(MolBlendPanel, Panel):
+    global git_commit_id, git_timestamp, git_date
+    bl_label = "Info"
+    bl_options = {'DEFAULT_CLOSED'}
+    
+    def draw(self, context):
+        
+        gc = context.scene.mb.info.git_commits
+        
+        layout = self.layout
+        box = layout.box()
+        box.label("Current git commit:")
+        split = box.split(0.3)
+        col = split.column()
+        col.label("ID:")
+        col.label("date:")
+        col = split.column()
+        col.label(git_commit_id[:6])
+        col.label(git_date)
+        if len(gc):
+            box.label("Saved git commit:")
+            split = box.split(0.3)
+            col = split.column()
+            col.label("ID:")
+            col.label("date:")
+            col = split.column()
+            col.label(gc[-1].commit_id[:6])
+            col.label(gc[-1].date)
+
+
 def add_handler(handler_list, handler_function):
     """ Only add a handler if it's not already in the list """
     if not handler_function in handler_list:
@@ -341,29 +371,50 @@ def git_date():
     return GIT_TIMESTAMP, GIT_DATE
 
 
+git_commit_id = git_version()
+git_timestamp, git_date = git_date()
+logger.debug("git commit: {}, {}".format(git_commit_id[:6], git_date))
+
+
 @persistent
 def load_handler(dummy):
+    global git_commit_id, git_timestamp, git_date
     for scn in bpy.data.scenes:
         if scn.mb.is_initialized:
-            current, date = git_date()
-            if scn.mb.info.git_commits[-1].time_stamp > current:
-                logger.warning("This file was saved with a newer MolBlend"
-                               " git revision than currently in use.")
+            gc = bpy.context.scene.mb.info.git_commits
+            if len(gc) == 0 or git_commit_id != gc[-1].commit_id:
+                msg = "The current git commit is {} than the last one this"
+                msg += " scene has seen."
+                msg = msg.format("newer" if not len(gc) or gc[-1].time_stamp < git_timestamp
+                                 else "older")
+                logger.warning(msg)
+                if len(gc):
+                    msg = "last:    {}, {}".format(gc[-1].commit_id[:6], 
+                                                   gc[-1].date)
+                    logger.warning(msg)
+                else:
+                    logger.warning("last: this version didn't save commit id")
+                logger.warning("current: {}, {}".format(git_commit_id[:6],
+                                                        git_date))
 
 
 @persistent
 def save_handler(dummy):
+    global git_commit_id, git_timestamp, git_date
     for scn in bpy.data.scenes:
         if scn.mb.is_initialized:
             commits = scn.mb.info.git_commits
-            current = git_version()
-            if len(commits) == 0 or current != commits[-1].commit_id:
+            if len(commits) == 0 or git_commit_id != commits[-1].commit_id:
                 c = commits.add()
-                c.commit_id = current
-                c.time_stamp, c.date = git_date()
+                c.commit_id = git_commit_id
+                c.time_stamp = git_timestamp
+                c.date = git_date
+                msg = "Added commit {} to scn.mb.info.git_commits"
+                logger.debug(msg.format(git_commit_id))
 
 
 def register():
+    
     bpy.utils.register_module(__name__)
     mb_datastructure.register()
     
@@ -375,7 +426,7 @@ def unregister():
     bpy.utils.unregister_module(__name__)
     mb_datastructure.unregister()
     
-    remove_handler(bpy.app.handlers.load_post, load_handler)
+    remove_handler(bpy.app.handlers.lost_post, load_handler)
     remove_handler(bpy.app.handlers.save_pre, save_handler)
 
 
