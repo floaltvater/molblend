@@ -426,7 +426,7 @@ class MB_Structure():
                     fmt = "qe_input"
                 elif "BFGS Geometry Optimization" in lines:
                     fmt = "qe_output"
-        
+        logger.debug("Reading {} as {} file.".format(filepath, fmt))
         structure = read_funcs[fmt](filepath)
         
         if structure.axes and not len(structure.axes) == structure.nframes:
@@ -447,20 +447,22 @@ class MB_Structure():
                 raise KeyError(msg)
             for i in range(len(structure.axes)):
                 structure.axes[i] = list(fac * np.array(structure.axes[i]))
-            structure.origin *= fac
+            structure.origin = Vector(structure.origin) * fac
         
         if structure.atom_unit == "crystal":
             if not auto_unit:
                 msg = "It looks like atom coordinates are in crystal units,"
                 msg += " while user requested '{}'.".format(unit_fac)
                 logger.warning(msg)
+                cell_mats = [unit_fac] * structure.nframes
             else:
                 if not structure.axes:
                     msg = "Atom unit in crystal, but no axes present. "
                     msg += "Probably a bug in {}".format(read_funcs[fmt].__name__)
                     raise IOError(msg)
-                cell_mats = [Matrix(ax).transposed() for ax in strc.axes]
+                cell_mats = [Matrix(ax).transposed() for ax in structure.axes]
         else:
+            # override automatic unit here if user chose to
             fac = unit[structure.atom_unit] if auto_unit else unit_fac
             cell_mats = [fac] * structure.nframes
         
@@ -556,6 +558,7 @@ class MB_Structure():
                         "name": ls[-1],
                         "coords": [list(map(float, ls[:3]))],
                         "id": nat}
+                    nat += 1
         # postprocess based on keywords
         if 'angdeg' in keywords:
             alpha, beta, gamma = np.deg2rad((bc, ac, ab))
@@ -569,9 +572,9 @@ class MB_Structure():
             return np.array((avec, bvec, cvec))
         else:
             x = Vector((dxx, 0, 0))
-            y = Vector((dyz, dyy, 0))
+            y = Vector((dyx, dyy, 0))
             z = Vector((dzx, dzy, dzz))
-            strc.axes([[x, y, z]])
+            strc.axes = [[x, y, z]]
         
         if "reduced" in keywords:
             strc.atom_unit = "crystal"
@@ -579,11 +582,14 @@ class MB_Structure():
             if s in keywords:
                 strc.axes_unit = "bohr"
                 strc.atom_unit = strc.atom_unit or "bohr"
+        strc.axes_unit = strc.axes_unit or "angstrom"
+        strc.atom_unit = strc.atom_unit or "angstrom"
         if "freeBC" in keywords:
             # unit cell for 0D system doesn't make sense and might be
             # zero anyway, leading to all kinds of problems
             strc.axes = []
-        
+        strc.nframes = 1
+        return strc
         
     @classmethod
     def _read_POSCAR_file(cls, filepath_vasp):
@@ -611,6 +617,7 @@ class MB_Structure():
             # probably elements
             elements_list = next(fin).split()
             try:
+                # in the old POSCAR the atom types were not specified.
                 n_atoms = map(int, elements_list)
                 elements = ["Default"] * sum(n_atoms)
             except ValueError:
@@ -624,11 +631,10 @@ class MB_Structure():
             # The next character determines format of coordinates.
             # - in cartesian coordinates
             if line[0] in "CcKk":
-                strc.atom_units = "angstrom"
+                strc.atom_unit = "angstrom"
             # - fractional coordinates
             elif line[0] in "Dd":
-                strc.atom_units = "crystal"
-            
+                strc.atom_unit = "crystal"
             for i, element in enumerate(elements):
                 line = next(fin)
                 coords = list(map(float, line.split()[:3]))
@@ -646,6 +652,8 @@ class MB_Structure():
     def _read_xyz_file(cls, filepath_xyz):
         
         strc = cls()
+        # assume that this is in angstrom
+        strc.atom_unit = "angstrom"
         
         all_frames = []
         

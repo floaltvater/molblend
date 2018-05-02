@@ -364,7 +364,7 @@ def import_molecule(context,
         elif draw_uc and not molecule["unit_cells"]:
             msg = "No unit cell vectors read."
             logger.warning(msg)
-            self.report({'WARNING'}, msg)
+            report({'WARNING'}, msg)
         
         if sum(supercell) > 3:
             structure.create_supercell(supercell)
@@ -436,8 +436,11 @@ def import_molecule(context,
         # select all objects and make parent active
         bpy.ops.object.select_all(action="DESELECT")
         context.scene.objects.active = molecule.objects.parent
-        for ob in all_obs:
-            ob.select = True
+        #for ob in all_obs:
+            #ob.select = True
+        
+        return True
+
     except:
         # if something bad happend, delete all objects and re-raise
         logger.debug("Trying to delete all newly imported objects.")
@@ -445,8 +448,8 @@ def import_molecule(context,
         for ob in all_obs:
             context.scene.objects.unlink(ob)
             bpy.data.objects.remove(ob)
-        raise
+        logger.exception('')
+        return False
         
-    return True
 
 

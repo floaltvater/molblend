@@ -852,7 +852,7 @@ class MD_OT_import_molecules(bpy.types.Operator):
     #--- molecule properties -------------------------------------------------#
     name_mol = StringProperty(
         name="Molecule Name", description="Name of imported molecule",
-        default="Molecule") # human readable name
+        default="")
     bond_material = EnumProperty(
         name="Bond material", description="Choose bond material",
         items=mb_utils.enums.bond_material, default='ATOMS')
@@ -952,16 +952,18 @@ class MD_OT_import_molecules(bpy.types.Operator):
         files = set([os.path.join(self.directory, f.name) for f in self.files])
         files.add(bpy.path.abspath(self.filepath))
         
-        done = False
+        all_molecules = []
+        all_good = False
         for filepath in files:
             if not os.path.exists(filepath):
                 logger.error(
                     "mb.import_molecules: {} not found".format(filepath)
                     )
                 continue
-        
+            
+            name_mol = self.name_mol or os.path.basename(filepath)
             new_molecule = context.scene.mb.new_molecule(
-                                name_mol=self.name_mol,
+                                name_mol=name_mol,
                                 draw_style=self.draw_style,
                                 radius_type=self.radius_type,
                                 bond_radius=self.bond_radius,
@@ -969,7 +971,6 @@ class MD_OT_import_molecules(bpy.types.Operator):
                                 refine_bonds=self.refine_bonds,
                                 atom_scales=self.atom_scales)
             
-            ## check if select_frames is ok, otherwise import first frame only
             error_list = []
             
             mask = bpy.data.objects.get(self.use_mask)
@@ -992,39 +993,38 @@ class MD_OT_import_molecules(bpy.types.Operator):
             else:
                 scale_distances = float(self.length_unit)
             # Execute main routine
-            try:
-                worked = mb_import_export.import_molecule(
-                    context,
-                    self.report,
-                    filepath,
-                    new_molecule,
-                    self.refine_atoms,
-                    self.refine_bonds,
-                    self.bond_material,
-                    self.bond_type,
-                    self.auto_unit,
-                    scale_distances,
-                    self.bond_guess,
-                    self.put_origin,
-                    self.parent_center,
-                    mask_planes,
-                    self.mask_flip,
-                    self.draw_unit_cell,
-                    self.supercell,
-                    )
-            except:
-                worked = False
-                raise
-            finally:
-                if not worked:
-                    context.scene.mb.remove_molecule(new_molecule)
-                done = worked or done
-        if not done:
+            worked = mb_import_export.import_molecule(
+                context,
+                self.report,
+                filepath,
+                new_molecule,
+                self.refine_atoms,
+                self.refine_bonds,
+                self.bond_material,
+                self.bond_type,
+                self.auto_unit,
+                scale_distances,
+                self.bond_guess,
+                self.put_origin,
+                self.parent_center,
+                mask_planes,
+                self.mask_flip,
+                self.draw_unit_cell,
+                self.supercell,
+                )
+            if not worked:
+                context.scene.mb.remove_molecule(new_molecule)
+            else:
+                all_molecules.append(new_molecule)
+            all_good = worked and all_good
+        
+        for mol in all_molecules:
+            for ob in mol.objects.get_all_objects():
+                ob.select = True
+        if not all_good:
             return {'CANCELLED'}
         else:
             return {'FINISHED'}
-
-
 
     def draw(self, context):
         layout = self.layout
