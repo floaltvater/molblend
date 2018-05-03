@@ -89,22 +89,9 @@ class mb_atom_mode(PropertyGroup):
     vec = FloatVectorProperty(name="vector", subtype="XYZ")
 
 class mb_dipole(PropertyGroup):
-    pvt_origin = PointerProperty(name="origin", type=mb_object_pointer)
-    @property
-    def origin(self):
-        return self.pvt_origin.object
-    @origin.setter
-    def origin(self, ob):
-        self.pvt_origin.object = ob
+    origin = PointerProperty(name="origin", type=bpy.types.Object)    
+    target = PointerProperty(name="Dipole", type=bpy.types.Object)
     
-    pvt_target = PointerProperty(name="Dipole", type=mb_object_pointer)
-    @property
-    def target(self):
-        return self.pvt_target.object
-    @target.setter
-    def target(self, ob):
-        self.pvt_target.object = ob
-        
     pvt_objects = CollectionProperty(name="Dipole arrow objects", 
                                      type=mb_object_pointer)
     @property
@@ -112,37 +99,10 @@ class mb_dipole(PropertyGroup):
         return get_object_list(self.pvt_objects)
     
 class mb_unit_cell(PropertyGroup):
-    pvt_origin = PointerProperty(name="origin", type=mb_object_pointer)
-    @property
-    def origin(self):
-        return self.pvt_origin.object
-    @origin.setter
-    def origin(self, ob):
-        self.pvt_origin.object = ob
-
-    pvt_a = PointerProperty(name="a", type=mb_object_pointer)
-    @property
-    def a(self):
-        return self.pvt_a.object
-    @a.setter
-    def a(self, ob):
-        self.pvt_a.object = ob
-    
-    pvt_b = PointerProperty(name="b", type=mb_object_pointer)
-    @property
-    def b(self):
-        return self.pvt_b.object
-    @b.setter
-    def b(self, ob):
-        self.pvt_b.object = ob
-    
-    pvt_c = PointerProperty(name="c", type=mb_object_pointer)
-    @property
-    def c(self):
-        return self.pvt_c.object
-    @c.setter
-    def c(self, ob):
-        self.pvt_c.object = ob
+    origin = PointerProperty(name="origin", type=bpy.types.Object)
+    a = PointerProperty(name="a", type=bpy.types.Object)
+    b = PointerProperty(name="b", type=bpy.types.Object)
+    c = PointerProperty(name="c", type=bpy.types.Object)
     
     pvt_objects = CollectionProperty(name="Unit cell objects", type=mb_object_pointer)
     @property
@@ -152,18 +112,10 @@ class mb_unit_cell(PropertyGroup):
 class mb_molecule_objects(PropertyGroup):
     pvt_atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
     pvt_bonds = CollectionProperty(name="Bonds", type=mb_object_pointer)
-    pvt_parent = PointerProperty(name="Parent", type=mb_object_pointer)
+    parent = PointerProperty(name="Parent", type=bpy.types.Object)
     dipole = PointerProperty(name="Dipole", type=mb_dipole)
     unit_cell = PointerProperty(name="Unit cell objects", type=mb_unit_cell)
     pvt_other = CollectionProperty(name="Bonds", type=mb_object_pointer)
-    
-    @property
-    def parent(self):
-        return self.pvt_parent.object
-    
-    @parent.setter
-    def parent(self, ob):
-        self.pvt_parent.object = ob
     
     @property
     def atoms(self):
@@ -206,34 +158,54 @@ class mb_mode(PropertyGroup):
     index = IntProperty(name="index")
     freq = StringProperty(
         name="Mode frequency",
-        default="")
+        default="", description="Frequency read from file")
     symmetry = StringProperty(
-        name="Mode symmetry", description="Symmetry of the active mode",
+        name="Mode symmetry", description="Symmetry of the active mode (not automatically detected)",
         default="")
     evecs = CollectionProperty(name="Displacements", type=mb_mode_displacement)
 
 class mb_qmode(PropertyGroup):
     name = StringProperty(name="name")
-    nqpt = IntProperty(name="nqpt", default=1)
+    iqpt = IntProperty(name="nqpt", default=1)
     qvec = FloatVectorProperty(name="q vector", default=(0,0,0))
     modes = CollectionProperty(type=mb_mode)
 
 class MB_UL_modes(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, 
                   active_propname, index):
-        split = layout.split(0.1)
+        split = layout.split(0.18)
         col = split.column()
-        col.label(str(item.nqpt))
+        col.label(str(item.iqpt))
         col = split.column()
         col.label("q=({:5.3f}, {:5.3f}, {:5.3f})".format(*item.qvec))
 
-
-
+def get_material_props(ob=None, node_name="mb.principled", material=None):
+    try:
+        mat = material or ob.material_slots[0].material
+        if bpy.context.scene.render.engine == 'CYCLES':
+            data = mat.node_tree.nodes[node_name].inputs[0]
+            prop = "default_value"
+        else:
+            data = mat
+            prop = "diffuse_color"
+        return data, prop
+    except IndexError:
+        return "{} has no material".format(ob.name), None
+    except AttributeError as e:
+        if "no attribute 'node_tree'" in e.args[0]:
+            msg = "{} has no material".format(ob.name)
+        else:
+            msg = "from get_material_props: {}".format(e)
+        return msg, None
+    except KeyError as e:
+        msg = "Material {} has no node with name {}".format(mat.name, node_name)
+        return msg, None
 
 class mb_molecule(PropertyGroup):
     index = IntProperty(name="Molecule index")
     name = StringProperty(name="Molecule identifier")
-    # index that increases with each added atom in the molecule, but doesn't 
+    # index that increases with each added atom in the molecule, 
+    # or is set to max index of imported file. It doesn't 
     # decrease when atom is deleted. => Not an indicator of size of molecule! 
     # Only guarantees uniqueness for atom names
     atom_index = IntProperty(name="Atom counter")
@@ -247,11 +219,7 @@ class mb_molecule(PropertyGroup):
         items=mb_utils.enums.bond_material, default='ATOMS',
         update=mb_utils.update_bond_material
         )
-    bond_color = FloatVectorProperty(
-        name='Bond color', description="Color for generic bond",
-        default=(0.8, 0.8, 0.8), min=0.0, max=1.0, subtype='COLOR',
-        update=mb_utils.update_all_meshes
-        )
+    bond_generic_material = PointerProperty(type=bpy.types.Material)
     draw_style = EnumProperty(
         name="Display style", description="Style to draw atoms and bonds",
         items=mb_utils.enums.molecule_styles, default='BAS',
@@ -311,11 +279,35 @@ class mb_molecule(PropertyGroup):
             layout.template_list("MB_UL_modes", "", self, "qpts", self, 
                               "active_nqpt",rows=1)
             layout.prop(self, "active_mode")
+            # The play/pause etc buttons are copy/pasted from space_time.py
+            row = layout.row(align=True)
+            row.operator("screen.frame_jump", text="", icon='REW').end = False
+            row.operator("mb.frame_skip", text="", icon='PREV_KEYFRAME').next = False
+            screen = bpy.context.screen
+            scene = bpy.context.scene
+            if not screen.is_animation_playing:
+                # if using JACK and A/V sync:
+                #   hide the play-reversed button
+                #   since JACK transport doesn't support reversed playback
+                if scene.sync_mode == 'AUDIO_SYNC' and context.user_preferences.system.audio_device == 'JACK':
+                    sub = row.row(align=True)
+                    sub.scale_x = 2.0
+                    sub.operator("screen.animation_play", text="", icon='PLAY')
+                else:
+                    row.operator("screen.animation_play", text="", icon='PLAY_REVERSE').reverse = True
+                    row.operator("screen.animation_play", text="", icon='PLAY')
+            else:
+                sub = row.row(align=True)
+                sub.scale_x = 2.0
+                sub.operator("screen.animation_play", text="", icon='PAUSE')
+            row.operator("mb.frame_skip", text="", icon='NEXT_KEYFRAME').next = True
+            row.operator("screen.frame_jump", text="", icon='FF').end = True
+            
             layout.prop(self, "mode_scale")
             layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
                      "freq", text="Frequency")
             layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
-                     "symmetry", text="Symmetry")
+                        "symmetry", text="Symmetry")
         
     
     def draw_properties(self, layout):
@@ -335,18 +327,12 @@ class mb_molecule(PropertyGroup):
             col = layout.column()
             col.prop(self.objects.dipole.target, "location", 
                      text="")
-            mat = None
             for ob in self.objects.dipole.objects:
                 if ob.material_slots:
                     mat = ob.material_slots[0].material
                     break
-            if mat:
-                if bpy.context.scene.render.engine == 'CYCLES':
-                    data = mat.node_tree.nodes['Diffuse BSDF'].inputs[0]
-                    prop = "default_value"
-                else:
-                    data = mat
-                    prop = "diffuse_color"
+            data, prop = get_material_props(ob)
+            if data:
                 layout.prop(data, prop, text="Color")
             layout.operator("mb.remove_dipole")
         else:
@@ -382,14 +368,9 @@ class mb_molecule(PropertyGroup):
                     ob_arrow = ob
             
             if ob_arrow and ob_arrow.material_slots:
-                mat = ob.material_slots[0].material
-                if bpy.context.scene.render.engine == 'CYCLES':
-                    data = mat.node_tree.nodes['Diffuse BSDF'].inputs[0]
-                    prop = "default_value"
-                else:
-                    data = mat
-                    prop = "diffuse_color"
-                layout.prop(data, prop, text="Color")
+                data, prop = get_material_props(ob_arrow)
+                if data:
+                    layout.prop(data, prop, text="Color")
             
             layout.prop(ob_frame.modifiers['mb.wireframe'], 'thickness',
                         text="Frame thickness")
@@ -413,16 +394,24 @@ class mb_molecule(PropertyGroup):
             "Atom scale": [self.atom_scales[self.draw_style], "val", 10],
             "Bond radius": [self, "bond_radius", 20],
             "Radius type": [self, "radius_type", 30],
-            "Draw style": [self, "draw_style", 40],
+            "Display style": [self, "draw_style", 40],
             "Bond material": [self, "bond_material", 50],
-            "Bond color": [self, "bond_color", 60],
             "Refine atoms": [self, "refine_atoms", 70],
             "Refine bonds": [self, "refine_bonds", 80],
             }
+        
+        data, prop = get_material_props(material=self.bond_generic_material)
+        props.update({'Bond color': [data, prop, 60]})
+        
         for label, (data, prop, i) in sorted(props.items(), 
                                              key=lambda t: t[-1][-1]):
-            layout.prop(data, prop)
-    
+            try:
+                layout.prop(data, prop, text=label)
+            except TypeError:
+                #get_material_props returns a string if no material was found
+                layout.label("{}: {}".format(label, data))
+
+        
     def add_object(self, ob, parent_to_mol=True, type=None):
         '''
         Add an object to the molecule's atoms collection and return the
@@ -451,6 +440,8 @@ class mb_molecule(PropertyGroup):
         else:
             item = objects.add()
             item.object = ob
+            if ob.type == 'ATOM':
+                self.atom_index += 1
         return item
     
     def remove_object(self, ob):
@@ -479,16 +470,6 @@ class mb_object(PropertyGroup):
         name="type", description="Select the object type",
         items=mb_utils.enums.object_types, default='NONE')
     
-    #pvt_parent = PointerProperty(name="Molecule parent",
-                                 #type=mb_object_pointer)
-    
-    #@property
-    #def parent(self):
-        #return self.pvt_parent.object
-    
-    #@parent.setter
-    #def parent(self, ob):
-        #self.pvt_parent.object = ob
     parent = PointerProperty(name="Molecule parent",
                              type=bpy.types.Object)
     
@@ -587,28 +568,24 @@ class mb_object(PropertyGroup):
     
     def draw_properties(self, context, layout, ob):
         element = context.scene.mb.elements[self.element]
-        mat = ob.material_slots[0].material
-        if context.scene.render.engine == 'CYCLES':
-            atom_color = [mat.node_tree.nodes['Diffuse BSDF'].inputs[0],
-                          "default_value", 40]
-        else:
-            atom_color = [mat, "diffuse_color", 40]
-            
+        
         props = {
             "Element": [self, "element", 10],
             "Name": [self, "atom_name", 20],
-            "Atom radius": [element, "covalent", 30],
-            "Atom color": atom_color,
+            "Covalent radius": [element, "covalent", 30],
+            "vdW radius": [element, "vdw", 40],
+            "constant radius": [element, "constant", 50],
+            #"Atom color": atom_color,
             }
-        for label, (data, prop, i) in sorted(props.items(), 
+        data, prop = get_material_props(ob)
+        props.update({'Atom color': [data, prop, 60]})
+        
+        for label, (data, prop, i) in sorted(props.items(),
                                              key=lambda t: t[-1][-1]):
-            layout.prop(data, prop, text=label)
-
-#class mb_action(PropertyGroup):
-    #name = StringProperty(name="Action name")
-    #mode_vector = FloatVectorProperty(
-        #name="Mode vector",
-        #description="Original mode vector for atom as read from file")
+            try:
+                layout.prop(data, prop, text=label)
+            except TypeError:
+                layout.label("{}: {}".format(label, data))
 
 
 class mb_element(PropertyGroup):
@@ -619,10 +596,12 @@ class mb_element(PropertyGroup):
     color = FloatVectorProperty(name="Color", subtype='COLOR', size=3)
     covalent = FloatProperty(
         name="Covalent radius",
+        description="Scene wide covalent radius",
         min=0.0, max=5.0, 
         update=mb_utils.update_all_meshes)
     vdw = FloatProperty(
         name="vdW radius", 
+        description="Scene wide van der Waals radius",
         min=0.0, max=5.0, 
         update=mb_utils.update_all_meshes)
     constant = FloatProperty(
@@ -685,7 +664,11 @@ class mb_scn_globals(PropertyGroup):
     show_bond_lengths = BoolProperty(
         name="Show bond lengths", default=False,
         description="Display bond length of selected bonds",
-        update=mb_utils.update_show_bond_lengths)
+        update=mb_utils.update_show_bond_lengths
+        )
+    bond_length_font_size = IntProperty(
+        name="Bond length font size", default=12,
+        description="Font size of bond lengths")
     #show_bond_angles = BoolProperty(
         #name="Show bond angles", default=False, 
         #description="Display bond angle of selected bonds",
@@ -779,7 +762,7 @@ class mb_scene(PropertyGroup):
                     self.id_data.objects.unlink(ob)
                     bpy.data.objects.remove(ob)
             if parent:
-                if parent in self.id_data.objects:
+                if parent.name in self.id_data.objects:
                     self.id_data.objects.unlink(parent)
                 bpy.data.objects.remove(parent)
 

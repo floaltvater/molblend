@@ -163,6 +163,10 @@ CC=clang CXX=clang++ CPATH="/opt/local/Library/Frameworks/Python.framework/Versi
 
 ## Known issues
 
+- When the generic bond color is updated, the viewport color is not updated
+  immediately despite drivers. Starting blender with the command line option
+  `--enable-new-depsgraph` fixes this. (See [1] for a nice explanation)
+  This will be the default in 2.8.
 - If parts of Molecules are deleted by hand that shouldn't be (like the
   Molecule parent, parts of the unit cell, etc. things can break. I am working
   on an operator that tries to fix molecules again if that happens on accident.
@@ -197,3 +201,5 @@ CC=clang CXX=clang++ CPATH="/opt/local/Library/Frameworks/Python.framework/Versi
   mb.stretch constraint should fix that. For some reason this doesn't work
   reliably from the python API.
 - Logging is somewhat sparse and not functional for debugging.
+
+[1] https://blender.stackexchange.com/questions/75917/why-are-my-drivers-not-updating-instantly

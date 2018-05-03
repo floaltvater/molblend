@@ -411,8 +411,11 @@ class MB_OT_add_atom(Operator):
             molecule = context.scene.mb.new_molecule()
         
         # create a new atom object with the molecule's properties
+        
         new_atom = mb_utils.add_atom(context, self.coord_3d, self.element,
-                                     self.element, molecule)
+                                     self.element, molecule.atom_index,
+                                     molecule)
+        molecule.atom_index += 1
         self.new_atom_name = new_atom.name
         
         # add a bond if atom is added to existing molecule
@@ -495,10 +498,11 @@ class MB_OT_select_molecule(Operator):
     def execute(self, context):
         molecules = set()
         for ob in context.selected_objects:
-            molecules.add(ob.mb.get_molecule())
+                molecules.add(ob.mb.get_molecule())
         for mol in molecules:
-            for ob in mol.objects.get_all_objects():
-                ob.select = True
+            if mol is not None:
+                for ob in mol.objects.get_all_objects():
+                    ob.select = True
         return {'FINISHED'}
 
 
@@ -1081,17 +1085,39 @@ class MD_OT_import_molecules(bpy.types.Operator):
 
 class MB_OT_draw_bond_lengths(bpy.types.Operator):
     """Draw a line with the mouse"""
+    bl_idname = "mb.frame_skip"
+    bl_label = "Skip one frame"
+    bl_description = "Skip to previous/next frame"
+    
+    next = BoolProperty(default=True, description="Go forward or not")
+    
+    def execute(self, context):
+        if self.next:
+            context.scene.frame_current += 1
+        else:
+            context.scene.frame_current -= 1
+        return {'FINISHED'}
+
+
+class MB_OT_draw_bond_lengths(bpy.types.Operator):
+    """Draw a line with the mouse"""
     bl_idname = "mb.show_bond_lengths"
     bl_label = "Show bond lengths"
     
     def modal(self, context, event):
-        context.area.tag_redraw()
+        try:
+            context.area.tag_redraw()
+        except AttributeError:
+            pass
         if not context.scene.mb.globals.show_bond_lengths:
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
-            return {'CANCELLED'}
+            print('canceled')
+            return {'FINISHED'}
         return {'PASS_THROUGH'}
     
     def execute(self, context):
+        #print("tut")
+        #context.scene.mb.globals.show_bond_lengths = not context.scene.mb.globals.show_bond_lengths
         if context.area.type == 'VIEW_3D':
             # the arguments we pass to the callback
             args = (self, context)

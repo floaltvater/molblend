@@ -407,6 +407,7 @@ class MB_Structure():
             "xyz": cls._read_xyz_file,
             "pdb": cls._read_pdb_file,
             "POSCAR": cls._read_POSCAR_file,
+            "vasp": cls._read_POSCAR_file,
             "ascii": cls._read_phonopy_ascii,
             "cube": cls._read_cube_file,
             "abinit": cls._read_abinit_output_file,
@@ -446,7 +447,7 @@ class MB_Structure():
                 msg = msg.format(structure.axes_unit, read_funcs[fmt].__name__)
                 raise KeyError(msg)
             for i in range(len(structure.axes)):
-                structure.axes[i] = list(fac * np.array(structure.axes[i]))
+                structure.axes[i] = fac * Matrix(structure.axes[i])
             structure.origin = Vector(structure.origin) * fac
         
         if structure.atom_unit == "crystal":
@@ -929,7 +930,7 @@ class MB_Structure():
                     if "X" in element:
                         element = "Vac"
                     if index in all_atoms:
-                        logger.error(
+                        raise ValueError(
                             "duplicate atom indeces in {}".format(filepath_pdb)
                             )
                     all_atoms[index] = [element, atom_name, location, index]
@@ -955,7 +956,7 @@ class MB_Structure():
                 all_frames.append(all_atoms)
                 strc.nframes += 1
         
-        for i in all_frames[0]:
+        for i in all_frames[0].keys():
             element, atom_name, location, index = all_frames[0][i]
             strc.all_atoms[i] = {"element": element,
                                  "name": atom_name,

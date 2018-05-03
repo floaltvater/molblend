@@ -163,7 +163,9 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout.operator("mb.select_molecule")
         layout.operator("mb.combine_molecules")
         layout.prop(context.scene.mb.globals, "show_bond_lengths")
-
+        layout.prop(context.scene.mb.globals, "bond_length_font_size",
+                    text="Font size")
+        
         layout.separator()
         layout.operator("mb.make_static")
         layout.operator("mb.apply_scale")

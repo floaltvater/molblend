@@ -287,7 +287,7 @@ def import_modes(context,
         else:
             qm.qvec = qmode.qvec
         
-        mode_name_fmt = 'mode_{}.{}.{{}}.{{}}'.format(molecule.index, nq)
+        mode_name_fmt = 'mode_{}.{}.{{}}.{{}}'.format(molecule.name, nq)
         
         # add mode 0 as the equilibrium position
         m = qm.modes.add()
@@ -360,7 +360,6 @@ def import_molecule(context,
             # read unit cell and create cube
             unit_cell_obs = mb_utils.draw_unit_cell(molecule, context)
             all_obs.extend(unit_cell_obs)
-            molecule.objects.unit_cell.origin.location = structure.origin
         elif draw_uc and not molecule["unit_cells"]:
             msg = "No unit cell vectors read."
             logger.warning(msg)
@@ -378,31 +377,28 @@ def import_molecule(context,
         if parent_center:
             center_of_mass = structure.get_center_of_mass()
         else:
-            center_of_mass = Vector((0,0,0))
+            center_of_mass = Vector(structure.origin)
         
         molecule.objects.parent.location = center_of_mass
         
         # add all atoms to scene
         atom_obs = {}
         warning = set()
-        for index, (old_index, atom) in enumerate(sorted(structure.all_atoms.items())):
+        for index, atom in sorted(structure.all_atoms.items()):
             new_atom = mb_utils.add_atom(context, 
                                          atom["coords"][0]-center_of_mass, 
                                          atom["element"],
                                          atom["name"],
+                                         atom["id"],
                                          molecule)
             new_atom.mb.supercell = atom.get("supercell", (0,0,0))
             all_obs.append(new_atom)
             new_atom.mb.index = index
-            molecule.atom_index = index + 1
-            if new_atom.mb.index != old_index:
-                warning.add("Indices will not be the same as imported.")
-            
-            atom_obs[old_index] = new_atom
+            atom_obs[index] = new_atom
             
             if structure.nframes > 1:
                 anim_data = new_atom.animation_data_create()
-                atom_id = '{}.{}'.format(new_atom.mb.get_molecule().index, 
+                atom_id = '{}.{}'.format(new_atom.mb.get_molecule().name, 
                                          new_atom.mb.index)
                 action = bpy.data.actions.new(name="frames_{}".format(atom_id))
                 anim_data.action = action
@@ -417,13 +413,23 @@ def import_molecule(context,
                         fcu.keyframe_points.add(1)
                         fcu.keyframe_points[-1].co = nf + 1, loc
                         fcu.keyframe_points[-1].interpolation = 'LINEAR'
-        
+        molecule.atom_index = index
         # add bonds to scene
         for index1, other in structure.bonds.items():
             for index2 in other:
-                new_bond = mb_utils.add_bond(context, atom_obs[index1],
-                                             atom_obs[index2],
-                                             bond_type=bond_type)
+                try:
+                    new_bond = mb_utils.add_bond(context, atom_obs[index1],
+                                                atom_obs[index2],
+                                                bond_type=bond_type)
+                except KeyError as err:
+                    if not err.args: 
+                        err.args=('',)
+                    msg = "Atom index {} was found in CONECT"
+                    msg += " but not in the list of atoms"
+                    msg = msg.format(err.args[0])
+                    err.args = (msg, )
+                    report({'ERROR'}, msg)
+                    raise
                 all_obs.append(new_bond)
         molecule.bond_material = bond_material
         
