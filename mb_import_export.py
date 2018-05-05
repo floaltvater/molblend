@@ -292,21 +292,39 @@ def import_modes(context,
         # add mode 0 as the equilibrium position
         m = qm.modes.add()
         m.freq = "equilibrium"
-        for atom in molecule.objects.atoms:
-            d = m.evecs.add()
-            d.real = Vector((0,0,0))
-            d.imag = Vector((0,0,0))
         
-        for nm, mode in enumerate(qmode.modes):
+        for mode in qmode.modes:
             m = qm.modes.add()
             m.freq = mode.freq
-            for disp in mode.evecs:
-                d = m.evecs.add()
-                d.real = disp.real
-                d.imag = disp.imag
+        
+        nvec = len(qmode.modes[0].evecs)
+        # Now add the mode vectors to all atoms
+        for iat, atom in enumerate(molecule.objects.atoms):
+            # mode 0
+            qmob = atom.mb.qpts.add()
+            mob = qmob.modes.add()
+            mob.real = Vector((0,0,0))
+            mob.imag = Vector((0,0,0))
+            
+            for mode in qmode.modes:
+                mob = qmob.modes.add()
+                mob.real = mode.evecs[iat%nvec].real
+                mob.imag = mode.evecs[iat%nvec].imag
+    
+    #print("q", len(molecule.objects.atoms[0].mb.qpts))
+    #print("m", len(molecule.objects.atoms[0].mb.qpts[0].modes))
+    
+    old_sel = context.selected_objects
+    last_active = context.object
     
     for atom in molecule.objects.atoms:
         mb_utils.create_mode_action(context, atom, molecule)
+        mb_utils.create_mode_arrow(context, atom, molecule, type='3D')
+    
+    bpy.ops.object.select_all(action="DESELECT")
+    for ob in old_sel:
+        ob.select = True
+    context.scene.objects.active = last_active
     
     if len(qpts) > 1 and file_format == "PHONOPY":
         report({'WARNING'}, "Please check if q!=0 modes have been imported"

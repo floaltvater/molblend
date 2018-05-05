@@ -413,9 +413,8 @@ class MB_OT_add_atom(Operator):
         # create a new atom object with the molecule's properties
         
         new_atom = mb_utils.add_atom(context, self.coord_3d, self.element,
-                                     self.element, molecule.atom_index,
+                                     self.element, molecule.atom_index+1,
                                      molecule)
-        molecule.atom_index += 1
         self.new_atom_name = new_atom.name
         
         # add a bond if atom is added to existing molecule
@@ -574,6 +573,70 @@ class MB_OT_center_mol_parent(Operator):
         return {'FINISHED'}
 
 
+class MB_OT_draw_mode_arrows(Operator):
+    bl_idname = "mb.draw_mode_arrows"
+    bl_label = "Draw mode arrows"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(self, context):
+        return context.object and context.object.mb.get_molecule()
+    
+    def invoke(self, context, event):
+        return self.execute(context)
+    
+    def execute(self, context):
+        mol = context.object.mb.get_molecule()
+        obs = mb_utils.draw_mode_arrows(context, molecule, type="3D")
+        if obs:
+            for ob in obs:
+                ob.select = True
+            context.scene.objects.active = obs[0]
+            return {'FINISHED'}
+        else:
+            return {'CANCELLED'}
+
+
+class MB_OT_remove_mode_arrows(Operator):
+    bl_idname = "mb.remove_mode_arrows"
+    bl_label = "Remove mode_arrows"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    @classmethod
+    def poll(self, context):
+        return context.object and context.object.mb.get_molecule()
+    
+    def execute(self, context):
+        mol = context.object.mb.get_molecule()
+        mb_utils.remove_mode_arrows(mol, context)
+        if not context.object:
+            context.scene.objects.active = mol.objects.parent
+        return {'FINISHED'}
+
+
+class MB_OT_toggle_mode_arrows(Operator):
+    bl_idname = "mb.toggle_mode_arrows"
+    bl_label = "Toggle mode arrows"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    show = BoolProperty()
+    
+    @classmethod
+    def poll(self, context):
+        return context.object and context.object.mb.get_molecule()
+    
+    def invoke(self, context, event):
+        self.show = context.object.mb.get_molecule().show_mode_arrows
+        return self.execute(context)
+    
+    def execute(self, context):
+        mol = context.object.mb.get_molecule()
+        for ob in mol.objects.mode_arrows.objects:
+            ob.hide = not self.show
+            ob.hide_render = not self.show
+        
+        return {'FINISHED'}
+
 class MB_OT_draw_unit_cell(Operator):
     bl_idname = "mb.draw_unit_cell"
     bl_label = "Draw unit cell of structure"
@@ -597,13 +660,16 @@ class MB_OT_draw_unit_cell(Operator):
             for ob in obs:
                 ob.select = True
             context.scene.objects.active = obs[0]
-        
-        return {'FINISHED'}
+            return {'FINISHED'}
+        else:
+            return {'CANCELLED'}
 
 class MB_OT_toggle_unit_cell_arrows(Operator):
     bl_idname = "mb.toggle_unit_cell_arrows"
     bl_label = "Toggle unit cell arrows"
     bl_options = {'REGISTER', 'UNDO'}
+    
+    show = BoolProperty()
     
     @classmethod
     def poll(self, context):
@@ -611,17 +677,16 @@ class MB_OT_toggle_unit_cell_arrows(Operator):
                 and context.object.mb.get_molecule().objects.unit_cell.a)
     
     def invoke(self, context, event):
+        self.show = context.object.mb.get_molecule().show_unit_cell_arrows
         return self.execute(context)
     
     def execute(self, context):
         mol = context.object.mb.get_molecule()
         # determine toggle value from last object in list
-        hide = None
         for ob in mol.objects.unit_cell.objects:
             if ob and not 'frame' in ob.name:
-                hide = (not ob.hide) if hide == None else hide
-                ob.hide = hide
-                ob.hide_render = hide
+                ob.hide = not self.show
+                ob.hide_render = not self.show
         
         return {'FINISHED'}
 
@@ -630,12 +695,15 @@ class MB_OT_toggle_unit_cell_frame(Operator):
     bl_label = "Toggle unit cell arrows"
     bl_options = {'REGISTER', 'UNDO'}
     
+    show = BoolProperty()
+    
     @classmethod
     def poll(self, context):
         return (context.object and context.object.mb.get_molecule()
                 and context.object.mb.get_molecule().objects.unit_cell.a)
     
     def invoke(self, context, event):
+        self.show = context.object.mb.get_molecule().show_unit_cell_frame
         return self.execute(context)
     
     def execute(self, context):
@@ -643,8 +711,8 @@ class MB_OT_toggle_unit_cell_frame(Operator):
         # determine toggle value from last object in list
         for ob in mol.objects.unit_cell.objects:
             if ob and 'frame' in ob.name:
-                ob.hide = (not ob.hide)
-                ob.hide_render = ob.hide
+                ob.hide = not self.show
+                ob.hide_render = not self.show
                 break
         
         return {'FINISHED'}
@@ -1083,7 +1151,7 @@ class MD_OT_import_molecules(bpy.types.Operator):
         col.prop(self, "bond_type")
         
 
-class MB_OT_draw_bond_lengths(bpy.types.Operator):
+class MB_OT_frame_skip(bpy.types.Operator):
     """Draw a line with the mouse"""
     bl_idname = "mb.frame_skip"
     bl_label = "Skip one frame"

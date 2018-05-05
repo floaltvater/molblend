@@ -47,6 +47,7 @@ class enums():
         ('BOND', "Bond", "Bond"),
         ('UC', "Unit cell", "Unit cell"),
         ('DIPOLE', "Dipole", "Dipole"),
+        ('MODE_ARROW', "Mode arrow", "Mode arrow"),
         ('PARENT', "Parent", "Parent"),
         ]
     mesh_types = [
@@ -127,13 +128,17 @@ def update_active_mode(self, context):
             return
     elif self.active_mode >= len(modes):
         self.active_mode = len(modes) - 1
+        # since this calls this callback again, return
         return
     
     for atom in self.objects.atoms:
         #update_mode_drivers(atom, self)
-        update_mode_action(atom, self)
+        if self.show_mode_animation:
+            update_mode_action(atom, self)
+        if self.show_mode_arrows:
+            update_mode_arrow(atom, self)
     
-    if self.active_mode == 0:
+    if self.active_mode == 0 or not self.autoplay_mode_animation:
         # stop animation
         if context.screen.is_animation_playing:
             bpy.ops.screen.animation_play()
@@ -144,6 +149,27 @@ def update_active_mode(self, context):
             context.scene.frame_end = 20
             bpy.ops.screen.animation_play()
 
+
+def update_show_mode_animation(self, context):
+    if not self.show_mode_animation:
+        # resets atoms to equilibrium positions
+        nmode = 0
+    else:
+        nmode = None
+    for atom in self.objects.atoms:
+        update_mode_action(atom, self, nmode=nmode)
+
+def update_show_mode_arrows(self, context):
+    bpy.ops.mb.toggle_mode_arrows('INVOKE_DEFAULT')
+    if self.show_mode_arrows:
+        for atom in self.objects.atoms:
+            update_mode_arrow(atom, self)
+
+def update_show_unit_cell_arrows(self, context):
+    bpy.ops.mb.toggle_unit_cell_arrows('INVOKE_DEFAULT')
+
+def update_show_unit_cell_frame(self, context):
+    bpy.ops.mb.toggle_unit_cell_frame('INVOKE_DEFAULT')
 
 def update_atom_element(self, context):
     '''
@@ -883,44 +909,57 @@ def clear_modes(molecule):
         molecule.qpts.remove(0)
 
 
-def update_mode_action(atom, molecule):
+def calculate_displacement_t0(qvec, sc, evec):
+    qR = qvec[0]*sc[0] + qvec[1]*sc[1] + qvec[2]*sc[2]
+    T = 20
+    Re = evec.real
+    Im = evec.imag
+    
+    vec = []
+    t0s = []
+    for dim in range(3):
+        # t_max == time of maximum (positive) displacement
+        tmax = T*(qR - math.atan2(Im[dim], Re[dim])/(2*math.pi))
+        t0s.append(tmax)
+        arg = 2*math.pi*(qR-tmax/T)
+        cos_max = math.cos(arg)
+        sin_max = math.sin(arg)
+        vec.append(Re[dim]*cos_max - Im[dim]*sin_max)
+    return Vector(vec), t0s
+
+
+def update_mode_action(atom, molecule, nmode=None):
+    T = 20
     action = atom.animation_data.action
+    t = (molecule.mode_arrows_phase%2.)/2. * T
     if action:
-        qpt = molecule.qpts[molecule.active_nqpt]
-        qvec = qpt.qvec
+        iq = molecule.active_nqpt
+        qvec = molecule.qpts[iq].qvec
         sc = atom.mb.supercell
-        qR = qvec[0]*sc[0] + qvec[1]*sc[1] + qvec[2]*sc[2]
-        T = 20
-        nevecs = len(qpt.modes[molecule.active_mode].evecs)
-        evec = qpt.modes[molecule.active_mode].evecs[atom.mb.index%nevecs]
-        Re = evec.real
-        Im = evec.imag
-        
+        if nmode is None:
+            nmode = molecule.active_mode
+        evec = atom.mb.qpts[iq].modes[nmode]
+        realvec, t_max = calculate_displacement_t0(qvec, sc, evec)
+        # t0 == start time of animation, needs to be a negative number, so that
+        # the animation is well underway at frame 0
+    
         for dim in range(3):
-            t_max = T*(qR - math.atan2(Im[dim], Re[dim])/(2*math.pi))
-            t0 = (t_max - T/4)
+            t0 = (t_max[dim] - T/4)
             t0 = t0 - T*(t0//T) - T
-            arg = 2*math.pi*(qR-t_max/T)
-            cos_max = math.cos(arg)
-            sin_max = math.sin(arg)
             fcu = action.fcurves[dim]
             loc = fcu.keyframe_points[0].co[1]
-            vec = Re[dim]*cos_max - Im[dim]*sin_max
-            
+            vec = realvec[dim]
             for p in range(9):
                 frame = 1 + t0 + 5*p
                 disp = pow(-1, p//2)*vec * molecule.mode_scale
                 coords = loc + disp if p%2 else loc
                 fcu.keyframe_points[p].co = (frame, coords)
-                if p%2 == 0:
-                    fcu.keyframe_points[p].handle_left = (frame, loc)
-                    fcu.keyframe_points[p].handle_right = (frame, loc)
-            fcu.update()
     else:
-        msg = "WARNING: Trying to update mode action on"
+        msg = "Trying to update mode action on"
         msg += " object {}, but it has no existing action.".format(atom.name)
         msg += " Did you change the molecule after importing the modes?"
-        logger.warning(msg)
+        logger.error(msg)
+
 
 def create_mode_action(context, atom, molecule):
     anim_data = atom.animation_data_create()
@@ -938,11 +977,172 @@ def create_mode_action(context, atom, molecule):
         fcu.group = ag
         fcu.keyframe_points.add(9)
         loc = atom.location[dim]
+        # We need two revolutions so that one full period is within 20 frames
         for p in range(9):
             fcu.keyframe_points[p].co = 1.0 + 5*p, loc
-            fcu.keyframe_points[p].interpolation = 'BEZIER'
+            fcu.keyframe_points[p].interpolation = 'SINE'
+            if p == 0:
+                fcu.keyframe_points[p].easing = "EASE_IN_OUT"
+            if p%2 == 0:
+                fcu.keyframe_points[p].easing = "EASE_OUT"
+            else:
+                fcu.keyframe_points[p].easing = "AUTO"
         fcu.update()
 
+
+def update_mode_arrow(atom_ob, mol):
+    T = 20
+
+    fcu = atom_ob.animation_data.action.fcurves
+    loc = Vector([fcu[dim].keyframe_points[0].co[1] for dim in range(3)])
+    # convert phase from units of pi into frames
+    t = (mol.mode_arrows_phase%2.)/2. * T
+    trg = Vector([fcu[dim].evaluate(t) for dim in range(3)])
+    vec = trg - loc
+    
+    iq = mol.active_nqpt
+    qvec = mol.qpts[iq].qvec
+    sc = atom_ob.mb.supercell
+    evec = atom_ob.mb.qpts[iq].modes[mol.active_mode]
+    vec, t0 = calculate_displacement_t0(qvec, sc, evec)
+    
+    phasevec = Vector((0,0,0))
+    for dim in range(3):
+        phasevec[dim] = vec[dim]*math.cos(t-t0[dim])
+    atom_ob.mb.mode_arrow.mb.mode_arrow_length = phasevec.length
+    arrow_ob = atom_ob.mb.mode_arrow
+    try:
+        rot = Vector((0,1,0)).rotation_difference(phasevec)
+        arrow_ob.rotation_mode = 'QUATERNION'
+        arrow_ob.rotation_quaternion = rot
+    except AttributeError:
+        msg = "Trying to update mode arrow on"
+        msg += " object {}, but it has no existing arrow.".format(atom_ob.name)
+        msg += " Did you change the molecule after importing the modes?"
+        logger.error(msg)
+
+
+def create_mode_arrow(context, atom_ob, mol, type='3D'):
+    
+    if type not in ("3D", ):
+        logger.error("type '{}' not recognized in draw_mode_arrow".format(type))
+        return None
+    
+    material = bpy.data.materials.get('mode_arrows_{}'.format(mol.name))
+    if not material:
+        material = new_material('mode_arrows_{}'.format(mol.name),
+                                color=(.8,0,0))
+    
+    if type == '3D':
+        mesh_name = "mode_arrow_{}".format(mol.name)
+        arrow_ob = atom_ob.mb.mode_arrow
+        if not arrow_ob:
+            me = get_arrow_data(type='MESH', name=mesh_name,
+                                radius = 0.05, ring_y = 0.75, ring_scale = 2)
+            ob_name = "mode_vec_{}".format(get_atom_id(mol.name, atom_ob.mb.index))
+            arrow_ob = bpy.data.objects.new(ob_name, me)
+            arrow_ob.parent = mol.objects.parent
+            #arrow_ob.mode_parent_atom = atom_ob
+            #arrow_ob.material_slots[0].link = 'DATA'
+            arrow_ob.material_slots[0].material = material
+            context.scene.objects.link(arrow_ob)
+            atom_ob.mb.mode_arrow = arrow_ob
+            mol.add_object(arrow_ob, parent_to_mol=False, type='MODE_ARROW')
+        
+        arrow_ob.hide = not mol.show_mode_arrows
+        arrow_ob.hide_render = not mol.show_mode_arrows
+        fcu = atom_ob.animation_data.action.fcurves
+        loc = Vector([fcu[dim].keyframe_points[0].co[1] for dim in range(3)])
+        arrow_ob.location = loc
+        arrow_ob.mb.mode_arrow_length = 0.
+    
+    fc_list = arrow_ob.driver_add('scale', -1) # add new driver
+    for dim, fcurve in enumerate(fc_list):
+        drv = fcurve.driver
+        drv.type = 'SCRIPTED'
+        drv.show_debug_info = True
+        drv.use_self = True
+        
+        var = drv.variables.get('arrow_scale')
+        if not var:
+            var = drv.variables.new()
+            var.name = 'arrow_scale' # name to use in scripting
+            var.type = 'SINGLE_PROP'
+        targ = var.targets[0]
+        targ.id_type = 'OBJECT'
+        targ.id = atom_ob
+        targ.data_path = "mb.parent.mb.molecule.mode_arrows_scale"
+        
+        expr = "self.mb.mode_arrow_length * arrow_scale"
+        drv.expression = expr
+    return arrow_ob
+
+    ## add empty as stretch target
+    #name = "mode_trg_{}".format(get_atom_id(mol.name, atom_ob.mb.index))
+    #stretch_ob = bpy.data.objects.new(name, None)
+    #stretch_ob.empty_draw_type = 'SINGLE_ARROW'
+    #stretch_ob.empty_draw_size = 0.1
+    #context.scene.objects.link(stretch_ob)
+    #stretch_ob.mb.parent = mol.objects.parent
+    #stretch_ob.parent = mol.objects.parent
+    #stretch_ob.mb.mode_parent_atom = atom_ob
+    #all_obs.append(stretch_ob)
+    
+    ## fix location to fcurve evaluated at current phase
+    #fc_list = stretch_ob.driver_add('location', -1) # add new driver
+    #for dim, fcurve in enumerate(fc_list):
+        #drv = fcurve.driver
+        #drv.type = 'SCRIPTED'
+        #drv.show_debug_info = True
+        #drv.use_self = True
+        
+        #var = drv.variables.get('phase')
+        #if not var:
+            #var = drv.variables.new()
+            #var.name = 'phase' # name to use in scripting
+            #var.type = 'SINGLE_PROP'
+        #targ = var.targets[0]
+        #targ.id_type = 'OBJECT'
+        #targ.id = atom_ob
+        #targ.data_path = 'mb.parent.mb.molecule.mode_arrows_phase'
+        
+        #var = drv.variables.get('scale')
+        #if not var:
+            #var = drv.variables.new()
+            #var.name = 'scale' # name to use in scripting
+            #var.type = 'SINGLE_PROP'
+        #targ = var.targets[0]
+        #targ.id_type = 'OBJECT'
+        #targ.id = atom_ob
+        #targ.data_path = 'mb.parent.mb.molecule.mode_arrows_scale'
+        
+        #var = drv.variables.get('eq_pos')
+        #if not var:
+            #var = drv.variables.new()
+            #var.name = 'eq_pos' # name to use in scripting
+            #var.type = 'SINGLE_PROP'
+        #targ = var.targets[0]
+        #targ.id_type = 'OBJECT'
+        #targ.id = atom_ob
+        #dp = "animation_data.action.fcurves[{}].keyframe_points[0].co[1]"
+        #targ.data_path = dp.format(dim)
+        
+        #expr = ("("
+                #"self.mb.mode_parent_atom.animation_data.action"
+                #".fcurves[{dim}].evaluate(1+(phase%2.)/2.*{T})"
+                #" - "
+                #"eq_pos"
+                #") * scale + eq_pos"
+                #)
+        #drv.expression = expr.format(dim=dim, T=T)
+    
+
+def remove_mode_arrows(mol, context):
+    for ob in mol.objects.mode_arrows.objects:
+        mol.remove_object(ob)
+        if ob.name in context.scene.objects:
+            context.scene.objects.unlink(ob)
+        bpy.data.objects.remove(ob)
 
 def draw_dipole(mol, dipole_vec, context):
     
@@ -978,7 +1178,7 @@ def draw_dipole(mol, dipole_vec, context):
     material = bpy.data.materials.get('dipole_{}'.format(mol.name))
     if not material:
         material = new_material('dipole_{}'.format(mol.name),
-                                color=(1,0,0))
+                                color=(.8,0,0))
     head_mesh = get_arrow_head_data(
             name='dipole_head_{}'.format(mol.name),
             radius=head_radius, depth=head_depth

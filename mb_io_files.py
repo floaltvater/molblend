@@ -258,8 +258,8 @@ class MB_Modes(list):
                     q = [c*1. for c in list(map(float, line.split()[-3:]))]
                     qmode = MB_QMode(q_count, q)
                     qmode.qvecs_format = "anaddb"
-                    msg = "Reading q-point {}: {:7.4f} {:7.4f} {:7.4f}"
-                    logger.debug(msg.format(q_count, *q))
+                    #msg = "Reading q-point {}: {:7.4f} {:7.4f} {:7.4f}"
+                    #logger.debug(msg.format(q_count, *q))
                     while not "Phonon frequencies in cm-1" in line:
                         line = next(fin)
                     nmodes = 0
@@ -267,7 +267,7 @@ class MB_Modes(list):
                     while line[0] == "-":
                         nmodes += len(line[1:].strip().split())
                         line = next(fin)
-                    logger.debug("found "+str(nmodes)+" frequencies")
+                    #logger.debug("found "+str(nmodes)+" frequencies")
                     while not "Eigendisplacements" in line:
                         line = next(fin)
                     

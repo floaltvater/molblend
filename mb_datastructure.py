@@ -104,10 +104,20 @@ class mb_unit_cell(PropertyGroup):
     b = PointerProperty(name="b", type=bpy.types.Object)
     c = PointerProperty(name="c", type=bpy.types.Object)
     
-    pvt_objects = CollectionProperty(name="Unit cell objects", type=mb_object_pointer)
+    pvt_objects = CollectionProperty(name="Unit cell objects", 
+                                     type=mb_object_pointer)
     @property
     def objects(self):
         return get_object_list(self.pvt_objects)
+
+
+class mb_mode_arrows(PropertyGroup):
+    pvt_objects = CollectionProperty(name="Mode arrows",
+                                     type=mb_object_pointer)
+    @property
+    def objects(self):
+        return get_object_list(self.pvt_objects)
+
 
 class mb_molecule_objects(PropertyGroup):
     pvt_atoms = CollectionProperty(name="Atoms", type=mb_object_pointer)
@@ -116,7 +126,8 @@ class mb_molecule_objects(PropertyGroup):
     dipole = PointerProperty(name="Dipole", type=mb_dipole)
     unit_cell = PointerProperty(name="Unit cell objects", type=mb_unit_cell)
     pvt_other = CollectionProperty(name="Bonds", type=mb_object_pointer)
-    
+    mode_arrows = PointerProperty(name="Mode arrows", type=mb_mode_arrows)
+                                  
     @property
     def atoms(self):
         return get_object_list(self.pvt_atoms)
@@ -151,10 +162,12 @@ class mb_molecule_objects(PropertyGroup):
 class mb_mode_displacement(PropertyGroup):
     real = FloatVectorProperty(name="real", size=3)
     imag = FloatVectorProperty(name="imag", size=3)
-    action = PointerProperty(name="action", type=bpy.types.Action)
+    #action = PointerProperty(name="action", type=bpy.types.Action)
+
+class mb_object_qmode(PropertyGroup):
+    modes = CollectionProperty(type=mb_mode_displacement)
 
 class mb_mode(PropertyGroup):
-    name = StringProperty(name="name")
     index = IntProperty(name="index")
     freq = StringProperty(
         name="Mode frequency",
@@ -162,10 +175,8 @@ class mb_mode(PropertyGroup):
     symmetry = StringProperty(
         name="Mode symmetry", description="Symmetry of the active mode (not automatically detected)",
         default="")
-    evecs = CollectionProperty(name="Displacements", type=mb_mode_displacement)
-
+    
 class mb_qmode(PropertyGroup):
-    name = StringProperty(name="name")
     iqpt = IntProperty(name="nqpt", default=1)
     qvec = FloatVectorProperty(name="q vector", default=(0,0,0))
     modes = CollectionProperty(type=mb_mode)
@@ -268,8 +279,44 @@ class mb_molecule(PropertyGroup):
         )
     mode_scale = FloatProperty(
         name="Mode Scale", description="Scale of normal mode displacement",
-        default=1.0, min=-1000.0, max=1000.0, 
+        default=1.0,
         update=mb_utils.update_active_mode
+        )
+    mode_arrows_scale = FloatProperty(
+        name="Arrow Scale", description="Scale of mode arrows",
+        default=6.0, min=-1000.0, max=1000.0, 
+        update=mb_utils.update_active_mode
+        )
+    show_mode_arrows = BoolProperty(
+        name="Show arrows", default=False,
+        description="Show arrows for mode eigenvectors",
+        update=mb_utils.update_show_mode_arrows
+        )
+    mode_arrows_phase = FloatProperty(
+        name="Arrow phase", default=0.,
+        description="Mode phase in units of pi",
+        update=mb_utils.update_active_mode
+        )
+    show_mode_animation = BoolProperty(
+        name="Show animation", default=True,
+        description="Show animation for mode eigenvectors",
+        update=mb_utils.update_show_mode_animation
+        )
+    autoplay_mode_animation= BoolProperty(
+        name="Autoplay", default=True,
+        description="Automatically start animation on mode change",
+        update=mb_utils.update_active_mode
+        )
+    
+    show_unit_cell_frame = BoolProperty(
+        name="Show frame", default=True,
+        description="Show unit cell frame",
+        update=mb_utils.update_show_unit_cell_frame
+        )
+    show_unit_cell_arrows = BoolProperty(
+        name="Show arrows", default=True,
+        description="Show unit cell arrows",
+        update=mb_utils.update_show_unit_cell_arrows
         )
     
     def draw_vibrations(self, layout):
@@ -279,8 +326,15 @@ class mb_molecule(PropertyGroup):
             layout.template_list("MB_UL_modes", "", self, "qpts", self, 
                               "active_nqpt",rows=1)
             layout.prop(self, "active_mode")
+            layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
+                        "freq", text="Frequency")
+            #layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
+                        #"symmetry", text="Symmetry")
+            layout.prop(self, "show_mode_animation")
+            layout.prop(self, "mode_scale", slider=False)
             # The play/pause etc buttons are copy/pasted from space_time.py
             row = layout.row(align=True)
+            row.active = self.show_mode_animation
             row.operator("screen.frame_jump", text="", icon='REW').end = False
             row.operator("mb.frame_skip", text="", icon='PREV_KEYFRAME').next = False
             screen = bpy.context.screen
@@ -302,13 +356,17 @@ class mb_molecule(PropertyGroup):
                 sub.operator("screen.animation_play", text="", icon='PAUSE')
             row.operator("mb.frame_skip", text="", icon='NEXT_KEYFRAME').next = True
             row.operator("screen.frame_jump", text="", icon='FF').end = True
+            row.prop(self, "autoplay_mode_animation", text="Autoplay")
             
-            layout.prop(self, "mode_scale")
-            layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
-                     "freq", text="Frequency")
-            layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
-                        "symmetry", text="Symmetry")
-        
+            layout.prop(self, "show_mode_arrows", text="Arrows")
+            row = layout.row()
+            row.active = self.show_mode_arrows
+            row.prop(self, 'mode_arrows_scale')
+            row = layout.row()
+            row.active = self.show_mode_arrows
+            row.prop(self, 'mode_arrows_phase')
+            
+            
     
     def draw_properties(self, layout):
         layout.prop(self.objects.parent, "name")
@@ -375,16 +433,8 @@ class mb_molecule(PropertyGroup):
             layout.prop(ob_frame.modifiers['mb.wireframe'], 'thickness',
                         text="Frame thickness")
             
-            if ob_arrow.hide:
-                txt = "Show arrows"
-            else:
-                txt = "Hide arrows"
-            layout.operator("mb.toggle_unit_cell_arrows", text=txt)
-            if ob_frame.hide:
-                txt = "Show frame"
-            else:
-                txt = "Hide frame"
-            layout.operator("mb.toggle_unit_cell_frame", text=txt)
+            layout.prop(self, "show_unit_cell_arrows")
+            layout.prop(self, "show_unit_cell_frame")
             layout.operator("mb.remove_unit_cell")
         else:
             layout.operator("mb.draw_unit_cell")
@@ -429,6 +479,7 @@ class mb_molecule(PropertyGroup):
             'BOND': self.objects.pvt_bonds,
             'UC': self.objects.unit_cell.pvt_objects,
             'DIPOLE': self.objects.dipole.pvt_objects,
+            'MODE_ARROW': self.objects.mode_arrows.pvt_objects,
             'NONE': self.objects.pvt_other
             }
         objects = collection[ob.mb.type]
@@ -441,7 +492,7 @@ class mb_molecule(PropertyGroup):
             item = objects.add()
             item.object = ob
             if ob.type == 'ATOM':
-                self.atom_index += 1
+                self.atom_index = max(self.atom_index, ob.mb.index)
         return item
     
     def remove_object(self, ob):
@@ -454,6 +505,7 @@ class mb_molecule(PropertyGroup):
             'BOND': self.objects.pvt_bonds,
             'UC': self.objects.unit_cell.pvt_objects,
             'DIPOLE': self.objects.dipole.pvt_objects,
+            'MODE_ARROW': self.objects.mode_arrows.pvt_objects,
             'NONE': self.objects.pvt_other
             }
         objects = collection[ob.mb.type]
@@ -485,6 +537,8 @@ class mb_object(PropertyGroup):
         update=mb_utils.update_atom_element)
     element_long = StringProperty(
         name="Element name", description="Full element name")
+    mode_arrow = PointerProperty(type=bpy.types.Object)
+    qpts = CollectionProperty(type=mb_object_qmode)
     
     # used by type == 'BOND'
     pvt_bonded_atoms = CollectionProperty(type=mb_object_pointer)
@@ -497,6 +551,10 @@ class mb_object(PropertyGroup):
     
     # used by type == 'PARENT'
     molecule = PointerProperty(type=mb_molecule)
+    
+    # used by mode arrows
+    mode_arrow_length = FloatProperty()
+    #mode_parent_atom = PointerProperty(type=bpy.types.Object)
     
     @property
     def object(self):

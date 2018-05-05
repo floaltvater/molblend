@@ -140,6 +140,7 @@ class MB_PT_import(MolBlendPanel, Panel):
 
 class MB_PT_tools(MolBlendPanel, Panel):
     bl_label = "Tools"
+    bl_options = {'DEFAULT_CLOSED'}
     
     @classmethod
     def poll(cls, context):
@@ -205,6 +206,7 @@ class MB_PT_molecule_draw_styles(MolBlendPropsPanel, Panel):
 
 class MB_PT_atom(MolBlendPropsPanel, Panel):
     bl_label = "Atom properties"
+    bl_options = {'DEFAULT_CLOSED'}
     
     @classmethod
     def poll(cls, context):
@@ -220,6 +222,7 @@ class MB_PT_atom(MolBlendPropsPanel, Panel):
 
 class MB_PT_molecule_dipole(MolBlendPropsPanel, Panel):
     bl_label = "Dipole"
+    bl_options = {'DEFAULT_CLOSED'}
     
     @classmethod
     def poll(cls, context):
@@ -236,6 +239,7 @@ class MB_PT_molecule_dipole(MolBlendPropsPanel, Panel):
 
 class MB_PT_molecule_unit_cell(MolBlendPropsPanel, Panel):
     bl_label = "Unit cell"
+    bl_options = {'DEFAULT_CLOSED'}
     
     @classmethod
     def poll(cls, context):
@@ -252,6 +256,7 @@ class MB_PT_molecule_unit_cell(MolBlendPropsPanel, Panel):
 
 class MB_PT_vibration_properties(MolBlendPropsPanel, Panel):
     bl_label = "Vibrations"
+    bl_options = {'DEFAULT_CLOSED'}
     
     @classmethod
     def poll(cls, context):
@@ -428,7 +433,7 @@ def unregister():
     bpy.utils.unregister_module(__name__)
     mb_datastructure.unregister()
     
-    remove_handler(bpy.app.handlers.lost_post, load_handler)
+    remove_handler(bpy.app.handlers.load_post, load_handler)
     remove_handler(bpy.app.handlers.save_pre, save_handler)
 
 
