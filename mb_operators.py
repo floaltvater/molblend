@@ -587,15 +587,20 @@ class MB_OT_draw_mode_arrows(Operator):
     
     def execute(self, context):
         mol = context.object.mb.get_molecule()
-        obs = mb_utils.draw_mode_arrows(context, molecule, type="3D")
-        if obs:
-            for ob in obs:
-                ob.select = True
-            context.scene.objects.active = obs[0]
-            return {'FINISHED'}
-        else:
+        flag = True
+        for ob in mol.objects.atoms:
+            obs = mb_utils.create_mode_arrow(context, ob, mol, type='3D')
+            if obs:
+                for ob in obs:
+                    ob.select = True
+                context.scene.objects.active = obs[0]
+            else:
+                flag = False
+        if flag:
             return {'CANCELLED'}
-
+        else:
+            return {'FINISHED'}
+        
 
 class MB_OT_remove_mode_arrows(Operator):
     bl_idname = "mb.remove_mode_arrows"
@@ -858,7 +863,7 @@ class MD_OT_import_cube_iso(bpy.types.Operator):
             return {'CANCELLED'}
         else:
             return {'FINISHED'}
-        
+
 class MD_OT_import_modes(bpy.types.Operator):
     bl_idname = "mb.import_modes"
     bl_label = "Import vibrational modes for molecule"

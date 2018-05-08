@@ -30,6 +30,7 @@ import math
 import itertools
 import logging
 import numpy as np
+import json
 
 from mathutils import Vector, Matrix
 
@@ -54,13 +55,47 @@ class MB_Mode():
 
 class MB_QMode():
     def __init__(self, iqpt, qvec):
-        self.iqpt = iqpt
+        self.iqpt = iqpt # starts at 1
         self.qvec = qvec
         self.qvecs_format = ""
         self.modes = []
-
-class MB_Modes(list):
+    
+    def lines_iter(self, fmt='9.6f'):
         
+        qvec_fmt = ",".join(['{{0[{0}]:{1}}}'.format(i,fmt) for i in range(3)])
+        real_fmt = ",".join(['{{real[{0}]:{1}}}'.format(i,fmt) for i in range(3)])
+        imag_fmt = ",".join(['{{imag[{0}]:{1}}}'.format(i,fmt) for i in range(3)])
+        
+        vec_fmt = "[[{0}], [{1}]]".format(real_fmt, imag_fmt)
+        
+        nevecs = len(self.modes[0].evecs)
+        
+        qpt_fmt =      '{{{{"qvec": [{}], "iqpt": {{iq}},\n'.format(qvec_fmt)
+        mode_line =    ' "modes": [\n'
+        freq_fmt  =    ' {{"freq": "{}", "imode": {},\n'
+        disp_line =    '  "displacements": \n'
+        vec_fmts    = ['   {},\n'.format(vec_fmt)]*nevecs
+        vec_fmts[0]  = '  [{},\n'.format(vec_fmt)
+        vec_fmts[-1] = '   {}]\n'.format(vec_fmt)
+        end_disp_line= '  },\n'
+        last_disp_line='  }\n'
+        last_qpt_line= ']}\n'
+        
+        yield qpt_fmt.format(self.qvec, iq=self.iqpt)
+        yield mode_line
+        for nm, mode in enumerate(self.modes):
+            yield freq_fmt.format(mode.freq, nm+1)
+            yield disp_line
+            for n, disp in enumerate(mode.evecs):
+                yield vec_fmts[n].format(real=disp.real, imag=disp.imag)
+            if nm == len(self.modes) - 1:
+                yield last_disp_line
+            else:
+                yield end_disp_line
+        yield last_qpt_line
+    
+class MB_Modes(list):
+    
     @property
     def nqpt(self):
         return len(self)
@@ -71,7 +106,49 @@ class MB_Modes(list):
                 return qmode
         else:
             return None
-                
+    
+    def lines_iter(self, fmt='9.6f'):
+        
+        qvec_fmt = ",".join(['{{0[{0}]:{1}}}'.format(i,fmt) for i in range(3)])
+        real_fmt = ",".join(['{{real[{0}]:{1}}}'.format(i,fmt) for i in range(3)])
+        imag_fmt = ",".join(['{{imag[{0}]:{1}}}'.format(i,fmt) for i in range(3)])
+        
+        vec_fmt = "[[{0}], [{1}]]".format(real_fmt, imag_fmt)
+        
+        nevecs = len(self[0].modes[0].evecs)
+        
+        start_line =   '[\n'
+        qpt_fmt =      '{{{{"qvec": [{}], "iqpt": {{iq}},\n'.format(qvec_fmt)
+        mode_line =    ' "modes": [\n'
+        freq_fmt  =    ' {{"freq": "{}", "imode": {},\n'
+        disp_line =    '  "displacements": \n'
+        vec_fmts    = ['   {},\n'.format(vec_fmt)]*nevecs
+        vec_fmts[0]  = '  [{},\n'.format(vec_fmt)
+        vec_fmts[-1] = '   {}]\n'.format(vec_fmt)
+        end_disp_line= '  },\n'
+        last_disp_line='  }\n'
+        end_qpt_line = ']},\n'
+        last_qpt_line= ']}\n'
+        end_line =     ']'
+        
+        yield start_line
+        for nq, qmode in enumerate(self):
+            yield qpt_fmt.format(qmode.qvec, iq=qmode.iqpt)
+            yield mode_line
+            for nm, mode in enumerate(qmode.modes):
+                yield freq_fmt.format(mode.freq, nm+1)
+                yield disp_line
+                for n, disp in enumerate(mode.evecs):
+                    yield vec_fmts[n].format(real=disp.real, imag=disp.imag)
+                if nm == len(qmode.modes) - 1:
+                    yield last_disp_line
+                else:
+                    yield end_disp_line
+            if nq == len(self)-1:
+                yield last_qpt_line
+            else:
+                yield end_qpt_line
+        yield end_line
     
     @classmethod
     def from_file(cls, modefilepath, file_format):
@@ -103,7 +180,6 @@ class MB_Modes(list):
         all_qpts = cls()
         with open(modefilepath, 'r') as fin:
             q_count = 0
-            q = None
             for line in fin:
                 if "metaData:" in line and "qpt" in line:
                     qstr = line.strip()
@@ -119,6 +195,7 @@ class MB_Modes(list):
                     
                     qmode = all_qpts.get_qmode(qvec)
                     if not qmode:
+                        q_count += 1
                         qmode = MB_QMode(q_count, qvec)
                         all_qpts.append(qmode)
                     #qmode.qvecs_format = "QE"
@@ -351,8 +428,8 @@ class MB_Structure():
     
     def create_supercell(self, supercell):
         if self.axes:
-            max_atom_index = max(self.all_atoms) + 1
-            
+            max_atom_index = max(self.all_atoms.keys()) + 1
+            print(max_atom_index)
             n_unit_cell = 0
             iter_3d = itertools.product(range(supercell[0]),
                                         range(supercell[1]),

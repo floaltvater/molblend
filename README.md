@@ -194,12 +194,9 @@ CC=clang CXX=clang++ CPATH="/opt/local/Library/Frameworks/Python.framework/Versi
   materials accordingly. I.e., when duplicating, the materials of original and
   new molecule are linked, and when combining, the materials will not be
   linked.
-- MolBlend doesn't necessarily preserve indices that are explicitly written 
-  in input files (like PDB files). It does preserve the order of atoms though.
-- Dipoles or unit cell axes might end up having zero dimension due to the
-  stretch constraint. Manually switching the "Plane" in the corresponding 
-  mb.stretch constraint should fix that. For some reason this doesn't work
-  reliably from the python API.
+- Indeces that are explicitly given in files (like PDB format) are not
+  preserved currently. This will probably change when export operators get 
+  implemented.
 - Logging is somewhat sparse and not functional for debugging.
 
 [1] https://blender.stackexchange.com/questions/75917/why-are-my-drivers-not-updating-instantly

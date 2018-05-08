@@ -140,9 +140,9 @@ class mb_molecule_objects(PropertyGroup):
     def other(self):
         return get_object_list(self.pvt_other)
     
-    def get_all_objects(self):
+    def get_all_objects(self, with_parent=True):
         all_obs = []
-        if self.parent:
+        if self.parent and with_parent:
             all_obs.append(self.parent)
         all_obs.extend(self.atoms)
         all_obs.extend(self.bonds)
@@ -158,28 +158,11 @@ class mb_molecule_objects(PropertyGroup):
                 all_obs.append(ob)
         all_obs.extend(self.unit_cell.objects)
         return all_obs
-    
-class mb_mode_displacement(PropertyGroup):
-    real = FloatVectorProperty(name="real", size=3)
-    imag = FloatVectorProperty(name="imag", size=3)
-    #action = PointerProperty(name="action", type=bpy.types.Action)
 
-class mb_object_qmode(PropertyGroup):
-    modes = CollectionProperty(type=mb_mode_displacement)
-
-class mb_mode(PropertyGroup):
-    index = IntProperty(name="index")
-    freq = StringProperty(
-        name="Mode frequency",
-        default="", description="Frequency read from file")
-    symmetry = StringProperty(
-        name="Mode symmetry", description="Symmetry of the active mode (not automatically detected)",
-        default="")
-    
-class mb_qmode(PropertyGroup):
+class mb_qvec(PropertyGroup):
     iqpt = IntProperty(name="nqpt", default=1)
     qvec = FloatVectorProperty(name="q vector", default=(0,0,0))
-    modes = CollectionProperty(type=mb_mode)
+    mode_txt = PointerProperty(type=bpy.types.Text)
 
 class MB_UL_modes(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, 
@@ -259,7 +242,7 @@ class mb_molecule(PropertyGroup):
         )
     
     # vibrational modes
-    qpts = CollectionProperty(name="Modes", type=mb_qmode)
+    qvecs = CollectionProperty(name="Modes", type=mb_qvec)
     active_nqpt = IntProperty(
         name="Active q-point",
         description="Active q-point",
@@ -284,8 +267,8 @@ class mb_molecule(PropertyGroup):
         )
     mode_arrows_scale = FloatProperty(
         name="Arrow Scale", description="Scale of mode arrows",
-        default=6.0, min=-1000.0, max=1000.0, 
-        update=mb_utils.update_active_mode
+        default=25.0, min=-1000.0, max=1000.0, 
+        #update=mb_utils.update_active_mode
         )
     show_mode_arrows = BoolProperty(
         name="Show arrows", default=False,
@@ -296,11 +279,6 @@ class mb_molecule(PropertyGroup):
         name="Arrow phase", default=0.,
         description="Mode phase in units of pi",
         update=mb_utils.update_active_mode
-        )
-    show_mode_animation = BoolProperty(
-        name="Show animation", default=True,
-        description="Show animation for mode eigenvectors",
-        update=mb_utils.update_show_mode_animation
         )
     autoplay_mode_animation= BoolProperty(
         name="Autoplay", default=True,
@@ -322,19 +300,19 @@ class mb_molecule(PropertyGroup):
     def draw_vibrations(self, layout):
         
         layout.operator("mb.import_modes")
-        if self.qpts:
-            layout.template_list("MB_UL_modes", "", self, "qpts", self, 
-                              "active_nqpt",rows=1)
+        if self.qvecs:
+            layout.template_list("MB_UL_modes", "", self, "qvecs", self, 
+                              "active_nqpt", rows=1)
             layout.prop(self, "active_mode")
-            layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
-                        "freq", text="Frequency")
-            #layout.prop(self.qpts[self.active_nqpt].modes[self.active_mode], 
+            if not 'mode' in self:
+                layout.label("mode wasn't loaded correctly.")
+                return None
+            layout.label("Frequency: {}".format(self['mode']["freq"]))
+            #layout.prop(self['qpts'][self.active_nqpt]['modes'][self.active_mode], 
                         #"symmetry", text="Symmetry")
-            layout.prop(self, "show_mode_animation")
             layout.prop(self, "mode_scale", slider=False)
             # The play/pause etc buttons are copy/pasted from space_time.py
             row = layout.row(align=True)
-            row.active = self.show_mode_animation
             row.operator("screen.frame_jump", text="", icon='REW').end = False
             row.operator("mb.frame_skip", text="", icon='PREV_KEYFRAME').next = False
             screen = bpy.context.screen
@@ -366,8 +344,6 @@ class mb_molecule(PropertyGroup):
             row.active = self.show_mode_arrows
             row.prop(self, 'mode_arrows_phase')
             
-            
-    
     def draw_properties(self, layout):
         layout.prop(self.objects.parent, "name")
         layout.label("(id: '{}')".format(self.name))
@@ -538,7 +514,6 @@ class mb_object(PropertyGroup):
     element_long = StringProperty(
         name="Element name", description="Full element name")
     mode_arrow = PointerProperty(type=bpy.types.Object)
-    qpts = CollectionProperty(type=mb_object_qmode)
     
     # used by type == 'BOND'
     pvt_bonded_atoms = CollectionProperty(type=mb_object_pointer)
@@ -551,10 +526,6 @@ class mb_object(PropertyGroup):
     
     # used by type == 'PARENT'
     molecule = PointerProperty(type=mb_molecule)
-    
-    # used by mode arrows
-    mode_arrow_length = FloatProperty()
-    #mode_parent_atom = PointerProperty(type=bpy.types.Object)
     
     @property
     def object(self):
@@ -645,7 +616,12 @@ class mb_object(PropertyGroup):
             except TypeError:
                 layout.label("{}: {}".format(label, data))
 
-
+class mb_text(PropertyGroup):
+    type = EnumProperty(
+        name="type", description="Select the text type",
+        items=mb_utils.enums.text_types, default='NONE')
+    parent = PointerProperty(type=bpy.types.Object)
+    
 class mb_element(PropertyGroup):
     name = StringProperty(name="Element")
     element = StringProperty(name="Element")
@@ -829,6 +805,7 @@ def register():
     bpy.types.Object.mb = PointerProperty(type=mb_object)
     bpy.types.Mesh.mb = PointerProperty(type=mb_mesh)
     bpy.types.Scene.mb = PointerProperty(type=mb_scene)
+    bpy.types.Text.mb = PointerProperty(type=mb_text)
 
 
 def unregister():

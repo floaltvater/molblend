@@ -33,6 +33,7 @@ else:
 import math
 import logging
 import numpy as np
+import tempfile
 
 import bpy
 import bmesh
@@ -82,7 +83,7 @@ def import_cube_iso(context,
                     origin_to_com=False,
                     ):
     """
-    Format specification from 
+    Format specification from
     http://h5cube-spec.readthedocs.io/en/latest/cubeformat.html
     """
     if not found_mcubes:
@@ -161,17 +162,17 @@ def import_cube_iso(context,
                 if iso_val == 'VOLFRAC':
                     flat = np.sort(part.flatten())[::-1]
                     cs = np.cumsum(flat)
-                    # find first index to be larger than the percent volume we want
-                    # to enclose
+                    # find first index to be larger than the percent volume
+                    # we want to enclose
                     cut = cs[-1]*vol_frac
                     idx = np.argmax(cs > cut)
-                    # linearly interpolate (this should be good enough for most 
-                    # purposes
+                    # linearly interpolate (this should be good enough for most
+                    # purposes)
                     rat = (cs[idx]-cut) / (cs[idx]-cs[idx-1])
                     iso = rat * (flat[idx-1]-flat[idx]) + flat[idx]
                 elif iso_val == 'ABSOLUTE':
                     iso = absolute
-                # Use marching cubes to obtain the surface mesh of these ellipsoids
+                # Use marching cubes to obtain the surface mesh of ellipsoids
                 verts, faces = mcubes.marching_cubes(data*fac, iso)
                 
                 # displace by have a voxel to account for the voxel volume
@@ -221,7 +222,8 @@ def import_cube_iso(context,
                 material = bpy.data.materials.get(name)
                 if not material:
                     color = (red if fac == 1 else blue)
-                    # get material color from elements list, and Default if not an element
+                    # get material color from elements list, 
+                    # and Default if not an element
                     material = mb_utils.new_material(name, color=color)
                 # finally, assign material to first slot.
                 ob.material_slots[0].link = 'DATA'
@@ -233,103 +235,122 @@ def import_cube_iso(context,
 
 def import_modes(context,
                  report,
-                 modefilepath,
+                 filepath,
                  file_format,
                  molecule):
     
-    logger.info("Reading modes file {}".format(modefilepath))
+    logger.info("Reading modes file {}".format(filepath))
     try:
-        qpts = mb_io_files.MB_Modes.from_file(modefilepath, 
+        qpts = mb_io_files.MB_Modes.from_file(filepath,
                                               file_format)
-    except:
-        raise
     
-    if not qpts or not qpts[0].modes:
-        msg = "No modes found in {}\n".format(bpy.path.basename(modefilepath))
-        msg += "Did you chose the correct file format?"
-        report({'ERROR'}, msg)
-        return False
-    # TODO Check for correct number of evecs
-    nat = len(molecule.objects.atoms)
-    for qmode in qpts:
-        if qmode.qvecs_format and not molecule["unit_cells"]:
-            msg = "Can't convert qvecs to crystal coordinates because no unit"
-            msg += " cell information is present"
-            logger.error(msg)
+        if not qpts or not qpts[0].modes:
+            msg = "No modes found in {}\n".format(bpy.path.basename(filepath))
+            msg += "Did you chose the correct file format?"
             report({'ERROR'}, msg)
-        for mode in qmode.modes:
-            if nat % len(mode.evecs) != 0:
-                msg = "number of displacement vectors "
-                msg += "{}".format(len(mode.evecs))
-                msg += " is different than number of atoms {}".format(nat)
-                msg += " in active molecule."
+            return False
+        
+        nat = len(molecule.objects.atoms)
+        for qmode in qpts:
+            if np.linalg.norm(qmode.qvec) and not molecule["unit_cells"]:
+                msg = "Can't convert qvecs to crystal coordinates because no"
+                msg += " unit cell information is present"
                 logger.error(msg)
                 report({'ERROR'}, msg)
-                return False
-    
-    mb_utils.clear_modes(molecule)
-    molecule.active_mode = 0
-    
-    # This is only used for Quantum ESPRESSO, to calculate the crystal unit 
-    # cell. The cartesian unit cell is not written in the mode output, so the
-    # conversion can't be done when reading the data.
-    uc = Matrix(molecule["unit_cells"][0])*1.889725989
-    k_uc = Matrix([uc[(dim+1)%3].cross(uc[(dim+2)%3]) for dim in range(3)])
-    fac = 2 * math.pi / uc[0].dot(uc[1].cross(uc[2]))
-    k_uc = k_uc * fac
-    inv_k_uc = k_uc.inverted()
-    
-    for nq, qmode in enumerate(qpts):
-        qm = molecule.qpts.add()
-        qm.iqpt = qmode.iqpt
-        if qmode.qvecs_format == "QE":
-            qm.qvec = (Vector(qmode.qvec) * 2 * math.pi / uc[0][0]) * inv_k_uc
-        else:
-            qm.qvec = qmode.qvec
-        
-        mode_name_fmt = 'mode_{}.{}.{{}}.{{}}'.format(molecule.name, nq)
-        
-        # add mode 0 as the equilibrium position
-        m = qm.modes.add()
-        m.freq = "equilibrium"
-        
-        for mode in qmode.modes:
-            m = qm.modes.add()
-            m.freq = mode.freq
-        
-        nvec = len(qmode.modes[0].evecs)
-        # Now add the mode vectors to all atoms
-        for iat, atom in enumerate(molecule.objects.atoms):
-            # mode 0
-            qmob = atom.mb.qpts.add()
-            mob = qmob.modes.add()
-            mob.real = Vector((0,0,0))
-            mob.imag = Vector((0,0,0))
-            
             for mode in qmode.modes:
-                mob = qmob.modes.add()
-                mob.real = mode.evecs[iat%nvec].real
-                mob.imag = mode.evecs[iat%nvec].imag
-    
-    #print("q", len(molecule.objects.atoms[0].mb.qpts))
-    #print("m", len(molecule.objects.atoms[0].mb.qpts[0].modes))
-    
+                if nat % len(mode.evecs) != 0:
+                    msg = "number of displacement vectors "
+                    msg += "{}".format(len(mode.evecs))
+                    msg += " is different than number of atoms {}".format(nat)
+                    msg += " in active molecule."
+                    logger.error(msg)
+                    report({'ERROR'}, msg)
+                    return False
+        
+        # This is only used for Quantum ESPRESSO, to calculate the crystal unit
+        # cell. The cartesian unit cell is not written in the mode output, so
+        # the conversion can't be done when reading the data.
+        uc = Matrix(molecule["unit_cells"][0])*1.889725989
+        k_uc = Matrix([uc[(dim+1)%3].cross(uc[(dim+2)%3]) for dim in range(3)])
+        fac = 2 * math.pi / uc[0].dot(uc[1].cross(uc[2]))
+        k_uc = k_uc * fac
+        inv_k_uc = k_uc.inverted()
+        
+        if qpts[0].qvecs_format == "QE":
+            for nq, qmode in enumerate(qpts):
+                qmode.qvec = (Vector(qmode.qvec)*2*math.pi/uc[0][0])*inv_k_uc
+    except:
+        msg = "{} could not be imported. Check console.".format(filepath)
+        report({'ERROR'}, msg)
+        logger.exception("")
+        return False
+    logger.debug("Found {} q-points".format(len(qpts)))
     old_sel = context.selected_objects
     last_active = context.object
-    
-    for atom in molecule.objects.atoms:
-        mb_utils.create_mode_action(context, atom, molecule)
-        mb_utils.create_mode_arrow(context, atom, molecule, type='3D')
-    
-    bpy.ops.object.select_all(action="DESELECT")
-    for ob in old_sel:
-        ob.select = True
-    context.scene.objects.active = last_active
-    
-    if len(qpts) > 1 and file_format == "PHONOPY":
-        report({'WARNING'}, "Please check if q!=0 modes have been imported"
-               " properly. If not, please notify Flo to fix it.")
+    try:
+        # clear old modes first
+        while len(molecule.qvecs):
+            last = len(molecule.qvecs)-1
+            qv = molecule.qvecs[last]
+            if qv.mode_txt:
+                bpy.data.texts.remove(qv.mode_txt, do_unlink=True)
+            molecule.qvecs.remove(last)
         
+        # Saving as file and loading is faster than writing to BlendDataText
+        txt_list = []
+        txtname_fmt = ".modes_{}_qpt-{}.json"
+        print("Start loading")
+        for iq, qmode in enumerate(qpts):
+            print(iq)
+            logger.debug("Loading qpt {} as BlendDataText".format(qmode.iqpt))
+            qv = molecule.qvecs.add()
+            qv.qvec = qmode.qvec
+            qv.iqpt = qmode.iqpt
+            with tempfile.NamedTemporaryFile(mode='w+') as fout:
+                for line in qmode.lines_iter():
+                    fout.write(line)
+                fout.flush()
+                try:
+                    txt = bpy.data.texts.load(filepath=fout.name, internal=True)
+                    txt_list.append(txt)
+                except:
+                    logger.error("Problem with qpt {}".format(qmode.iqpt))
+                    raise
+            txt.name = txtname_fmt.format(molecule.name, qmode.iqpt)
+            qv.mode_txt = txt
+            txt.mb.parent = molecule.objects.parent
+            txt.mb.type = "MODES"
+        
+        logger.debug("Done loading modes")
+        
+        for atom in molecule.objects.atoms:
+            mb_utils.create_mode_action(context, atom, molecule)
+            mb_utils.create_mode_arrow(context, atom, molecule, type='3D')
+        
+        molecule.active_mode = 0
+        
+        if len(qpts) > 1 and file_format == "PHONOPY":
+            report({'WARNING'}, "Please check if q!=0 modes have been imported"
+                " properly. If not, please notify Flo to fix it.")
+        return True
+    except:
+        for txt in txt_list:
+            bpy.data.texts.remove(txt)
+        while len(molecule.qvecs):
+            last = len(molecule.qvecs)-1
+            qv = molecule.qvecs[last]
+            if qv.mode_txt:
+                bpy.data.texts.remove(qv.mode_txt, do_unlink=True)
+            molecule.qvecs.remove(last)
+        msg = "Modes were read but couldn't be imported. Check console."
+        report({'ERROR'}, msg)
+        logger.exception("")
+        return False
+    finally:
+        bpy.ops.object.select_all(action="DESELECT")
+        for ob in old_sel:
+            ob.select = True
+        context.scene.objects.active = last_active
     
 def import_molecule(context,
                     report,
@@ -403,11 +424,11 @@ def import_molecule(context,
         atom_obs = {}
         warning = set()
         for index, atom in sorted(structure.all_atoms.items()):
-            new_atom = mb_utils.add_atom(context, 
-                                         atom["coords"][0]-center_of_mass, 
+            new_atom = mb_utils.add_atom(context,
+                                         atom["coords"][0]-center_of_mass,
                                          atom["element"],
                                          atom["name"],
-                                         atom["id"],
+                                         index, #atom["id"],
                                          molecule)
             new_atom.mb.supercell = atom.get("supercell", (0,0,0))
             all_obs.append(new_atom)
@@ -416,7 +437,7 @@ def import_molecule(context,
             
             if structure.nframes > 1:
                 anim_data = new_atom.animation_data_create()
-                atom_id = '{}.{}'.format(new_atom.mb.get_molecule().name, 
+                atom_id = '{}.{}'.format(new_atom.mb.get_molecule().name,
                                          new_atom.mb.index)
                 action = bpy.data.actions.new(name="frames_{}".format(atom_id))
                 anim_data.action = action
@@ -440,7 +461,7 @@ def import_molecule(context,
                                                 atom_obs[index2],
                                                 bond_type=bond_type)
                 except KeyError as err:
-                    if not err.args: 
+                    if not err.args:
                         err.args=('',)
                     msg = "Atom index {} was found in CONECT"
                     msg += " but not in the list of atoms"

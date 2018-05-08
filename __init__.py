@@ -51,6 +51,7 @@ else:
 import logging
 import os
 import subprocess
+import json
 
 import bpy
 from bpy.types import Panel
@@ -63,6 +64,7 @@ from bpy.props import (StringProperty,
                        PointerProperty,
                        CollectionProperty)
 from bpy.app.handlers import persistent
+from mathutils import Vector, Matrix
 
 log_path = os.path.join(bpy.context.user_preferences.filepaths.temporary_directory, "molblend_log.txt")
 log_is_writeable = True
@@ -418,6 +420,42 @@ def save_handler(dummy):
                 c.date = git_date
                 msg = "Added commit {} to scn.mb.info.git_commits"
                 logger.debug(msg.format(git_commit_id))
+    
+    mb_cleanup()
+
+def mb_cleanup():
+    logger.debug("Cleaning up")
+    delete = []
+    for ob in bpy.data.objects:
+        if ob.mb.type == 'PARENT':
+            for scn in bpy.data.scenes:
+                if ob.name in scn.objects:
+                    break
+            else:
+                all_obs = ob.mb.molecule.objects.get_all_objects(with_parent=False)
+                if not all_obs:
+                    name = ob.name
+                    for qv in ob.mb.qvecs:
+                        if qv.mode_txt:
+                            bpy.data.texts.remove(qv.mode_txt)
+                    delete.append(ob)
+                    logger.debug("Will delete molecule parent {}".format(name))
+                else:
+                    msg = "Parent {} not in scene, but still has objects:"
+                    logger.debug(msg.format(ob.name))
+                    for cob in all_obs:
+                        logger.debug("{}".format(cob.name))
+        elif ob.mb.type != "NONE" and not ob.mb.parent:
+            logger.debug("{} has no mb.parent".format(ob.name))
+    for ob in delete:
+        for scn in bpy.data.scenes:
+            if ob.name in scn.objects:
+                scn.objects.unlink(ob)
+        bpy.data.objects.remove(ob)
+    # TODO handle objects whose parent got deleted
+    for txt in bpy.data.texts:
+        if txt.mb.type == "MODES" and not txt.mb.parent:
+            bpy.data.texts.remove(txt)
 
 
 def register():
@@ -427,7 +465,7 @@ def register():
     
     add_handler(bpy.app.handlers.load_post, load_handler)
     add_handler(bpy.app.handlers.save_pre, save_handler)
-
+    bpy.app.driver_namespace['Vector'] = Vector
 
 def unregister():
     bpy.utils.unregister_module(__name__)
