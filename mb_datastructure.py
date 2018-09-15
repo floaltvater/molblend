@@ -489,6 +489,19 @@ class mb_molecule(PropertyGroup):
             if item.object == ob:
                 objects.remove(i)
                 return
+    
+    def get_mode(self, n_mode=None, n_qpt=None):
+        if n_mode is None:
+            n_mode = self.active_mode
+        if n_qpt is None:
+            n_qpt = self.active_nqpt
+        try:
+            qpt = json.loads(self.qvecs[n_qpt].mode_txt.as_string())
+        except:
+            logger.error("Problem loading mode from text object. Check console")
+            logger.exception("")
+            return None
+        return qpt['modes'][n_mode-1]
 
 
 class mb_object(PropertyGroup):

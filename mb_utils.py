@@ -116,7 +116,6 @@ def update_all_meshes(self, context):
         for me in bpy.data.meshes:
             me.update()
 
-
 def update_active_mode(self, context):
     if len(self.qvecs) == 0:
         if context.screen.is_animation_playing:
@@ -124,19 +123,22 @@ def update_active_mode(self, context):
             context.scene.frame_current = 1
         return
     
-    try:
-        qpt = json.loads(self.qvecs[self.active_nqpt].mode_txt.as_string())
-        self['mode'] = qpt['modes'][self.active_mode-1]
-    except:
-        logger.error("Problem loading mode from text object. Check console")
-        logger.exception("")
-        if self.active_mode == 0:
-            return
-        else:
-            self.active_mode = 0
-            return
+    if self.active_mode == 0:
+        self['mode']['freq'] = 'equilibrium'
+    else:
+        try:
+            qpt = json.loads(self.qvecs[self.active_nqpt].mode_txt.as_string())
+            self['mode'] = qpt['modes'][self.active_mode-1]
+        except:
+            logger.error("Problem loading mode from text object.")
+            logger.exception("")
+            if self.active_mode == 0:
+                return
+            else:
+                self.active_mode = 0
+                return
     
-    if self.active_mode > len(qpt['modes']):
+    if self.active_mode > 0 and self.active_mode > len(qpt['modes']):
         self.active_mode = len(qpt['modes']) - 1
         # since this calls this callback again, return
         return

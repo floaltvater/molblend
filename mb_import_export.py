@@ -16,12 +16,6 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-# set path to mcubes. Needs to be of the same python version as Blender.
-# If installed with pip you can get the path with "pip show mcubes".
-# pymcubes path ###############################################################
-mcubes_path = r"/usr/local/lib/python3.5/dist-packages"
-###############################################################################
-
 if "bpy" in locals():
     import importlib
     importlib.reload(mb_utils)
@@ -44,24 +38,48 @@ from molblend.elements_default import ELEMENTS as ELEMENTS_DEFAULT
 logger = logging.getLogger(__name__)
 A_per_Bohr = 0.529177249
 
-# Try to load mcubes module for iso surface creation
-try:
-    import mcubes
-except ImportError:
-    import os
-    if os.path.exists(mcubes_path):
-        for module, fn in bpy.path.module_names(mcubes_path):
-            if module == "mcubes":
-                import sys
-                if not mcubes_path in sys.path:
-                    sys.path.append(mcubes_path)
-                try:
-                    import mcubes
-                except ImportError:
-                    logger.warning("mcubes could not be imported. Is it installed for python 3.5?")
-    else:
-        logger.error("Path to mcubes library doesn't exists. If you want to use isosurfaces, please install pymcubes and adjust the mcubes_path in mb_import_export.py.")
-found_mcubes = ("mcubes" in locals())
+def import_mcubes(context, report):
+    global mcubes
+    # Try to load mcubes module for iso surface creation
+    
+    if "mcubes" in globals():
+        return True
+    try:
+        import mcubes
+    except ImportError:
+        import os
+        error = None
+        
+        user_preferences = context.user_preferences
+        molblend_prefs = user_preferences.addons[__package__].preferences
+        
+        if molblend_prefs is None:
+            error = ("{} addon preferences not found."
+                     " This shouldn't happen.")
+        else:
+            mcubes_path = molblend_prefs.pymcubes_path
+            if not mcubes_path:
+                error = ("path to pymcubes not set in File->User preferences"
+                         "->Add-ons->Add Mesh:MolBlend->Preferences")
+            elif not os.path.exists(mcubes_path):
+                error = "Path to mcubes library doesn't exists."
+            else:
+                for module, fn in bpy.path.module_names(mcubes_path):
+                    if module == "mcubes":
+                        import sys
+                        if not mcubes_path in sys.path:
+                            sys.path.append(mcubes_path)
+                        try:
+                            import mcubes
+                        except ImportError:
+                            error = ("mcubes could not be imported."
+                                     " Is it installed for python 3.5?")
+                        break
+                else:
+                    error = "mcubes module not found in {}".format(mcubes_path)
+        if error is not None:
+            report({'ERROR'}, error)
+    return "mcubes" in globals()
 
 #--- Read file functions -----------------------------------------------------#
 def is_inside_of_planes(planes, l0, flip=False):
@@ -86,10 +104,10 @@ def import_cube_iso(context,
     Format specification from
     http://h5cube-spec.readthedocs.io/en/latest/cubeformat.html
     """
+    found_mcubes = import_mcubes(context, report)
     if not found_mcubes:
-        report({'ERROR'}, "mcubes was not found. Please install and/or set correct"
-                          " path to mcubes in {}".format(__file__))
         return False
+    
     bpy.ops.object.select_all(action="DESELECT")
     
     with open(filepath, "r") as fin:

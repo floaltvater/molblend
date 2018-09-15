@@ -54,7 +54,7 @@ import subprocess
 import json
 
 import bpy
-from bpy.types import Panel
+from bpy.types import Panel, AddonPreferences
 from bpy.props import (StringProperty,
                        BoolProperty,
                        EnumProperty,
@@ -101,6 +101,20 @@ if not len(logger.handlers):
 
 logger.info("Writing log to file {}".format(log_path))
 
+logger.warning('name: {}'.format(__name__))
+
+class MolBlendPreferences(AddonPreferences):
+    bl_idname = __name__
+
+    pymcubes_path = StringProperty(
+            name="PyMcubes path",
+            subtype='FILE_PATH',
+            description='path in which pymcubes module resides'
+            )
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "pymcubes_path")
 
 class MolBlendPanel():
     bl_space_type = "VIEW_3D"

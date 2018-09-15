@@ -344,7 +344,10 @@ class MB_Modes(list):
                     while line[0] == "-":
                         nmodes += len(line[1:].strip().split())
                         line = next(fin)
-                    #logger.debug("found "+str(nmodes)+" frequencies")
+                    if nmodes%3:
+                        raise ValueError("Number of modes is not divisible by 3.")
+                    nat = int(nmodes/3)
+                    #logger.debug("found {} frequencies in {}".format(nmodes, filepath))
                     while not "Eigendisplacements" in line:
                         line = next(fin)
                     
@@ -357,7 +360,8 @@ class MB_Modes(list):
                         line = next(fin)
                         while line[0] != "-" and line[0] != ";":
                             line = next(fin)
-                        while line[0] == "-" or line[0] == ";":
+                        for na in range(nat):
+                        #while line[0] == "-" or line[0] == ";":
                             real = [c*1. for c in list(map(float, line.split()[-3:]))]
                             line = next(fin)
                             imag = [c*1. for c in list(map(float, line.split()[-3:]))]

@@ -191,27 +191,26 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
             return fixed_vector
         
         elif n_bonds == 1:
-            # convert bond_vec to polar coordinates
-            x, y, z = bond_vecs[0].xyz
-            r = math.sqrt(x*x + y*y + z*z)
-            theta = math.acos(z/r) # 0 <= theta <= pi
-            phi = math.atan2(y, x) # -pi < phi <= pi
+            # Need to break ambiguity here. Pick two points as the intersection
+            # of the circle of possible points with viewing plane
             
+            # view vector
+            N = context.region_data.view_rotation*Vector((0,0,-1))
+            # distance between mouse cursor and first atom
+            l = bond_vector.length
+            
+            vec = bond_vecs[0].cross(N).normalized()
+            if vec.length == 0:
+                vec = bond_vecs[0].cross(basis_change_matrix * Vector((1,0,0)))
+            C0 = first_loc - 0.5 * l * bond_vecs[0]
             fixed_xy = []
             bisect_vectors = []
-            # increase and decrease theta by 30
-            for angle in (-60, 60):
-                new_theta = theta + angle * math.pi/180
-                # convert back to cartesian
-                x = r * math.sin(new_theta) * math.cos(phi)
-                y = r * math.sin(new_theta) * math.sin(phi)
-                z = r * math.cos(new_theta)
-                #print(angle, x)
-                bisect_vector = -Vector((x, y, z))
-                bisect_vectors.append(bisect_vector)
-                transformed = basis_change_matrix.inverted() * bisect_vector
+            for fac in (-1, 1):
+                new_vec = C0 + vec*fac*math.sqrt(3./4)*l - first_loc
+                bisect_vectors.append(new_vec)
+                transformed = basis_change_matrix.inverted() * new_vec
                 fixed_xy.append(Vector((transformed.x, transformed.y)))
-            
+                
             # find index of closest fixed xy in list
             pos, min_angle = min(
                 enumerate(xy_vec.angle(other) for other in fixed_xy), 
@@ -220,8 +219,7 @@ def get_fixed_geometry(context, first_atom, new_atom, coord_3d, geometry):
             fixed_bond_vector = bisect_vectors[pos]
             
             # calculate new coordinates of second atom
-            fixed_vector = (first_loc
-                            + fixed_bond_vector * xy_vec.length)
+            fixed_vector = (first_loc + fixed_bond_vector)
             return fixed_vector
 
     # TODO implement other 3D geometries (like tetrahedral, octahedral, etc.
