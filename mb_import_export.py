@@ -513,6 +513,6 @@ def import_molecule(context,
             bpy.data.objects.remove(ob)
         logger.exception('')
         return False
-        
+
 
 

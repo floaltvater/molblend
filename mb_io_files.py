@@ -43,6 +43,13 @@ A_per_Bohr = 0.529177249
 # something goes wrong during import, it is much easier to just discard these
 # instances, than to delete already read mode vectors from the molecule.
 
+mode_file_format = [
+    ('ANADDB', "anaddb", "Abinit/anaddb output"),
+    ('QE_DYNMAT', "QE dynmat", "Quantum ESPRESSO output"),
+    ('XYZ', "xyz", "xyz-style format"),
+    ('PHONOPY', "phonopy", "phonopy/v_sim ascii format"),
+    ]
+
 class MB_Mode_Displacement():
     def __init__(self, real, imag):
         self.real = real
@@ -160,7 +167,7 @@ class MB_Modes(list):
         - simple: xyz style file with Nx3 (real) or Nx6 (complex) floats
         """
         
-        # Also need to add entry in mb_utils.enums.mode_file_format
+        # Also need to add entry in mode_file_format
         read_modes_funcs = {
             "ANADDB": cls._read_anaddb_out,
             "QE_DYNMAT": cls._read_qe_dynmat_out,
@@ -416,7 +423,7 @@ class MB_Structure():
                     except KeyError:
                         cov1 = 1
                     try:
-                        cov2 = ELEMENTS[atom1["element"]]['covalent']
+                        cov2 = ELEMENTS[atom2["element"]]['covalent']
                     except KeyError:
                         cov2 = 1
                     # the bond length should just be the sum of covalent radii 
@@ -488,12 +495,14 @@ class MB_Structure():
             "xyz": cls._read_xyz_file,
             "pdb": cls._read_pdb_file,
             "POSCAR": cls._read_POSCAR_file,
+            "CONTCAR": cls._read_POSCAR_file,
             "vasp": cls._read_POSCAR_file,
             "ascii": cls._read_phonopy_ascii,
             "cube": cls._read_cube_file,
             "abinit": cls._read_abinit_output_file,
             "qe_input": cls._read_qe_input_file,
-            "qe_output": cls._read_qe_rlx_output_file
+            "qe_output": cls._read_qe_rlx_output_file,
+            "json": cls._read_pymatgen_json,
             }
         
         fmt = os.path.basename(filepath).rsplit('.')[-1]
@@ -539,7 +548,7 @@ class MB_Structure():
                 cell_mats = [unit_fac] * structure.nframes
             else:
                 if not structure.axes:
-                    msg = "Atom unit in crystal, but no axes present. "
+                    msg = "Atom unit is 'crystal', but no axes read. "
                     msg += "Probably a bug in {}".format(read_funcs[fmt].__name__)
                     raise IOError(msg)
                 cell_mats = [Matrix(ax).transposed() for ax in structure.axes]
@@ -1251,4 +1260,48 @@ class MB_Structure():
                                 level=0
                                 )
         
+        return strc
+    
+    @classmethod
+    def _read_pymatgen_json(cls, filepath):
+        '''
+        Read json file with same format as exported from pymatgen.
+        Needs at least a "sites" key, whose value is a list of dicts, that have
+        keys "species", and "xyz" or "abc"; if "abc" json also needs "lattice".
+        All units read in angstrom.
+        Doesn't handle multiple occupation of one site.
+        '''
+        
+        strc = cls()
+        strc.nframes = 1
+        
+        with open(filepath, "r") as fin:
+            dct = json.load(fin)
+        
+        # check if lattice is there
+        has_lattice = "lattice" in dct
+        if has_lattice:
+            strc.axes_unit = "angstrom"
+            strc.axes = [dct["lattice"]["matrix"]]
+            cell_matrix = Matrix(strc.axes[0]).transposed()
+        
+        for i, site in enumerate(dct["sites"]):
+            element = site["species"][0]["element"]
+            alt_name = "{}{}".format(element, i)
+            atom_name = site["label"] if "label" in site else alt_name
+            if "xyz" in site:
+                location = site["xyz"]
+                strc.atom_unit = "angstrom"
+            elif has_lattice:
+                location = site["abc"]
+                strc.atom_unit = "crystal"
+            else:
+                msg = "site {} in json file {} doesn't have a valid coordinate"
+                msg += " entry. Needs either 'xyz', or 'abc' if 'lattice' is"
+                msg += " given on top level"
+                raise IOError(msg.format(i, filepath))
+            strc.all_atoms[i] = {"element": element,
+                                 "name": atom_name,
+                                 "coords": [location],
+                                 "id": i}
         return strc

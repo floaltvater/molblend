@@ -440,6 +440,7 @@ def save_handler(dummy):
 def mb_cleanup():
     logger.debug("Cleaning up")
     delete = []
+    leftover = []
     for ob in bpy.data.objects:
         if ob.mb.type == 'PARENT':
             for scn in bpy.data.scenes:
@@ -460,7 +461,14 @@ def mb_cleanup():
                     for cob in all_obs:
                         logger.debug("{}".format(cob.name))
         elif ob.mb.type != "NONE" and not ob.mb.parent:
-            logger.debug("{} has no mb.parent".format(ob.name))
+            if not ob.users_scene and not ob.use_fake_user:
+                logger.debug("{} not in scene. Deleting".format(ob.name))
+                delete.append(ob)
+            else:
+                msg_fmt = "{} has no mb.parent. Adding to orphans molecule"
+                logger.debug(msg_fmt.format(ob.name))
+                leftover.append(ob)
+    
     for ob in delete:
         for scn in bpy.data.scenes:
             if ob.name in scn.objects:
@@ -471,6 +479,11 @@ def mb_cleanup():
         if txt.mb.type == "MODES" and not txt.mb.parent:
             bpy.data.texts.remove(txt)
 
+    if leftover:
+        mol = bpy.data.scenes[0].mb.new_molecule(name_mol="orphans")
+        for ob in leftover:
+            ob.mb.parent = mol.objects.parent
+            ob.parent = mol.objects.parent
 
 def register():
     

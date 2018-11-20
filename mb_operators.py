@@ -27,6 +27,7 @@ else:
     from molblend import mb_utils
     from molblend import mb_geometry
     from molblend import mb_import_export
+    from molblend.mb_io_files import mode_file_format
 
 import os
 import sys
@@ -47,7 +48,7 @@ from bpy.props import (StringProperty,
                        PointerProperty,
                        CollectionProperty,
                        EnumProperty)
-from bpy_extras.io_utils import ImportHelper, ExportHelper
+
 from mathutils import Vector, Matrix
 
 logger = logging.getLogger(__name__)
@@ -875,7 +876,7 @@ class MD_OT_import_modes(bpy.types.Operator):
     
     file_format = EnumProperty(
         name="File format", description="Choose file format of mode file",
-        items=mb_utils.enums.mode_file_format, default='ANADDB')
+        items=mode_file_format, default='ANADDB')
     
     def draw(self, context):
         layout = self.layout
@@ -1154,7 +1155,7 @@ class MD_OT_import_molecules(bpy.types.Operator):
         col.prop(self, "bond_color")
         col.prop(self, "bond_guess")
         col.prop(self, "bond_type")
-        
+
 
 class MB_OT_frame_skip(bpy.types.Operator):
     """Draw a line with the mouse"""

@@ -96,12 +96,6 @@ class enums():
         ('PDB', "pdb", "Protein Databank format"),
         ('B4W', "b4w", "standalone HTML with embedded 3D viewer")
         ]
-    mode_file_format = [
-        ('ANADDB', "anaddb", "Abinit/anaddb output"),
-        ('QE_DYNMAT', "QE dynmat", "Quantum ESPRESSO output"),
-        ('XYZ', "xyz", "xyz-style format"),
-        ('PHONOPY', "phonopy", "phonopy/v_sim ascii format"),
-        ]
     iso_val = [
         ('VOLFRAC', "volume fraction", "iso value by fraction of volume"),
         ('ABSOLUTE', "absolute value", "iso value by absolute value in cube file"),
