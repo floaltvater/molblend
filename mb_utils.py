@@ -198,10 +198,6 @@ def update_atom_element(self, context):
     # update bond materials
     for bond in self.bonds:
         assign_bond_material(bond)
-    
-    # assign type last, to be able to check if element is newly assigned or
-    # just updated
-    self.type = 'ATOM'
 
 
 def update_bond_material(self, context):
@@ -495,6 +491,7 @@ def add_atom(context, location, element, atom_name, atom_index, molecule):
     new_atom.parent = molecule.objects.parent
     new_atom.mb.parent = molecule.objects.parent
     
+    new_atom.mb.type = 'ATOM'
     # updating the element will call update_atom_element, which assigns a mesh,
     # and sets all the drivers
     new_atom.mb.element = element

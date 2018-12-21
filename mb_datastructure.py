@@ -518,6 +518,9 @@ class mb_object(PropertyGroup):
     pvt_bonds = CollectionProperty(type=mb_object_pointer)
     @property
     def bonds(self):
+        if self.type != 'ATOM':
+            logger.debug("Accessed mb.bonds of non-ATOM")
+            return None
         return get_object_list(self.pvt_bonds)
 
     atom_name = StringProperty(name="Atom name")
@@ -532,6 +535,9 @@ class mb_object(PropertyGroup):
     pvt_bonded_atoms = CollectionProperty(type=mb_object_pointer)
     @property
     def bonded_atoms(self):
+        if self.type != 'BOND':
+            logger.debug("Accessed mb.bonded_atoms of non-BOND")
+            return None
         return get_object_list(self.pvt_bonded_atoms)
     
     supercell = IntVectorProperty(name="supercell", default=(0,0,0),

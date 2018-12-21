@@ -452,7 +452,7 @@ class MB_OT_select_bonded(Operator):
                     objects.append(b)
                     b.select = True
                     bond(b)
-            return {'FINISHED'}
+            return
         
         def bond(ob):
             for a in ob.mb.bonded_atoms:
@@ -460,17 +460,17 @@ class MB_OT_select_bonded(Operator):
                     objects.append(a)
                     a.select = True
                     atom(a)
-            return {'FINISHED'}
+            return
         
         objects = []
         
         for ob in context.selected_objects:
             if ob.mb.type in ('ATOM', 'BOND'):
                 if ob.mb.type == 'ATOM':
-                    return atom(ob)
+                    atom(ob)
                 elif ob.mb.type == 'BOND':
-                    return bond(ob)
-        return {'CANCELLED'}
+                    bond(ob)
+        return {'FINISHED'}
 
 def get_molecules(self, context):
     lst = []
