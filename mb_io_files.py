@@ -50,6 +50,21 @@ mode_file_format = [
     ('PHONOPY', "phonopy", "phonopy/v_sim ascii format"),
     ]
 
+import_file_format = [
+    ("NONE", "automatic", "determine file format automatically"),
+    ("xyz", "xyz", "xyz format"),
+    ("pdb", "pdb", "pbd format with <99999 entries"),
+    ("POSCAR", "POSCAR", "VASP input"),
+    ("XDATCAR", "XDATCAR", "VASP output"),
+    ("CONTCAR", "CONTCAR", "VASP output"),
+    ("ascii", "phonopy ascii", "phonopy ascii format"),
+    ("cube", "Gaussian cube", "Gaussian cube file"),
+    ("abinit", "abinit output", "abinit output"),
+    ("qe_input", "QE input", "Quantum ESPRESSO input"),
+    ("qe_output", "QE output", "Quantum ESPRESSO output"),
+    ("json", "json", "pymatgen's json format"),
+    ]
+
 class MB_Mode_Displacement():
     def __init__(self, real, imag):
         self.real = real
@@ -490,13 +505,16 @@ class MB_Structure():
     @classmethod
     def from_file(cls, filepath,
                   auto_unit=True,
-                  unit_fac=1.0):
+                  unit_fac=1.0,
+                  file_format="NONE"):
+        
+        # also add new formats to file_format list
         read_funcs = {
             "xyz": cls._read_xyz_file,
             "pdb": cls._read_pdb_file,
             "POSCAR": cls._read_POSCAR_file,
+            "XDATCAR": cls._read_XDATCAR_file,
             "CONTCAR": cls._read_POSCAR_file,
-            "vasp": cls._read_POSCAR_file,
             "ascii": cls._read_phonopy_ascii,
             "cube": cls._read_cube_file,
             "abinit": cls._read_abinit_output_file,
@@ -505,20 +523,27 @@ class MB_Structure():
             "json": cls._read_pymatgen_json,
             }
         
-        fmt = os.path.basename(filepath).rsplit('.')[-1]
-        # Determine file format
-        if not fmt in read_funcs:
-            # read first lines of file to determine file format
-            with open(filepath, 'r') as fin:
-                lines = fin.read()
-                if "ABINIT" in lines:
-                    fmt = "abinit"
-                if "&control" in lines.lower():
-                    fmt = "qe_input"
-                elif "BFGS Geometry Optimization" in lines:
-                    fmt = "qe_output"
+        if file_format == "NONE":
+            fmt = os.path.basename(filepath).rsplit('.')[-1]
+            # Determine file format
+            if not fmt in read_funcs:
+                # read first lines of file to determine file format
+                with open(filepath, 'r') as fin:
+                    lines = fin.read()
+                    if "ABINIT" in lines:
+                        fmt = "abinit"
+                    if "&control" in lines.lower():
+                        fmt = "qe_input"
+                    elif "BFGS Geometry Optimization" in lines:
+                        fmt = "qe_output"
+        else:
+            fmt = file_format
         logger.debug("Reading {} as {} file.".format(filepath, fmt))
-        structure = read_funcs[fmt](filepath)
+        try:
+            structure = read_funcs[fmt](filepath)
+        except KeyError:
+            logger.error("file format '{}' not implemented".format(fmt))
+            raise
         
         if structure.axes and not len(structure.axes) == structure.nframes:
             raise IOError(("Number of unit vectors ({}) and frames ({})"
@@ -737,6 +762,77 @@ class MB_Structure():
         strc.axes = [strc.axes]
         strc.axes_unit = "angstrom"
         strc.nframes += 1
+        return strc
+
+    @classmethod
+    def _read_XDATCAR_file(cls, filepath_vasp):
+        
+        strc = cls()
+        
+        with open(filepath_vasp, "r") as fin:
+            # first line is name or comment
+            next(fin)
+            scale = float(next(fin))
+            # if scale is negative, it is the total volume of the cell
+            volume = None
+            if scale < 0.0:
+                volume = -1.*scale
+                scale = 1.0
+            # lattice vectors
+            for i in range(3):
+                line = next(fin)
+                coords = list(map(float, line.split()))
+                strc.axes.append(Vector(coords) * scale)
+            if volume:
+                avec, bvec, cvec = strc.axes
+                scale = V/np.absolute(np.dot(avec, np.cross(bvec, cvec)))
+                strc.axes = [vec * scale for vec in strc.axes]
+            # probably elements
+            elements_list = next(fin).split()
+            try:
+                # in the old POSCAR the atom types were not specified.
+                n_atoms = map(int, elements_list)
+                elements = ["Default"] * sum(n_atoms)
+            except ValueError:
+                n_atoms = map(int, next(fin).split())
+                elements = [elements_list[i] for i, n in enumerate(n_atoms)
+                            for j in range(n)]
+            line = next(fin).strip()
+            # dynamical switch that is ignored here
+            if line[0] in "Ss":
+                line = next(fin).strip()
+            
+            # Read the first frame to set up atom dicts
+            strc.nframes += 1
+            # The next character determines format of coordinates.
+            # - in cartesian coordinates
+            if line[0] in "CcKk":
+                strc.atom_unit = "angstrom"
+            # - fractional coordinates
+            elif line[0] in "Dd":
+                strc.atom_unit = "crystal"
+            for i, element in enumerate(elements):
+                line = next(fin)
+                coords = list(map(float, line.split()[:3]))
+                atom_name = "{}{}".format(element.capitalize(), i)
+                strc.all_atoms[i] = {"element": element,
+                                    "name": atom_name,
+                                    "coords": [coords],
+                                        "id": i}
+            # Now read the rest of the frames
+            for line in fin:
+                if ((line[0] in "CcKk" and strc.atom_unit != "angstrom") or
+                    (line[0] in "Dd" and strc.atom_unit != "crystal")):
+                    err = "coordinate units are not consistent in {}"
+                    raise IOError(err.format(filepath_vasp))
+                for i, element in enumerate(elements):
+                    line = next(fin)
+                    coords = list(map(float, line.split()[:3]))
+                    strc.all_atoms[i]["coords"].append(coords)
+                strc.nframes += 1
+        
+        strc.axes = [strc.axes] * strc.nframes
+        strc.axes_unit = "angstrom"
         return strc
     
     @classmethod

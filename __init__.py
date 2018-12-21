@@ -450,7 +450,7 @@ def mb_cleanup():
                 all_obs = ob.mb.molecule.objects.get_all_objects(with_parent=False)
                 if not all_obs:
                     name = ob.name
-                    for qv in ob.mb.qvecs:
+                    for qv in ob.mb.molecule.qvecs:
                         if qv.mode_txt:
                             bpy.data.texts.remove(qv.mode_txt)
                     delete.append(ob)

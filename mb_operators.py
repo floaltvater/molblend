@@ -23,11 +23,13 @@ if "bpy" in locals():
     importlib.reload(mb_utils)
     importlib.reload(mb_geometry)
     importlib.reload(mb_import_export)
+    from molblend.mb_io_files import mode_file_format, import_file_format
+
 else:
     from molblend import mb_utils
     from molblend import mb_geometry
     from molblend import mb_import_export
-    from molblend.mb_io_files import mode_file_format
+    from molblend.mb_io_files import mode_file_format, import_file_format
 
 import os
 import sys
@@ -927,6 +929,10 @@ class MD_OT_import_molecules(bpy.types.Operator):
         description="List with file names used for importing",
         type=bpy.types.OperatorFileListElement)
     
+    file_format = EnumProperty(
+        name="File format", description="Choose file format of structure file",
+        items=import_file_format, default='NONE')
+    
     #--- molecule properties -------------------------------------------------#
     name_mol = StringProperty(
         name="Molecule Name", description="Name of imported molecule",
@@ -1075,6 +1081,7 @@ class MD_OT_import_molecules(bpy.types.Operator):
                 context,
                 self.report,
                 filepath,
+                self.file_format,
                 new_molecule,
                 self.refine_atoms,
                 self.refine_bonds,
@@ -1108,6 +1115,9 @@ class MD_OT_import_molecules(bpy.types.Operator):
         layout = self.layout
         layout.label("Molecule name")
         layout.prop(self, "name_mol", text="")
+        
+        layout.separator()
+        layout.prop(self, "file_format", text="File format")
         
         layout.separator()
         layout.label("Units")

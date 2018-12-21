@@ -373,6 +373,7 @@ def import_modes(context,
 def import_molecule(context,
                     report,
                     filepath,
+                    file_format,
                     molecule,
                     refine_atoms,
                     refine_bonds,
@@ -398,6 +399,7 @@ def import_molecule(context,
             filepath,
             auto_unit=auto_unit,
             unit_fac=scale_distances,
+            file_format=file_format,
             )
         
         # some sanity checks
