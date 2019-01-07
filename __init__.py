@@ -179,14 +179,40 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout.operator("mb.select_bonded")
         layout.operator("mb.select_molecule")
         layout.operator("mb.combine_molecules")
-        layout.prop(context.scene.mb.globals, "show_bond_lengths")
-        layout.prop(context.scene.mb.globals, "bond_length_font_size",
-                    text="Font size")
         
         layout.separator()
         layout.operator("mb.make_static")
         layout.operator("mb.apply_scale")
 
+class MB_PT_display(MolBlendPanel, Panel):
+    bl_label = "Display"
+    bl_options = {'DEFAULT_CLOSED'}
+    
+    @classmethod
+    def poll(cls, context):
+        return context.scene.mb.is_initialized
+    
+    def draw(self, context):
+        layout = self.layout
+        
+        layout.prop(context.scene.mb.globals, "show_bond_lengths")
+        layout.prop(context.scene.mb.globals, "show_atom_names")
+        layout.prop(context.scene.mb.globals, "show_atom_indeces")
+        layout.separator()
+        layout.label("Font sizes and colors")
+        split = layout.split(0.6)
+        col = split.column()
+        col.prop(context.scene.mb.globals, "bond_length_font_size",
+                    text="Bond length")
+        col.prop(context.scene.mb.globals, "atom_name_font_size",
+                    text="Atom name")
+        col.prop(context.scene.mb.globals, "atom_index_font_size",
+                    text="Atom index")
+        col = split.column()
+        col.prop(context.scene.mb.globals, "bond_length_color", text="")
+        col.prop(context.scene.mb.globals, "atom_name_color", text="")
+        col.prop(context.scene.mb.globals, "atom_index_color", text="")
+        
 
 class MB_PT_molecule_properties(MolBlendPropsPanel, Panel):
     bl_label = "Molecule properties"

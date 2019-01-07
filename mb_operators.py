@@ -1183,20 +1183,19 @@ class MB_OT_frame_skip(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class MB_OT_draw_bond_lengths(bpy.types.Operator):
+class MB_OT_draw_labels_in_v3d(bpy.types.Operator):
     """Draw a line with the mouse"""
-    bl_idname = "mb.show_bond_lengths"
-    bl_label = "Show bond lengths"
+    bl_idname = "mb.draw_labels_in_v3d"
+    bl_label = "Draw labels"
     
     def modal(self, context, event):
         try:
             context.area.tag_redraw()
         except AttributeError:
             pass
-        if not context.scene.mb.globals.show_bond_lengths:
+        if not context.scene.mb.globals.show_labels_in_v3d:
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
-            print('canceled')
-            return {'FINISHED'}
+            return {'CANCELLED'}
         return {'PASS_THROUGH'}
     
     def execute(self, context):
@@ -1208,7 +1207,7 @@ class MB_OT_draw_bond_lengths(bpy.types.Operator):
             # Add the region OpenGL drawing callback
             # draw in view space with 'POST_VIEW' and 'PRE_VIEW'
             self._handle = bpy.types.SpaceView3D.draw_handler_add(
-                mb_utils.callback_draw_length, args, 'WINDOW', 'POST_PIXEL'
+                mb_utils.callback_draw_labels_in_v3d, args, 'WINDOW', 'POST_PIXEL'
                 )
 
             context.window_manager.modal_handler_add(self)

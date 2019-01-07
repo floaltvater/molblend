@@ -24,6 +24,7 @@ import json
 import bpy
 import bmesh
 import blf
+import bgl
 from bpy.types import Operator
 from bpy.props import (StringProperty,
                        BoolProperty,
@@ -264,15 +265,18 @@ def update_export_file_type(self, context):
             self.filepath = self.filepath + ext
 
 
-def update_show_bond_lengths(self, context):
-    if self.show_bond_lengths:
-        bpy.ops.mb.show_bond_lengths()
-
-
-def update_show_bond_angles(self, context):
-    if self.show_bond_angles:
-        bpy.ops.mb.show_bond_angles()
-
+def update_show_labels(self, context):
+    draw = (context.scene.mb.globals.show_bond_lengths
+            or context.scene.mb.globals.show_atom_names
+            or context.scene.mb.globals.show_atom_indeces)
+    if draw and not context.scene.mb.globals.show_labels_in_v3d:
+        # start the modal operator to draw labels
+        context.scene.mb.globals.show_labels_in_v3d = True
+        bpy.ops.mb.draw_labels_in_v3d()
+    elif not draw:
+        # this is the kill condition for the modal operator
+        context.scene.mb.globals.show_labels_in_v3d = False
+    # else: the modal operator is already turned on
 
 def update_radius_type(self, context):
     for atom in self.objects.atoms:
@@ -290,40 +294,79 @@ def update_draw_style(self, context):
 
 #--- General functions -------------------------------------------------------#
 
-def callback_draw_length(self, context):
-    try:
-        font_id = 0
-        blf.size(font_id, context.scene.mb.globals.bond_length_font_size, 72)
-        offset = 0
-        
+def callback_draw_labels_in_v3d(self, context):
+    
         rv3d = context.space_data.region_3d
         width = context.region.width
         height = context.region.height
         persp_mat = rv3d.perspective_matrix
         persinv = persp_mat.inverted()
         
-        for ob in context.selected_objects:
-            if ob.mb.type == "BOND":
-                locs = [o.mb.world_location for o in ob.mb.bonded_atoms]
-                co_3d = (locs[0] + locs[1]) / 2.
-                prj = persp_mat * co_3d.to_4d()
-                x = width/2 + width/2 * (prj.x / prj.w)
-                y = height/2 + height/2 * (prj.y / prj.w)
-                blf.position(font_id, x, y, 0)
-                blf.draw(font_id, "{:6.4f}".format((locs[1]-locs[0]).length))
-        #ob = context.object
-        #if ob.type == "MESH":
-            #for v in ob.data.vertices:
-                #prj = persp_mat * v.co.to_4d()
-                #x = width/2 + width/2 * (prj.x / prj.w)
-                #y = height/2 + height/2 * (prj.y / prj.w)
-                #blf.position(font_id, x, y, 0)
-                #blf.draw(font_id, "{}".format(v.index))
+        if context.scene.mb.globals.show_bond_lengths:
+            try:
+                font_id = 0
+                blf.size(font_id, context.scene.mb.globals.bond_length_font_size, 72)
+                bgl.glColor4f(*context.scene.mb.globals.bond_length_color)
                 
-    except:
-        logger.exception('')
-        context.scene.mb.globals.show_bond_lengths = False
+                for ob in context.selected_objects:
+                    if ob.mb.type == "BOND":
+                        locs = [o.mb.world_location for o in ob.mb.bonded_atoms]
+                        co_3d = (locs[0] + locs[1]) / 2.
+                        prj = persp_mat * co_3d.to_4d()
+                        x = width/2 + width/2 * (prj.x / prj.w)
+                        y = height/2 + height/2 * (prj.y / prj.w)
+                        blf.position(font_id, x, y, 0)
+                        blf.draw(font_id, "{:6.4f}".format((locs[1]-locs[0]).length))
+                #ob = context.object
+                #if ob.type == "MESH":
+                    #for v in ob.data.vertices:
+                        #prj = persp_mat * v.co.to_4d()
+                        #x = width/2 + width/2 * (prj.x / prj.w)
+                        #y = height/2 + height/2 * (prj.y / prj.w)
+                        #blf.position(font_id, x, y, 0)
+                        #blf.draw(font_id, "{}".format(v.index))
+            except:
+                logger.exception('')
+                context.scene.mb.globals.show_bond_lengths = False
+    
+        if context.scene.mb.globals.show_atom_names:
+            try:
+                font_id = 0
+                blf.size(font_id, context.scene.mb.globals.atom_name_font_size, 72)
+                bgl.glColor4f(*context.scene.mb.globals.atom_name_color)
 
+                for ob in context.selected_objects:
+                    if ob.mb.type == "ATOM":
+                        co_3d = ob.mb.world_location
+                        prj = persp_mat * co_3d.to_4d()
+                        x = width/2 + width/2 * (prj.x / prj.w)
+                        y = height/2 + height/2 * (prj.y / prj.w)
+                        blf.position(font_id, x, y, 0)
+                        blf.draw(font_id, ob.mb.atom_name)
+            except:
+                logger.exception('')
+                context.scene.mb.globals.show_atom_names = False
+
+        if context.scene.mb.globals.show_atom_indeces:
+            try:
+                font_id = 0
+                blf.size(font_id, context.scene.mb.globals.atom_index_font_size, 72)
+                bgl.glColor4f(*context.scene.mb.globals.atom_index_color)
+
+                for ob in context.selected_objects:
+                    if ob.mb.type == "ATOM":
+                        co_3d = ob.mb.world_location
+                        prj = persp_mat * co_3d.to_4d()
+                        x = width/2 + width/2 * (prj.x / prj.w)
+                        y = height/2 + height/2 * (prj.y / prj.w)
+                        txt = str(ob.mb.index)
+                        x_offset, _ = blf.dimensions(font_id, txt)
+                        blf.position(font_id, x-x_offset, y, 0)
+                        blf.draw(font_id, txt)
+            except:
+                logger.exception('')
+                context.scene.mb.globals.show_atom_indeces = False
+    
 def add_element(context, element, element_dict):
     '''
     add element data to scene

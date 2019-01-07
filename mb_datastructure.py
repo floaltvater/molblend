@@ -717,15 +717,44 @@ class mb_scn_globals(PropertyGroup):
     show_bond_lengths = BoolProperty(
         name="Show bond lengths", default=False,
         description="Display bond length of selected bonds",
-        update=mb_utils.update_show_bond_lengths
+        update=mb_utils.update_show_labels
         )
     bond_length_font_size = IntProperty(
         name="Bond length font size", default=12,
         description="Font size of bond lengths")
+    bond_length_color = FloatVectorProperty(name="Bond length color",
+                                            default=(1,1,1,1),
+                                            subtype='COLOR', size=4)
+    show_atom_names = BoolProperty(
+        name="Show names", default=False,
+        description="Display atom names of selected atoms",
+        update=mb_utils.update_show_labels
+        )
+    atom_name_font_size = IntProperty(
+        name="Atom name font size", default=12,
+        description="Font size of atom names")
+    atom_name_color = FloatVectorProperty(name="Atom name color",
+                                          default=(1,1,1,1),
+                                          subtype='COLOR', size=4)
+    show_atom_indeces = BoolProperty(
+        name="Show indeces", default=False,
+        description="Display indeces of selected atoms",
+        update=mb_utils.update_show_labels
+        )
+    atom_index_font_size = IntProperty(
+        name="Index font size", default=12,
+        description="Font size of atom indeces")
+    atom_index_color = FloatVectorProperty(name="Atom index color",
+                                           default=(1,1,1,1),
+                                           subtype='COLOR', size=4)
     #show_bond_angles = BoolProperty(
         #name="Show bond angles", default=False, 
         #description="Display bond angle of selected bonds",
         #update=mb_utils.update_show_bond_angles)
+    show_labels_in_v3d = BoolProperty(
+        name="Draw info", default=False,
+        description="Draw labels in viewport",
+        )
     element_to_add = StringProperty(
         name="Element", description="Element to add to scene", 
         default="C")
