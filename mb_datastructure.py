@@ -521,6 +521,17 @@ class mb_object(PropertyGroup):
         if self.type != 'ATOM':
             logger.debug("Accessed mb.bonds of non-ATOM")
             return None
+        # check if atoms and bonds are referencing each other correctly
+        delete = []
+        for i, item in enumerate(self.pvt_bonds):
+            c = item.object.constraints.get("mb.parent", None)
+            ob1 = c.target
+            c = item.object.constraints.get("mb.stretch", None)
+            ob2 = c.target
+            if not (self.object == ob1 or self.object == ob2):
+                delete.append(i)
+        for d in delete[::-1]:
+            self.pvt_bonds.remove(d)
         return get_object_list(self.pvt_bonds)
 
     atom_name = StringProperty(name="Atom name")

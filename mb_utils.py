@@ -316,7 +316,9 @@ def callback_draw_labels_in_v3d(self, context):
                         x = width/2 + width/2 * (prj.x / prj.w)
                         y = height/2 + height/2 * (prj.y / prj.w)
                         blf.position(font_id, x, y, 0)
-                        blf.draw(font_id, "{:6.4f}".format((locs[1]-locs[0]).length))
+                        #blf.draw(font_id, "{:6.4f}".format((locs[1]-locs[0]).length))
+                        blf.draw(font_id, "{:6.4f}".format(ob.dimensions[1]))
+                        
                 #ob = context.object
                 #if ob.type == "MESH":
                     #for v in ob.data.vertices:
