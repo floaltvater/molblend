@@ -543,7 +543,12 @@ class MB_Structure():
             structure = read_funcs[fmt](filepath)
         except KeyError:
             logger.error("file format '{}' not implemented".format(fmt))
-            raise
+            if file_format == "NONE":
+                raise KeyError("Could not automatically determine file format."
+                               " Please specify format manually on import.")
+            else:
+                raise KeyError("File format '{}' selected, but doesn't seem to"
+                               " be implemented. Shouldn't have happened.")
         
         if structure.axes and not len(structure.axes) == structure.nframes:
             raise IOError(("Number of unit vectors ({}) and frames ({})"

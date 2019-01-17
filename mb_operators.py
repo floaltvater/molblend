@@ -659,11 +659,15 @@ class MB_OT_draw_unit_cell(Operator):
     
     def execute(self, context):
         mol = context.object.mb.get_molecule()
-        if not "unit_cells" in mol or not mol["unit_cells"]:
-            mol["unit_cells"] = [[Vector((5,0,0)),
-                                 Vector((0,5,0)),
-                                 Vector((0,0,5))]]
-        obs = mb_utils.draw_unit_cell(mol, context)
+        lattice = mol.get_lattice_parameters(all_keyframes=True)
+        if lattice is None:
+            try:
+                lattice = mol["imported_unit_cells"]
+            except KeyError:
+                lattice = [[Vector((5,0,0)),
+                            Vector((0,5,0)),
+                            Vector((0,0,5))]]
+        obs = mb_utils.draw_unit_cell(context, mol, lattice)
         if obs:
             for ob in obs:
                 ob.select = True
@@ -682,7 +686,7 @@ class MB_OT_toggle_unit_cell_arrows(Operator):
     @classmethod
     def poll(self, context):
         return (context.object and context.object.mb.get_molecule()
-                and context.object.mb.get_molecule().objects.unit_cell.a)
+                and context.object.mb.get_molecule().has_unit_cell())
     
     def invoke(self, context, event):
         self.show = context.object.mb.get_molecule().show_unit_cell_arrows
@@ -700,7 +704,7 @@ class MB_OT_toggle_unit_cell_arrows(Operator):
 
 class MB_OT_toggle_unit_cell_frame(Operator):
     bl_idname = "mb.toggle_unit_cell_frame"
-    bl_label = "Toggle unit cell arrows"
+    bl_label = "Toggle unit cell frame"
     bl_options = {'REGISTER', 'UNDO'}
     
     show = BoolProperty()
@@ -708,7 +712,7 @@ class MB_OT_toggle_unit_cell_frame(Operator):
     @classmethod
     def poll(self, context):
         return (context.object and context.object.mb.get_molecule()
-                and context.object.mb.get_molecule().objects.unit_cell.a)
+                and context.object.mb.get_molecule().has_unit_cell())
     
     def invoke(self, context, event):
         self.show = context.object.mb.get_molecule().show_unit_cell_frame
@@ -916,6 +920,8 @@ class MD_OT_import_modes(bpy.types.Operator):
 class MD_OT_import_molecules(bpy.types.Operator):
     bl_idname = "mb.import_molecules"
     bl_label = "Import structures"
+    bl_options = {'REGISTER', 'UNDO'}
+
     __doc__ = ""
 
     directory = StringProperty(
@@ -1172,6 +1178,8 @@ class MB_OT_frame_skip(bpy.types.Operator):
     bl_idname = "mb.frame_skip"
     bl_label = "Skip one frame"
     bl_description = "Skip to previous/next frame"
+    bl_options = {'REGISTER', 'UNDO'}
+
     
     next = BoolProperty(default=True, description="Go forward or not")
     
@@ -1183,6 +1191,52 @@ class MB_OT_frame_skip(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class MB_OT_lattice_displace(bpy.types.Operator):
+    """Draw a line with the mouse"""
+    bl_idname = "mb.lattice_displace"
+    bl_label = "Lattice displace"
+    bl_description = "Displace selected objects by lattice parameters"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    
+    n_abc = FloatVectorProperty(
+        name="n_abc", size=3, default=(0.0,0.0,0.0), subtype='XYZ', step=100,
+        description="displace N times along lattice parameters",
+        )
+    
+    @classmethod
+    def poll(cls, context):
+        ob = context.object
+        return ob and ob.mb.get_molecule() and ob.mb.get_molecule().has_unit_cell()
+    
+    def invoke(self, context, event):
+        return self.execute(context)
+    
+    def execute(self, context):
+        # first check if molecule parent is selected. Don't move its atoms
+        exclude = []
+        for ob in context.selected_objects:
+            if ob.mb.type == "PARENT":
+                exclude.extend(ob.mb.molecule.objects.atoms)
+        for ob in context.selected_objects:
+            if (not ob.mb.get_molecule() 
+                    or ob.mb.type in ("BOND", "UC")
+                    or ob in exclude):
+                continue
+            mol = ob.mb.get_molecule()
+            uc = mol.get_lattice_parameters()
+            disp = Vector((0,0,0))
+            for dim in range(3):
+                disp += uc[dim] * self.n_abc[dim]
+            ob.location += disp
+        
+        return {'FINISHED'}
+    
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column()
+        col.prop(self, "n_abc", text="")
+        
 class MB_OT_draw_labels_in_v3d(bpy.types.Operator):
     """Draw a line with the mouse"""
     bl_idname = "mb.draw_labels_in_v3d"

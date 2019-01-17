@@ -270,11 +270,15 @@ def import_modes(context,
         
         nat = len(molecule.objects.atoms)
         for qmode in qpts:
-            if np.linalg.norm(qmode.qvec) and not molecule["unit_cells"]:
+            lattice = molecule.get_lattice_parameters(all_keyframes=True)
+            if lattice is none:
+                lattice = molecule.get("imported_unit_cells")
+            if np.linalg.norm(qmode.qvec) and not lattice:
                 msg = "Can't convert qvecs to crystal coordinates because no"
                 msg += " unit cell information is present"
                 logger.error(msg)
                 report({'ERROR'}, msg)
+                return False
             for mode in qmode.modes:
                 if nat % len(mode.evecs) != 0:
                     msg = "number of displacement vectors "
@@ -285,16 +289,15 @@ def import_modes(context,
                     report({'ERROR'}, msg)
                     return False
         
-        # This is only used for Quantum ESPRESSO, to calculate the crystal unit
-        # cell. The cartesian unit cell is not written in the mode output, so
-        # the conversion can't be done when reading the data.
-        uc = Matrix(molecule["unit_cells"][0])*1.889725989
-        k_uc = Matrix([uc[(dim+1)%3].cross(uc[(dim+2)%3]) for dim in range(3)])
-        fac = 2 * math.pi / uc[0].dot(uc[1].cross(uc[2]))
-        k_uc = k_uc * fac
-        inv_k_uc = k_uc.inverted()
         
         if qpts[0].qvecs_format == "QE":
+            # The cartesian unit cell is not written in the QE mode output, so
+            # we need to convert the q-vectors to crystal units here
+            uc = Matrix(lattice[0])*1.889725989
+            k_uc = Matrix([uc[(dim+1)%3].cross(uc[(dim+2)%3]) for dim in range(3)])
+            fac = 2 * math.pi / uc[0].dot(uc[1].cross(uc[2]))
+            k_uc = k_uc * fac
+            inv_k_uc = k_uc.inverted()
             for nq, qmode in enumerate(qpts):
                 qmode.qvec = (Vector(qmode.qvec)*2*math.pi/uc[0][0])*inv_k_uc
     except:
@@ -413,13 +416,13 @@ def import_molecule(context,
         logger.debug("Found {} frames in {}".format(structure.nframes,
                                                     filepath))
 
-        molecule["unit_cells"] = structure.axes
+        molecule["imported_unit_cells"] = structure.axes
         
-        if draw_uc and molecule["unit_cells"]:
+        if draw_uc and molecule["imported_unit_cells"]:
             # read unit cell and create cube
             unit_cell_obs = mb_utils.draw_unit_cell(molecule, context)
             all_obs.extend(unit_cell_obs)
-        elif draw_uc and not molecule["unit_cells"]:
+        elif draw_uc and not molecule["imported_unit_cells"]:
             msg = "No unit cell vectors read."
             logger.warning(msg)
             report({'WARNING'}, msg)

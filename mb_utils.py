@@ -551,7 +551,7 @@ def add_bond(context, first_atom, second_atom, bond_type="CONSTRAINT"):
         logger.warning('add_bond: first_atom == second_atom')
         return None
     for b in first_atom.mb.bonds:
-        if b != None:
+        if b is not None:
             for ba in b.mb.bonded_atoms:
                 if ba == second_atom:
                     logger.warning(
@@ -1270,7 +1270,7 @@ def draw_arrow(context, origin, target, head_mesh, bevel_ob,
     
     return [curve_ob, head_ob]
 
-def draw_unit_cell(molecule, context, draw_style='ARROWS'):
+def draw_unit_cell(context, molecule, lattices, draw_style='ARROWS'):
 
     mol_uc = molecule.objects.unit_cell
 
@@ -1280,11 +1280,7 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
     all_obs = []
     special_obs = []
     
-    if not "unit_cells" in molecule or not molecule["unit_cells"]:
-        logger.error("No unit cell information present")
-        return None
-    
-    unit_vectors = Matrix(molecule["unit_cells"][0])
+    unit_vectors = Matrix(lattices[0])
     
     # first create new empty as origin
     uc_origin = bpy.data.objects.new("Unit_cell_{}".format(molecule.name), 
@@ -1345,7 +1341,7 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
         special_obs.append(uc_empty)
         setattr(mol_uc, "abc"[axdim], uc_empty)
         
-        if len(molecule["unit_cells"]) > 1:
+        if len(lattices) > 1:
             anim_data = uc_empty.animation_data_create()
             action = bpy.data.actions.new(
                 name="frames_{}".format(uc_empty.name)
@@ -1356,8 +1352,8 @@ def draw_unit_cell(molecule, context, draw_style='ARROWS'):
             for dim in range(3):
                 fcu = action.fcurves.new(data_path="location", index=dim)
                 fcu.group = ag
-                for nf in range(len(molecule["unit_cells"])):
-                    loc = molecule["unit_cells"][nf][axdim][dim]
+                for nf in range(len(lattices)):
+                    loc = lattices[nf][axdim][dim]
                     fcu.keyframe_points.add(1)
                     fcu.keyframe_points[-1].co = nf + 1, loc
                     fcu.keyframe_points[-1].interpolation = 'LINEAR'

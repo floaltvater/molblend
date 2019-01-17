@@ -373,9 +373,7 @@ class mb_molecule(PropertyGroup):
             layout.operator("mb.draw_dipole")
     
     def draw_unit_cell_props(self, layout):
-        if (self.objects.unit_cell.a 
-                and self.objects.unit_cell.b
-                and self.objects.unit_cell.c):
+        if self.has_unit_cell():
             row = layout.row()
             col = row.column()
             avec = self.objects.unit_cell.a
@@ -444,7 +442,7 @@ class mb_molecule(PropertyGroup):
         collection item. If object is already in collection, just return the
         collection item.
         '''
-        if type != None:
+        if type is not None:
             ob.mb.type = type
         ob.mb.parent = self.objects.parent
         if parent_to_mol and not ob.parent == self.id_data:
@@ -503,7 +501,33 @@ class mb_molecule(PropertyGroup):
             return None
         return qpt['modes'][n_mode-1]
 
-
+    
+    def has_unit_cell(self):
+        return (self.objects.unit_cell.a 
+                and self.objects.unit_cell.b
+                and self.objects.unit_cell.c)
+    
+    def get_lattice_parameters(self, all_keyframes=False):
+        if self.has_unit_cell():
+            uc = self.objects.unit_cell
+            lattice = []
+            if all_keyframes:
+                try:
+                    n_kf = len(uc.a.animation_data.action.fcurves[0].keyframe_points)
+                    for kf in range(n_kf):
+                        current = np.array((3,3))
+                        for ax, ob in enumerate((uc.a, uc.b, uc.c)):
+                            for dim, fcu in enumerate(ob.animation_data.action.fcurves):
+                                current[ax,dim] = fcu.keyframe_points[kf]
+                        lattice.append(current)
+                except AttributeError:
+                    return [[ob.location.copy() for ob in (uc.a, uc.b, uc.c)]]
+            else:
+                return [ob.location.copy() for ob in (uc.a, uc.b, uc.c)]
+        else:
+            return None
+    
+    
 class mb_object(PropertyGroup):
     index = IntProperty(name="Index")
     name = StringProperty(name="Object name")
@@ -523,7 +547,11 @@ class mb_object(PropertyGroup):
             return None
         # check if atoms and bonds are referencing each other correctly
         delete = []
+        print(len(self.pvt_bonds))
         for i, item in enumerate(self.pvt_bonds):
+            if item.object is None:
+                delete.append(i)
+                continue
             c = item.object.constraints.get("mb.parent", None)
             ob1 = c.target
             c = item.object.constraints.get("mb.stretch", None)

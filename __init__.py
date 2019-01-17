@@ -52,6 +52,7 @@ import logging
 import os
 import subprocess
 import json
+import numpy as np
 
 import bpy
 from bpy.types import Panel, AddonPreferences
@@ -184,6 +185,19 @@ class MB_PT_tools(MolBlendPanel, Panel):
         layout.operator("mb.make_static")
         layout.operator("mb.apply_scale")
 
+        layout.separator()
+        layout.label("Lattice displace")
+        for dim in "abc":
+            split = layout.split(0.2)
+            col = split.column()
+            col.label(dim+":")
+            col = split.column()
+            row = col.row()
+            op = row.operator("mb.lattice_displace", text="", icon="TRIA_LEFT")
+            op.n_abc = [-1 if d==dim else 0 for d in "abc"]
+            op = row.operator("mb.lattice_displace", text="", icon="TRIA_RIGHT")
+            op.n_abc = [1 if d==dim else 0 for d in "abc"]
+            
 class MB_PT_display(MolBlendPanel, Panel):
     bl_label = "Display"
     bl_options = {'DEFAULT_CLOSED'}
@@ -465,7 +479,7 @@ def save_handler(dummy):
 
 def mb_cleanup():
     logger.debug("Cleaning up")
-    delete = []
+    delete = set()
     leftover = []
     for ob in bpy.data.objects:
         if ob.mb.type == 'PARENT':
@@ -473,34 +487,43 @@ def mb_cleanup():
                 if ob.name in scn.objects:
                     break
             else:
-                all_obs = ob.mb.molecule.objects.get_all_objects(with_parent=False)
-                if not all_obs:
+                mol_objects = ob.mb.molecule.objects
+                all_obs = mol_objects.get_all_objects(with_parent=False)
+                for ob in all_obs:
+                    if not ob.users_scene and not ob.use_fake_user:
+                        logger.debug("{} not in scene. Deleting".format(ob.name))
+                        delete.add(ob)
+                diff = set(all_obs) - delete
+                if not diff:
                     name = ob.name
                     for qv in ob.mb.molecule.qvecs:
                         if qv.mode_txt:
                             bpy.data.texts.remove(qv.mode_txt)
-                    delete.append(ob)
+                    delete.add(ob)
                     logger.debug("Will delete molecule parent {}".format(name))
                 else:
                     msg = "Parent {} not in scene, but still has objects:"
                     logger.debug(msg.format(ob.name))
-                    for cob in all_obs:
+                    for cob in diff:
                         logger.debug("{}".format(cob.name))
-        elif ob.mb.type != "NONE" and not ob.mb.parent:
+        elif ob.mb.type != "NONE":
             if not ob.users_scene and not ob.use_fake_user:
                 logger.debug("{} not in scene. Deleting".format(ob.name))
-                delete.append(ob)
-            else:
+                delete.add(ob)
+            elif not ob.mb.parent:
                 msg_fmt = "{} has no mb.parent. Adding to orphans molecule"
                 logger.debug(msg_fmt.format(ob.name))
                 leftover.append(ob)
+        elif ob.mb.type != "NONE":
+            # making sure that all objects are in molecule collections
+            # for example duplicated atoms etc.
+            ob.mb.get_molecule().add_object(ob)
     
     for ob in delete:
         for scn in bpy.data.scenes:
             if ob.name in scn.objects:
                 scn.objects.unlink(ob)
         bpy.data.objects.remove(ob)
-    # TODO handle objects whose parent got deleted
     for txt in bpy.data.texts:
         if txt.mb.type == "MODES" and not txt.mb.parent:
             bpy.data.texts.remove(txt)
@@ -510,6 +533,7 @@ def mb_cleanup():
         for ob in leftover:
             ob.mb.parent = mol.objects.parent
             ob.parent = mol.objects.parent
+            mol.add_object(ob)
 
 def register():
     
