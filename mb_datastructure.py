@@ -547,7 +547,6 @@ class mb_object(PropertyGroup):
             return None
         # check if atoms and bonds are referencing each other correctly
         delete = []
-        print(len(self.pvt_bonds))
         for i, item in enumerate(self.pvt_bonds):
             if item.object is None:
                 delete.append(i)

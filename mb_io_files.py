@@ -455,7 +455,6 @@ class MB_Structure():
     def create_supercell(self, supercell):
         if self.axes:
             max_atom_index = max(self.all_atoms.keys()) + 1
-            print(max_atom_index)
             n_unit_cell = 0
             iter_3d = itertools.product(range(supercell[0]),
                                         range(supercell[1]),

@@ -320,9 +320,7 @@ def import_modes(context,
         # Saving as file and loading is faster than writing to BlendDataText
         txt_list = []
         txtname_fmt = ".modes_{}_qpt-{}.json"
-        print("Start loading")
         for iq, qmode in enumerate(qpts):
-            print(iq)
             logger.debug("Loading qpt {} as BlendDataText".format(qmode.iqpt))
             qv = molecule.qvecs.add()
             qv.qvec = qmode.qvec
@@ -420,7 +418,8 @@ def import_molecule(context,
         
         if draw_uc and molecule["imported_unit_cells"]:
             # read unit cell and create cube
-            unit_cell_obs = mb_utils.draw_unit_cell(molecule, context)
+            unit_cell_obs = mb_utils.draw_unit_cell(context, molecule, 
+                                                    molecule["imported_unit_cells"])
             all_obs.extend(unit_cell_obs)
         elif draw_uc and not molecule["imported_unit_cells"]:
             msg = "No unit cell vectors read."
