@@ -551,12 +551,16 @@ class mb_object(PropertyGroup):
             if item.object is None:
                 delete.append(i)
                 continue
-            c = item.object.constraints.get("mb.parent", None)
-            ob1 = c.target
-            c = item.object.constraints.get("mb.stretch", None)
-            ob2 = c.target
-            if not (self.object == ob1 or self.object == ob2):
-                delete.append(i)
+            try:
+                c = item.object.constraints.get("mb.parent", None)
+                ob1 = c.target
+                c = item.object.constraints.get("mb.stretch", None)
+                ob2 = c.target
+                if not (self.object == ob1 or self.object == ob2):
+                    delete.append(i)
+            except AttributeError:
+                # constraints have been deleted (probably by mb.make_static),
+                continue
         for d in delete[::-1]:
             self.pvt_bonds.remove(d)
         return get_object_list(self.pvt_bonds)

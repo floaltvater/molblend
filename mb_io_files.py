@@ -65,6 +65,17 @@ import_file_format = [
     ("json", "json", "pymatgen's json format"),
     ]
 
+export_file_format = [
+    #("xyz", "xyz", "xyz format"),
+    #("pdb", "pdb", "pbd format with <99999 entries"),
+    ("POSCAR", "POSCAR", "VASP input"),
+    #("ascii", "phonopy ascii", "phonopy ascii format"),
+    #("cube", "Gaussian cube", "Gaussian cube file"),
+    #("abinit", "ABINIT", "abinit output"),
+    #("QE", "QE", "Quantum ESPRESSO input"),
+    #("json", "json", "pymatgen's json format"),
+    ]
+
 class MB_Mode_Displacement():
     def __init__(self, real, imag):
         self.real = real

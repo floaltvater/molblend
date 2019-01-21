@@ -1173,6 +1173,105 @@ class MD_OT_import_molecules(bpy.types.Operator):
         col.prop(self, "bond_type")
 
 
+class MD_OT_export_molecules(bpy.types.Operator):
+    bl_idname = "mb.export_molecules"
+    bl_label = "Export structures"
+#    bl_options = {'REGISTER'}
+
+    __doc__ = ""
+
+    filepath = StringProperty(
+        name="File Path", description="Filepath used for importing one file",
+        maxlen=1024, subtype='FILE_PATH')
+    
+    file_format = EnumProperty(
+        name="File format", description="Choose file format of structure file",
+        items=export_file_format, default='POSCAR')
+    
+    use_selection = BoolProperty(
+        name="Selection only",
+        description="Only export selected atoms and bonds",
+        default=True)
+    
+    auto_unit = BoolProperty(default=True,
+        description="If checked unit of atom coordinates is set automatically.")
+    length_unit = EnumProperty(
+        name="Unit",
+        description="Unit in input file, will be converted to Angstrom",
+        items=mb_utils.enums.angstrom_per_unit, default='1.0')
+    length_unit_other = FloatProperty(
+        name="Custom Unit",
+        description="Enter conversion factor in Angstrom/unit in file",
+        default=1.0, min=0.000000001)
+    
+    
+    # For file formats that need unit cell information etc (POSCAR,)
+    def get_molecules(self, context):
+        lst = []
+        objects = context.selected_objects if self.use_selection else context.objects
+        for ob in objects:
+            if ob.mb.type == 'PARENT':
+                mol = ob.mb.molecule
+                lst.append((ob.name, ob.name, ob.name))
+        return lst
+    active_molecule_ob = EnumProperty(
+        items=get_molecules,
+        description="Select molecule for lattice parameters")
+    
+    def invoke(self, context, event):
+        
+        self.active_molecule_ob = context.object.mb.parent
+        
+        wm = context.window_manager
+        wm.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        
+        # use kwargs for file format specific parameters
+        kwargs = {}
+        
+        if self.file_format in ("POSCAR",):
+            kwargs.update(dict(molecule=self.active_molecule_ob))
+            
+        if self.length_unit == 'OTHER':
+            scale_distances = self.length_unit_other
+        else:
+            scale_distances = float(self.length_unit)
+        # Execute main routine
+        worked = mb_import_export.export_molecule(
+            context,
+            self.report,
+            self.filepath,
+            self.file_format,
+            self.auto_unit,
+            scale_distances,
+            self.use_selection,
+            **kwargs,
+            )
+        return {'FINISHED'}
+
+    def draw(self, context):
+
+        layout.separator()
+        layout.prop(self, "use_selection", text="Selection only")
+        layout.prop(self, "file_format", text="File format")
+        
+        layout.separator()
+        layout.label("File format specific")
+        if self.file_format in ("POSCAR",):
+            layout.prop(self, active_molecule, text="Molecule")
+        ## unit choice only available to some file formats
+        #layout.label("Units")
+        #layout.prop(self, "auto_unit", text="Automatic units")
+        #row = layout.row()
+        #row.active = (not self.auto_unit)
+        #row.prop(self, "length_unit", text="")
+        #row = layout.row()
+        #row.active = (not self.auto_unit and self.length_unit == 'OTHER')
+        #row.prop(self, "length_unit_other")
+
+
 class MB_OT_frame_skip(bpy.types.Operator):
     """Draw a line with the mouse"""
     bl_idname = "mb.frame_skip"

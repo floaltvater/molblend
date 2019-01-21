@@ -518,5 +518,19 @@ def import_molecule(context,
         logger.exception('')
         return False
 
-
+def export_molecule(
+    context,
+    self.report,
+    self.filepath,
+    self.file_format,
+    self.auto_unit,
+    scale_distances,
+    self.use_selection,
+    **kwargs,
+    ):
+    
+    strc = mb_io_files.MB_Structure
+    
+    for ob in context.scene.objects:
+        
 

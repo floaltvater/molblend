@@ -514,10 +514,8 @@ def mb_cleanup():
                 msg_fmt = "{} has no mb.parent. Adding to orphans molecule"
                 logger.debug(msg_fmt.format(ob.name))
                 leftover.append(ob)
-        elif ob.mb.type != "NONE":
-            # making sure that all objects are in molecule collections
-            # for example duplicated atoms etc.
-            ob.mb.get_molecule().add_object(ob)
+            else:
+                ob.mb.get_molecule().add_object(ob)
     
     for ob in delete:
         for scn in bpy.data.scenes:
