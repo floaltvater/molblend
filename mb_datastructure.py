@@ -785,6 +785,21 @@ class mb_scn_globals(PropertyGroup):
     atom_index_color = FloatVectorProperty(name="Atom index color",
                                            default=(1,1,1,1),
                                            subtype='COLOR', size=4)
+    show_custom_prop = BoolProperty(
+        name="Show custom prop", default=False,
+        description="Display custom property defined by string",
+        update=mb_utils.update_show_labels
+        )
+    custom_prop_string = StringProperty(
+        name="Custom prop string", default="",
+        description="data path to property to display",
+        )
+    custom_prop_font_size = IntProperty(
+        name="Custom property font size", default=12,
+        description="Font size of custom property")
+    custom_prop_color = FloatVectorProperty(name="Custom property color",
+                                           default=(1,1,1,1),
+                                           subtype='COLOR', size=4)
     #show_bond_angles = BoolProperty(
         #name="Show bond angles", default=False, 
         #description="Display bond angle of selected bonds",

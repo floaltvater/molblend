@@ -212,6 +212,11 @@ class MB_PT_display(MolBlendPanel, Panel):
         layout.prop(context.scene.mb.globals, "show_bond_lengths")
         layout.prop(context.scene.mb.globals, "show_atom_names")
         layout.prop(context.scene.mb.globals, "show_atom_indeces")
+        layout.prop(context.scene.mb.globals, "show_custom_prop")
+        row = layout.row()
+        row.active = context.scene.mb.globals.show_custom_prop
+        row.prop(context.scene.mb.globals, "custom_prop_string")
+        
         layout.separator()
         layout.label("Font sizes and colors")
         split = layout.split(0.6)
@@ -222,10 +227,13 @@ class MB_PT_display(MolBlendPanel, Panel):
                     text="Atom name")
         col.prop(context.scene.mb.globals, "atom_index_font_size",
                     text="Atom index")
+        col.prop(context.scene.mb.globals, "custom_prop_font_size",
+                    text="Custom prop")
         col = split.column()
         col.prop(context.scene.mb.globals, "bond_length_color", text="")
         col.prop(context.scene.mb.globals, "atom_name_color", text="")
         col.prop(context.scene.mb.globals, "atom_index_color", text="")
+        col.prop(context.scene.mb.globals, "custom_prop_color", text="")
         
 
 class MB_PT_molecule_properties(MolBlendPropsPanel, Panel):
