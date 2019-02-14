@@ -664,9 +664,11 @@ class MB_OT_draw_unit_cell(Operator):
             try:
                 lattice = mol["imported_unit_cells"]
             except KeyError:
-                lattice = [[Vector((5,0,0)),
-                            Vector((0,5,0)),
-                            Vector((0,0,5))]]
+                lattice = None
+        if not lattice:
+            lattice = [[Vector((5,0,0)),
+                        Vector((0,5,0)),
+                        Vector((0,0,5))]]
         obs = mb_utils.draw_unit_cell(context, mol, lattice)
         if obs:
             for ob in obs:

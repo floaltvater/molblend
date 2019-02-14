@@ -467,7 +467,14 @@ def load_handler(dummy):
                     logger.warning("last: this version didn't save commit id")
                 logger.warning("current: {}, {}".format(git_commit_id[:6],
                                                         git_date))
-
+            # modal operators don't survive opening and closing, and I can't 
+            # start them here.
+            sg = scn.mb.globals
+            sg.show_labels_in_v3d = False
+            sg.show_bond_lengths = False
+            sg.show_atom_names = False
+            sg.show_atom_indeces = False
+            sg.show_custom_prop = False
 
 @persistent
 def save_handler(dummy):
