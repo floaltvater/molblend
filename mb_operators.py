@@ -81,6 +81,7 @@ class MB_OT_initialize(Operator):
             return {'CANCELLED'}
         
         logger.info('Initialize MolBlend')
+        bpy.app.driver_namespace['Vector'] = Vector
         wm = context.window_manager
         
         # initialize elements

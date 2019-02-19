@@ -48,6 +48,7 @@ mode_file_format = [
     ('QE_DYNMAT', "QE dynmat", "Quantum ESPRESSO output"),
     ('XYZ', "xyz", "xyz-style format"),
     ('PHONOPY', "phonopy", "phonopy/v_sim ascii format"),
+    ('VASP', 'OUTCAR (DFPT)', "VASP OUTCAR format"),
     ]
 
 import_file_format = [
@@ -189,6 +190,7 @@ class MB_Modes(list):
             "QE_DYNMAT": cls._read_qe_dynmat_out,
             "XYZ": cls._read_simple_modes,
             "PHONOPY": cls._read_phonopy_ascii,
+            "VASP": cls._read_vasp_outcar,
         }
         if not file_format in read_modes_funcs:
             msg = "ERROR: File format {}".format(file_format)
@@ -196,6 +198,36 @@ class MB_Modes(list):
             logger.error(msg)
         
         return read_modes_funcs[file_format](modefilepath)
+    
+    @classmethod
+    def _read_vasp_outcar(cls, modefilepath):
+        qmode = MB_QMode(1, (0,0,0))
+        
+        with open(modefilepath, "r") as fin:
+            line = next(fin)
+            while not "NIONS" in line:
+                line = next(fin)
+            number_atoms = int(line.strip().split()[-1])
+
+            while not "SQRT(mass)" in line:
+                line = next(fin)
+            [next(fin) for i in range(4)]
+            line = next(fin)
+            while not "----------" in line:
+                if "cm-1" in line:
+                    freq = line.split()[-4]
+                    new_mode = MB_Mode(freq)
+                    next(fin)
+                    for n in range(number_atoms):
+                        line = next(fin)
+                        real = [float(f) for f in line.split()[3:]]
+                        new_mode.evecs.append(
+                            MB_Mode_Displacement(real, (0,0,0)))
+                    qmode.modes.append(new_mode)
+                line = next(fin)
+        # vasp prints modes in reverse order, from highest freq to lowest
+        qmode.modes = qmode.modes[::-1]
+        return cls([qmode])
     
     @classmethod
     def _read_phonopy_ascii(cls, modefilepath):

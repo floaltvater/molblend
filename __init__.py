@@ -450,6 +450,7 @@ logger.debug("git commit: {}, {}".format(git_commit_id[:6], git_date))
 @persistent
 def load_handler(dummy):
     global git_commit_id, git_timestamp, git_date
+    bpy.app.driver_namespace['Vector'] = Vector
     for scn in bpy.data.scenes:
         if scn.mb.is_initialized:
             gc = bpy.context.scene.mb.info.git_commits
@@ -557,7 +558,6 @@ def register():
     
     add_handler(bpy.app.handlers.load_post, load_handler)
     add_handler(bpy.app.handlers.save_pre, save_handler)
-    bpy.app.driver_namespace['Vector'] = Vector
 
 def unregister():
     bpy.utils.unregister_module(__name__)

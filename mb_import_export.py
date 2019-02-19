@@ -271,7 +271,7 @@ def import_modes(context,
         nat = len(molecule.objects.atoms)
         for qmode in qpts:
             lattice = molecule.get_lattice_parameters(all_keyframes=True)
-            if lattice is none:
+            if lattice is None:
                 lattice = molecule.get("imported_unit_cells")
             if np.linalg.norm(qmode.qvec) and not lattice:
                 msg = "Can't convert qvecs to crystal coordinates because no"

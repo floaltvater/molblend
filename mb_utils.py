@@ -120,11 +120,11 @@ def update_active_mode(self, context):
         return
     
     if self.active_mode == 0:
+        self['mode'] = {}
         self['mode']['freq'] = 'equilibrium'
     else:
         try:
             qpt = json.loads(self.qvecs[self.active_nqpt].mode_txt.as_string())
-            self['mode'] = qpt['modes'][self.active_mode-1]
         except:
             logger.error("Problem loading mode from text object.")
             logger.exception("")
@@ -133,6 +133,7 @@ def update_active_mode(self, context):
             else:
                 self.active_mode = 0
                 return
+        self['mode'] = qpt['modes'][self.active_mode-1]
     
     if self.active_mode > 0 and self.active_mode > len(qpt['modes']):
         self.active_mode = len(qpt['modes']) - 1
@@ -1129,7 +1130,7 @@ def create_mode_arrow(context, atom_ob, mol, type='3D'):
         
         expr = ("Vector((0,1,0)).rotation_difference("
                 "(Vector([fcu.evaluate(frame+1) for fcu in {fcus}])"
-                "-Vector([fcu.evaluate(frame-1) for fcu in {fcus}]))"
+                "-Vector([fcu.evaluate(frame-1) for fcu in {fcus}])))"
                 "[{dim}]")
         expr = expr.format(fcus="self.parent.animation_data.action.fcurves",
                            dim=dim)
