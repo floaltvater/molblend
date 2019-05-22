@@ -583,10 +583,23 @@ class MB_Structure():
                 raise KeyError("File format '{}' selected, but doesn't seem to"
                                " be implemented. Shouldn't have happened.")
         
+        if structure.nframes == 0:
+            fmt = "no frames read. Could be a software bug in {}"
+            msg = fmt.format(read_funcs[fmt].__name__)
+            raise IOError(msg)
+        if not structure.all_atoms:
+            fmt = "no atoms read. Could be a software bug in {}"
+            msg = fmt.format(read_funcs[fmt].__name__)
+            raise IOError(msg)
         if structure.axes and not len(structure.axes) == structure.nframes:
             raise IOError(("Number of unit vectors ({}) and frames ({})"
                             " does not match").format(len(structure.axes), 
                                                       structure.nframes))
+        if not structure.atom_unit:
+            fmt = "{} function did not define atom unit"
+            msg = fmt.format(read_funcs[fmt].__name__)
+            raise RuntimeError(msg)
+        
         # now convert all numbers
         unit = {
             "angstrom": 1.0,
@@ -1268,36 +1281,49 @@ class MB_Structure():
         
         strc = cls()
         
+        def get_keyvals_from_str(string):
+            for keyval in line.split(","):
+                kvlist = list(map(str.strip, keyval.strip().split('=')))
+                if len(kvlist) == 2:
+                    key, val = kvlist
+                else:
+                    key = keyval.strip()
+                    val = None
+                if key or val:
+                    yield (key, val)
+        
         crystal_units = False
+        celldm = [None] * 6
+        cellparam = dict([(key, None) for key in ("a", "b", "c", 
+                                                  "cosab", "cosac", "cosbc")])
         with open(filepath, 'r') as fin:
             # Read all parameters
             for line in fin:
-                for keyval in line.split(","):
-                    if "nat" in keyval.lower():
-                        na = keyval.split('=')[-1].strip().strip(",").strip()
-                        n_atoms = int(na)
-                    elif "celldm(1)" in keyval.lower():
-                        al = keyval.split('=')[-1].strip().strip(",").strip()
-                        alat = float(al)
-                    elif "CELL_PARAMETERS" in keyval.upper():
+                for key, val in get_keyvals_from_str(line.strip()):
+                    if "nat" == key.lower():
+                        n_atoms = int(val)
+                    elif "celldm" in key.lower():
+                        n = int(key[-2])
+                        celldm[n-1] = float(val)
+                    elif key.lower() in cellparam:
+                        cellparam[key] = val
+                    elif "CELL_PARAMETERS" in key.upper():
                         if re.search("bohr|cubic", line):
                             strc.axes_unit = "bohr"
                         else:
                             strc.axes_unit = "angstrom"
+                        axes = []
                         for i in range(3):
-                            line = next(fin)
-                            coords = [float(f) for f in line.split()]
-                            strc.axes.append(Vector(coords))
-                    elif "ATOMIC_POSITIONS" in keyval.upper():
+                            coords = [float(f) for f in next(fin).split()]
+                            axes.append(Vector(coords))
+                        strc.axes = [axes]
+                    elif "ATOMIC_POSITIONS" in key.upper():
                         if "angstrom" in line.lower():
                             strc.atom_unit = "angstrom"
                         elif "bohr" in line.lower():
                             strc.atom_unit = "bohr"
                         elif "crystal" in line.lower():
-                            # process at the end when both atomic coordinates and 
-                            # vectors are read for certain
                             strc.atom_unit = "crystal"
-                            # get unit vectors
                         elif "alat" in line.lower():
                             msg = ("Unit of ATOMIC_POSITIONS in "
                                    + "{} is alat. Implement!".format(filepath))
@@ -1326,9 +1352,42 @@ class MB_Structure():
                                                  "name": atom_name,
                                                  "coords": [coords],
                                                  "id": i}
-
-        strc.axes = [strc.axes]
-        strc.nframes += 1
+                    elif "ibrav" in key.lower():
+                        ibrav = int(val)
+        
+        # safety check that either celldm or cellparam is specified
+        if set(celldm) != {None} and set(cellparam.values()) != {None}:
+            raise ValueError("both celldm(x) and a,b,c,cosX parameters are set")
+        
+        if ibrav != 0 and strc.axes:
+            logger.info("CELL_PARAMETERS ignored since ibrav != 0")
+        
+        alat = celldm[0] or cellparam['a']
+        if ibrav == 0 and not strc.axes:
+            raise ValueError("No CELL_PARAMETERS found, but ibrav == 0")
+        elif ibrav == 0:
+            pass
+        elif ibrav == -12:
+            # Monoclinic P, unique axis b
+            # celldm(1)=a, celldm(2)=b/a, celldm(3)=c/a, celldm(5)=cos(ac)
+            # v1 = (a,0,0), v2 = (0,b,0), v3 = (c*cos(beta),0,c*sin(beta))
+            # where beta is the angle between axis a and c
+            a = alat
+            b = celldm[1] * a
+            c = celldm[2] * a
+            beta = math.acos(celldm[4])
+            
+            v1 = Vector((a, 0.,.0))
+            v2 = Vector((0., b, 0.))
+            v3 = Vector((c*math.cos(beta), 0., c*math.sin(beta)))
+        
+            strc.axes = [[v1, v2, v3]]
+            strc.axes_unit = "bohr"
+        else:
+            msg = "ibrav = {} has not been implemented yet, sorry."
+            raise Exception(msg.format(ibrav))
+        
+        strc.nframes = 1
         return strc
     
     @classmethod
