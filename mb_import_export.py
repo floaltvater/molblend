@@ -520,17 +520,73 @@ def import_molecule(context,
 
 def export_molecule(
     context,
-    self.report,
-    self.filepath,
-    self.file_format,
-    self.auto_unit,
+    report,
+    filepath,
+    file_format,
+    auto_unit,
     scale_distances,
-    self.use_selection,
-    **kwargs,
+    use_selection,
+    **kwargs
     ):
     
-    strc = mb_io_files.MB_Structure
+    # TODO:
+    # - id/n: keep atom index, so import->export wouldn't change it
+    # - coords: use world_matrix?
+    # - coords: check for keyframes
+    # - axes: check for keyframes
+    # - units
     
-    for ob in context.scene.objects:
-        
+    strc = mb_io_files.MB_Structure()
+    """
+    nframes:        Number of frames. Each atom must have nframes coordinates,
+                    and if axes are present, there must be nframes of them.
+    all_atoms:      dictionary of all atoms that contains element, name
+                    coordinates, id, and the supercell the atom is in
+    atom_unit:      unit of atom coordinates at read time
+    bonds:          bond information contained in file, and after guessing
+    axes:           unit cell axes of structure if present
+    axes_unit:      unit of axes at read time
+    origin:         where the origin of the unit cell sits 
+                    (in units of axes_unit)
+    """
+    #def __init__(self):
+        #self.nframes = 0
+        #self.all_atoms = {}
+        #self.atom_unit = ""
+        #self.bonds = {}
+        #self.axes = []
+        #self.axes_unit = ""
+        #self.origin = [.0, .0, .0]
+    strc.nframes = 1
+    strc.atom_unit = 'angstrom'
+    
+    if use_selection:
+        obs = context.selected_objects
+    else:
+        obs = context.scene.objects
+    
+    counter = 0
+    for ob in obs:
+        if ob.mb.type == "ATOM":
+            strc.all_atoms[counter] = {
+                        "element": ob.mb.element,
+                        "name": ob.mb.atom_name,
+                        "coords": [ob.location],
+                        "id": counter}
+            counter += 1
+    
+    if "molecule" in kwargs:
+        mol = kwargs["molecule"]
+        strc.axes = mol.get_lattice_parameters(all_keyframes=True)
+        strc.axes_unit = "angstrom"
+    
+    strc.to_file(report, filepath, file_format)
+
+
+
+
+
+
+
+
 

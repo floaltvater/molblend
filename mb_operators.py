@@ -23,13 +23,13 @@ if "bpy" in locals():
     importlib.reload(mb_utils)
     importlib.reload(mb_geometry)
     importlib.reload(mb_import_export)
-    from molblend.mb_io_files import mode_file_format, import_file_format
+    from molblend.mb_io_files import mode_file_format, import_file_format, export_file_format
 
 else:
     from molblend import mb_utils
     from molblend import mb_geometry
     from molblend import mb_import_export
-    from molblend.mb_io_files import mode_file_format, import_file_format
+    from molblend.mb_io_files import mode_file_format, import_file_format, export_file_format
 
 import os
 import sys
@@ -1205,7 +1205,7 @@ class MD_OT_export_molecules(bpy.types.Operator):
         default=1.0, min=0.000000001)
     
     
-    # For file formats that need unit cell information etc (POSCAR,)
+    # For file formats that need unit cell information etc (POSCAR, json)
     def get_molecules(self, context):
         lst = []
         objects = context.selected_objects if self.use_selection else context.objects
@@ -1231,7 +1231,7 @@ class MD_OT_export_molecules(bpy.types.Operator):
         # use kwargs for file format specific parameters
         kwargs = {}
         
-        if self.file_format in ("POSCAR",):
+        if self.file_format in ("POSCAR", "json"):
             kwargs.update(dict(molecule=self.active_molecule_ob))
             
         if self.length_unit == 'OTHER':

@@ -73,7 +73,7 @@ export_file_format = [
     #("cube", "Gaussian cube", "Gaussian cube file"),
     #("abinit", "ABINIT", "abinit output"),
     #("QE", "QE", "Quantum ESPRESSO input"),
-    #("json", "json", "pymatgen's json format"),
+    ("json", "json", "pymatgen's json format"),
     ]
 
 class MB_Mode_Displacement():
@@ -1394,7 +1394,7 @@ class MB_Structure():
         if has_lattice:
             strc.axes_unit = "angstrom"
             strc.axes = [dct["lattice"]["matrix"]]
-            cell_matrix = Matrix(strc.axes[0]).transposed()
+            #cell_matrix = Matrix(strc.axes[0]).transposed()
         
         for i, site in enumerate(dct["sites"]):
             element = site["species"][0]["element"]
@@ -1416,3 +1416,46 @@ class MB_Structure():
                                  "coords": [location],
                                  "id": i}
         return strc
+
+
+    def to_file(self, report, filepath, file_format):
+                # also add new formats to file_format list
+        write_funcs = {
+            #"xyz": cls._read_xyz_file,
+            #"pdb": cls._read_pdb_file,
+            #"POSCAR": cls._read_POSCAR_file,
+            #"XDATCAR": cls._read_XDATCAR_file,
+            #"CONTCAR": cls._read_POSCAR_file,
+            #"ascii": cls._read_phonopy_ascii,
+            #"cube": cls._read_cube_file,
+            #"abinit": cls._read_abinit_output_file,
+            #"qe_input": cls._read_qe_input_file,
+            #"qe_output": cls._read_qe_rlx_output_file,
+            "json": self._write_pymatgen_json,
+            }
+        
+        try:
+            write_funcs[file_format](filepath)
+        except KeyError:
+            fmt = "exporting file format '{}' not implemented"
+            msg = fmt.format(file_format)
+            logger.error(msg)
+            raise
+    
+    def _write_pymatgen_json(self, filepath):
+        
+        # create a dict and dump it to json
+        dct = {}
+        if self.axes:
+            dct["lattice"]["matrix"] = self.axes[0]
+        sites = []
+        for atom in self.all_atoms:
+            sites.append(dict(
+                species=[{"element": atom["element"]}],
+                label=atom["name"],
+                xyz=atom["coords"][0],
+                ))
+        dct["sites"] = sites
+        
+        with open(filepath, "r") as fout:
+            json.dump(dct, fout)
