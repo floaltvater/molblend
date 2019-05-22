@@ -20,6 +20,7 @@ import math
 from bisect import bisect_left
 import logging
 import json
+import functools
 
 import bpy
 import bmesh
@@ -119,11 +120,11 @@ def update_active_mode(self, context):
         return
     
     if self.active_mode == 0:
+        self['mode'] = {}
         self['mode']['freq'] = 'equilibrium'
     else:
         try:
             qpt = json.loads(self.qvecs[self.active_nqpt].mode_txt.as_string())
-            self['mode'] = qpt['modes'][self.active_mode-1]
         except:
             logger.error("Problem loading mode from text object.")
             logger.exception("")
@@ -132,6 +133,7 @@ def update_active_mode(self, context):
             else:
                 self.active_mode = 0
                 return
+        self['mode'] = qpt['modes'][self.active_mode-1]
     
     if self.active_mode > 0 and self.active_mode > len(qpt['modes']):
         self.active_mode = len(qpt['modes']) - 1
@@ -268,7 +270,8 @@ def update_export_file_type(self, context):
 def update_show_labels(self, context):
     draw = (context.scene.mb.globals.show_bond_lengths
             or context.scene.mb.globals.show_atom_names
-            or context.scene.mb.globals.show_atom_indeces)
+            or context.scene.mb.globals.show_atom_indeces
+            or context.scene.mb.globals.show_custom_prop)
     if draw and not context.scene.mb.globals.show_labels_in_v3d:
         # start the modal operator to draw labels
         context.scene.mb.globals.show_labels_in_v3d = True
@@ -293,6 +296,10 @@ def update_draw_style(self, context):
 
 
 #--- General functions -------------------------------------------------------#
+def rgetattr(obj, attr, *args):
+    def _getattr(obj, attr):
+        return getattr(obj, attr, *args)
+    return functools.reduce(_getattr, [obj] + attr.split('.'))
 
 def callback_draw_labels_in_v3d(self, context):
     
@@ -334,7 +341,9 @@ def callback_draw_labels_in_v3d(self, context):
         if context.scene.mb.globals.show_atom_names:
             try:
                 font_id = 0
-                blf.size(font_id, context.scene.mb.globals.atom_name_font_size, 72)
+                blf.size(font_id, 
+                         context.scene.mb.globals.atom_name_font_size,
+                         72)
                 bgl.glColor4f(*context.scene.mb.globals.atom_name_color)
 
                 for ob in context.selected_objects:
@@ -352,7 +361,9 @@ def callback_draw_labels_in_v3d(self, context):
         if context.scene.mb.globals.show_atom_indeces:
             try:
                 font_id = 0
-                blf.size(font_id, context.scene.mb.globals.atom_index_font_size, 72)
+                blf.size(font_id, 
+                         context.scene.mb.globals.atom_index_font_size,
+                         72)
                 bgl.glColor4f(*context.scene.mb.globals.atom_index_color)
 
                 for ob in context.selected_objects:
@@ -368,7 +379,36 @@ def callback_draw_labels_in_v3d(self, context):
             except:
                 logger.exception('')
                 context.scene.mb.globals.show_atom_indeces = False
-    
+        
+        if context.scene.mb.globals.show_custom_prop:
+            try:
+                font_id = 0
+                blf.size(font_id, 
+                         context.scene.mb.globals.custom_prop_font_size,
+                         72)
+                bgl.glColor4f(*context.scene.mb.globals.custom_prop_color)
+                prop = context.scene.mb.globals.custom_prop_string
+                if prop:
+                    for ob in context.selected_objects:
+                        try:
+                            attr = rgetattr(ob, prop)
+                        except AttributeError:
+                            attr = ob.get(prop)
+                        if attr is None:
+                            continue
+                        txt = repr(attr)
+                        co_3d = ob.mb.world_location
+                        prj = persp_mat * co_3d.to_4d()
+                        x = width/2 + width/2 * (prj.x / prj.w)
+                        y = height/2 + height/2 * (prj.y / prj.w)
+                        x_offset, y_offset = blf.dimensions(font_id, txt)
+                        blf.position(font_id, x-x_offset/2., y-y_offset, 0)
+                        blf.draw(font_id, txt)
+            except:
+                logger.exception('')
+                context.scene.mb.globals.show_custom_prop = False
+        
+        
 def add_element(context, element, element_dict):
     '''
     add element data to scene
@@ -1090,7 +1130,7 @@ def create_mode_arrow(context, atom_ob, mol, type='3D'):
         
         expr = ("Vector((0,1,0)).rotation_difference("
                 "(Vector([fcu.evaluate(frame+1) for fcu in {fcus}])"
-                "-Vector([fcu.evaluate(frame-1) for fcu in {fcus}]))"
+                "-Vector([fcu.evaluate(frame-1) for fcu in {fcus}])))"
                 "[{dim}]")
         expr = expr.format(fcus="self.parent.animation_data.action.fcurves",
                            dim=dim)

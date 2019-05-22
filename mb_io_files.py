@@ -48,6 +48,7 @@ mode_file_format = [
     ('QE_DYNMAT', "QE dynmat", "Quantum ESPRESSO output"),
     ('XYZ', "xyz", "xyz-style format"),
     ('PHONOPY', "phonopy", "phonopy/v_sim ascii format"),
+    ('VASP', 'OUTCAR (DFPT)', "VASP OUTCAR format"),
     ]
 
 import_file_format = [
@@ -63,6 +64,7 @@ import_file_format = [
     ("qe_input", "QE input", "Quantum ESPRESSO input"),
     ("qe_output", "QE output", "Quantum ESPRESSO output"),
     ("json", "json", "pymatgen's json format"),
+    ("gro", "gro", "gromacs *.gro format"),
     ]
 
 export_file_format = [
@@ -199,6 +201,7 @@ class MB_Modes(list):
             "QE_DYNMAT": cls._read_qe_dynmat_out,
             "XYZ": cls._read_simple_modes,
             "PHONOPY": cls._read_phonopy_ascii,
+            "VASP": cls._read_vasp_outcar,
         }
         if not file_format in read_modes_funcs:
             msg = "ERROR: File format {}".format(file_format)
@@ -206,6 +209,36 @@ class MB_Modes(list):
             logger.error(msg)
         
         return read_modes_funcs[file_format](modefilepath)
+    
+    @classmethod
+    def _read_vasp_outcar(cls, modefilepath):
+        qmode = MB_QMode(1, (0,0,0))
+        
+        with open(modefilepath, "r") as fin:
+            line = next(fin)
+            while not "NIONS" in line:
+                line = next(fin)
+            number_atoms = int(line.strip().split()[-1])
+
+            while not "SQRT(mass)" in line:
+                line = next(fin)
+            [next(fin) for i in range(4)]
+            line = next(fin)
+            while not "----------" in line:
+                if "cm-1" in line:
+                    freq = line.split()[-4]
+                    new_mode = MB_Mode(freq)
+                    next(fin)
+                    for n in range(number_atoms):
+                        line = next(fin)
+                        real = [float(f) for f in line.split()[3:]]
+                        new_mode.evecs.append(
+                            MB_Mode_Displacement(real, (0,0,0)))
+                    qmode.modes.append(new_mode)
+                line = next(fin)
+        # vasp prints modes in reverse order, from highest freq to lowest
+        qmode.modes = qmode.modes[::-1]
+        return cls([qmode])
     
     @classmethod
     def _read_phonopy_ascii(cls, modefilepath):
@@ -221,7 +254,7 @@ class MB_Modes(list):
                         qstr += line.strip()
                     qstr = qstr.split("[")[-1].split("]")[0]
                     qstr = re.sub(r"\\|#|!", "", qstr)
-                    qlst = list(map(float, qstr.split(";")))
+                    qlst = [float(f) for f in qstr.split(";")]
                     qvec = np.array(qlst[:3])
                     freq = str(qlst[3])
                     all_disps = np.array(qlst[4:]).reshape((-1,6))
@@ -296,7 +329,7 @@ class MB_Modes(list):
                     
                     for i in range(number_atoms):
                         split_line = fin.readline().strip().split()
-                        disp = list(map(float, split_line[:]))
+                        disp = [float(f) for f in split_line[:]]
                         if len(disp) == 3:
                             real = disp
                             imag = (0., 0., 0.)
@@ -346,7 +379,7 @@ class MB_Modes(list):
                         elif lstrip.startswith('('):
                             lsplit = lstrip[1:-1].split()
                             
-                            disp = list(map(float, lsplit))
+                            disp = [float(f) for f in lsplit]
                             qmode.modes[-1].evecs.append(
                                 MB_Mode_Displacement(disp[::2], disp[1::2]))
                         
@@ -365,7 +398,7 @@ class MB_Modes(list):
             for line in fin:
                 if 'Phonon wavevector' in line:
                     q_count += 1
-                    q = [c*1. for c in list(map(float, line.split()[-3:]))]
+                    q = [c*1. for c in [float(f) for f in line.split()[-3:]]]
                     qmode = MB_QMode(q_count, q)
                     qmode.qvecs_format = "anaddb"
                     #msg = "Reading q-point {}: {:7.4f} {:7.4f} {:7.4f}"
@@ -395,9 +428,9 @@ class MB_Modes(list):
                             line = next(fin)
                         for na in range(nat):
                         #while line[0] == "-" or line[0] == ";":
-                            real = [c*1. for c in list(map(float, line.split()[-3:]))]
+                            real = [c*1. for c in [float(f) for f in line.split()[-3:]]]
                             line = next(fin)
-                            imag = [c*1. for c in list(map(float, line.split()[-3:]))]
+                            imag = [c*1. for c in [float(f) for f in line.split()[-3:]]]
                             qmode.modes[-1].evecs.append(MB_Mode_Displacement(real, imag))
                             line = next(fin)
                     all_qpts.append(qmode)
@@ -531,6 +564,7 @@ class MB_Structure():
             "qe_input": cls._read_qe_input_file,
             "qe_output": cls._read_qe_rlx_output_file,
             "json": cls._read_pymatgen_json,
+            "gro": cls._read_gro_file,
             }
         
         if file_format == "NONE":
@@ -560,14 +594,28 @@ class MB_Structure():
                 raise KeyError("File format '{}' selected, but doesn't seem to"
                                " be implemented. Shouldn't have happened.")
         
+        if structure.nframes == 0:
+            fmt = "no frames read. Could be a software bug in {}"
+            msg = fmt.format(read_funcs[fmt].__name__)
+            raise IOError(msg)
+        if not structure.all_atoms:
+            fmt = "no atoms read. Could be a software bug in {}"
+            msg = fmt.format(read_funcs[fmt].__name__)
+            raise IOError(msg)
         if structure.axes and not len(structure.axes) == structure.nframes:
             raise IOError(("Number of unit vectors ({}) and frames ({})"
                             " does not match").format(len(structure.axes), 
                                                       structure.nframes))
+        if not structure.atom_unit:
+            fmt = "{} function did not define atom unit"
+            msg = fmt.format(read_funcs[fmt].__name__)
+            raise RuntimeError(msg)
+        
         # now convert all numbers
         unit = {
             "angstrom": 1.0,
-            "bohr": A_per_Bohr
+            "bohr": A_per_Bohr,
+            "nm": 10.,
             }
         if len(structure.axes):
             try:
@@ -628,13 +676,13 @@ class MB_Structure():
             next(fin)
             ls = next(fin).split()
             nat = abs(int(ls[0]))
-            origin = Vector(list(map(float, ls[1:4])))
+            origin = Vector([float(f) for f in ls[1:4]])
             nvoxel = np.zeros(3, dtype=int)
             voxel_vec = np.zeros((3,3))
             for i in range(3):
                 n, x, y, z = next(fin).split()
                 nvoxel[i] = int(n)
-                voxel_vec[i,:] = list(map(float, (x, y, z)))
+                voxel_vec[i,:] = [float(f) for f in (x, y, z)]
             
             if (nvoxel<0).all():
                 strc.axes_unit = "angstrom"
@@ -656,7 +704,7 @@ class MB_Structure():
             strc.origin = origin
             
             for n in range(nat):
-                nel, _, x, y, z = list(map(float, next(fin).split()))
+                nel, _, x, y, z = [float(f) for f in next(fin).split()]
                 element = element_by_number[nel]
                 
                 strc.all_atoms[n] = {
@@ -674,8 +722,8 @@ class MB_Structure():
         nat = 0
         with open(filepath, "r") as fin:
             next(fin) # dump
-            dxx, dyx, dyy = list(map(float, next(fin).split()))
-            dzx, dzy, dzz = list(map(float, next(fin).split()))
+            dxx, dyx, dyy = [float(f) for f in next(fin).split()]
+            dzx, dzy, dzz = [float(f) for f in next(fin).split()]
             for line in fin:
                 if line.startswith("#keyword"):
                     keywords.extend(re.findall('[a-zA-Z0-9]+', line)[1:])
@@ -687,7 +735,7 @@ class MB_Structure():
                     strc.all_atoms[nat] = {
                         "element": ls[3],
                         "name": ls[-1],
-                        "coords": [list(map(float, ls[:3]))],
+                        "coords": [[float(f) for f in ls[:3]]],
                         "id": nat}
                     nat += 1
         # postprocess based on keywords
@@ -739,7 +787,7 @@ class MB_Structure():
             # lattice vectors
             for i in range(3):
                 line = next(fin)
-                coords = list(map(float, line.split()))
+                coords = [float(f) for f in line.split()]
                 strc.axes.append(Vector(coords) * scale)
             if volume:
                 avec, bvec, cvec = strc.axes
@@ -768,7 +816,7 @@ class MB_Structure():
                 strc.atom_unit = "crystal"
             for i, element in enumerate(elements):
                 line = next(fin)
-                coords = list(map(float, line.split()[:3]))
+                coords = [float(f) for f in line.split()[:3]]
                 atom_name = "{}{}".format(element.capitalize(), i)
                 strc.all_atoms[i] = {"element": element,
                                      "name": atom_name,
@@ -796,7 +844,7 @@ class MB_Structure():
             # lattice vectors
             for i in range(3):
                 line = next(fin)
-                coords = list(map(float, line.split()))
+                coords = [float(f) for f in line.split()]
                 strc.axes.append(Vector(coords) * scale)
             if volume:
                 avec, bvec, cvec = strc.axes
@@ -828,7 +876,7 @@ class MB_Structure():
                 strc.atom_unit = "crystal"
             for i, element in enumerate(elements):
                 line = next(fin)
-                coords = list(map(float, line.split()[:3]))
+                coords = [float(f) for f in line.split()[:3]]
                 atom_name = "{}{}".format(element.capitalize(), i)
                 strc.all_atoms[i] = {"element": element,
                                     "name": atom_name,
@@ -842,7 +890,7 @@ class MB_Structure():
                     raise IOError(err.format(filepath_vasp))
                 for i, element in enumerate(elements):
                     line = next(fin)
-                    coords = list(map(float, line.split()[:3]))
+                    coords = [float(f) for f in line.split()[:3]]
                     strc.all_atoms[i]["coords"].append(coords)
                 strc.nframes += 1
         
@@ -850,6 +898,58 @@ class MB_Structure():
         strc.axes_unit = "angstrom"
         return strc
     
+    @classmethod
+    def _read_gro_file(cls, filepath_gro):
+        logger.warning("gro files don't contain element information. " +
+                       "Guessing based on atom name in column 3")
+        strc = cls()
+        strc.atom_unit = "nm"
+        strc.axes_unit = "nm"
+        strc.nframes = 1
+        
+        # gro_fmt = "{resid:>5d}{res:>5}{name:>5}{id:>5d}{c[0]:8.3f}{c[1]:8.3f}{c[2]:8.3f}\n"
+        
+        with open(filepath_gro, "r") as fin:
+            comment = next(fin)
+            nat = int(next(fin))
+            for i in range(nat):
+                line = next(fin).rstrip()
+                #resid = line[:5].strip()
+                #res = line[5:10].strip()
+                name = line[10:15].strip()
+                #atomid = int(line[15:20])
+                # guess element from name
+                el = name
+                while el and not el.lower().capitalize() in ELEMENTS:
+                    el = el[:-1]
+                el = el or "Default"
+                coords_vel = line[20:]
+                nplus5 = len(coords_vel.split(".")[1])+1
+                ## info about decimal here not important
+                #ndecimal = nplus5 - 5
+                #c_fmt = "{{:{}.{}f}}".format(nplus5, ndecimal)
+                #v_fmt = "{{:{}.{}f}}".format(nplus5, ndecimal+1)
+                cstr = [coords_vel[i*nplus5:(i+1)*nplus5] for i in range(3)]
+                coords = [float(f) for f in cstr]
+                
+                strc.all_atoms[i] = {"element": el,
+                                     "name": name,
+                                     "coords": [coords],
+                                     "id": i}
+            # box
+            # v1(x) v2(y) v3(z) [v1(y) v1(z) v2(x) v2(z) v3(x) v3(y)]
+            line = next(fin).strip()
+            box = [float(f) for f in line.split()]
+            cell = [[0.,0.,0.] for i in range(3)]
+            for i in range(3):
+                cell[i][i] = box[i]
+            if len(box) > 3:
+                cell[0][1:] = box[3], box[4]
+                cell[1][0], cell[1][2] = box[5], box[6]
+                cell[2][:1] = box[7], box[8]
+            strc.axes = [cell]
+        return strc
+            
     @classmethod
     def _read_xyz_file(cls, filepath_xyz):
         
@@ -864,7 +964,7 @@ class MB_Structure():
             )
         
         # XYZ is not a well defined file format. This is an attempt to be very
-        # flexible. about it.
+        # flexible about it.
         with open(filepath_xyz, "r") as fin:
             number_atoms = -1
             for line in fin:
@@ -889,7 +989,7 @@ class MB_Structure():
                     for i in range(number_atoms):
                         
                         split_line = next(fin).strip().split()
-                        coords = list(map(float, split_line[1:4]))
+                        coords = [float(f) for f in split_line[1:4]]
                         location = Vector(coords)
                         
                         element = split_line[0]
@@ -1120,8 +1220,8 @@ class MB_Structure():
                 
                 elif line[:6] == 'HETATM' or line[:4] == 'ATOM':
                     i += 1
-                    coords = list(map(float,
-                                      (line[30:38], line[38:46], line[46:54])))
+                    coords = [float(f) for f in 
+                              (line[30:38], line[38:46], line[46:54])]
                     location = Vector(coords)
                     
                     index = int(line[6:11])
@@ -1192,36 +1292,49 @@ class MB_Structure():
         
         strc = cls()
         
+        def get_keyvals_from_str(string):
+            for keyval in line.split(","):
+                kvlist = list(map(str.strip, keyval.strip().split('=')))
+                if len(kvlist) == 2:
+                    key, val = kvlist
+                else:
+                    key = keyval.strip()
+                    val = None
+                if key or val:
+                    yield (key, val)
+        
         crystal_units = False
+        celldm = [None] * 6
+        cellparam = dict([(key, None) for key in ("a", "b", "c", 
+                                                  "cosab", "cosac", "cosbc")])
         with open(filepath, 'r') as fin:
             # Read all parameters
             for line in fin:
-                for keyval in line.split(","):
-                    if "nat" in keyval.lower():
-                        na = keyval.split('=')[-1].strip().strip(",").strip()
-                        n_atoms = int(na)
-                    elif "celldm(1)" in keyval.lower():
-                        al = keyval.split('=')[-1].strip().strip(",").strip()
-                        alat = float(al)
-                    elif "CELL_PARAMETERS" in keyval.upper():
+                for key, val in get_keyvals_from_str(line.strip()):
+                    if "nat" == key.lower():
+                        n_atoms = int(val)
+                    elif "celldm" in key.lower():
+                        n = int(key[-2])
+                        celldm[n-1] = float(val)
+                    elif key.lower() in cellparam:
+                        cellparam[key] = val
+                    elif "CELL_PARAMETERS" in key.upper():
                         if re.search("bohr|cubic", line):
                             strc.axes_unit = "bohr"
                         else:
                             strc.axes_unit = "angstrom"
+                        axes = []
                         for i in range(3):
-                            line = next(fin)
-                            coords = list(map(float, line.split()))
-                            strc.axes.append(Vector(coords))
-                    elif "ATOMIC_POSITIONS" in keyval.upper():
+                            coords = [float(f) for f in next(fin).split()]
+                            axes.append(Vector(coords))
+                        strc.axes = [axes]
+                    elif "ATOMIC_POSITIONS" in key.upper():
                         if "angstrom" in line.lower():
                             strc.atom_unit = "angstrom"
                         elif "bohr" in line.lower():
                             strc.atom_unit = "bohr"
                         elif "crystal" in line.lower():
-                            # process at the end when both atomic coordinates and 
-                            # vectors are read for certain
                             strc.atom_unit = "crystal"
-                            # get unit vectors
                         elif "alat" in line.lower():
                             msg = ("Unit of ATOMIC_POSITIONS in "
                                    + "{} is alat. Implement!".format(filepath))
@@ -1237,7 +1350,7 @@ class MB_Structure():
                             line = next(fin)
                             line = line.strip()
                             split_line = line.split()
-                            coords = list(map(float, split_line[1:4]))
+                            coords = [float(f) for f in split_line[1:4]]
 
                             element = split_line[0]
                             atom_name = "{}{}".format(element.capitalize(), i)
@@ -1250,9 +1363,42 @@ class MB_Structure():
                                                  "name": atom_name,
                                                  "coords": [coords],
                                                  "id": i}
-
-        strc.axes = [strc.axes]
-        strc.nframes += 1
+                    elif "ibrav" in key.lower():
+                        ibrav = int(val)
+        
+        # safety check that either celldm or cellparam is specified
+        if set(celldm) != {None} and set(cellparam.values()) != {None}:
+            raise ValueError("both celldm(x) and a,b,c,cosX parameters are set")
+        
+        if ibrav != 0 and strc.axes:
+            logger.info("CELL_PARAMETERS ignored since ibrav != 0")
+        
+        alat = celldm[0] or cellparam['a']
+        if ibrav == 0 and not strc.axes:
+            raise ValueError("No CELL_PARAMETERS found, but ibrav == 0")
+        elif ibrav == 0:
+            pass
+        elif ibrav == -12:
+            # Monoclinic P, unique axis b
+            # celldm(1)=a, celldm(2)=b/a, celldm(3)=c/a, celldm(5)=cos(ac)
+            # v1 = (a,0,0), v2 = (0,b,0), v3 = (c*cos(beta),0,c*sin(beta))
+            # where beta is the angle between axis a and c
+            a = alat
+            b = celldm[1] * a
+            c = celldm[2] * a
+            beta = math.acos(celldm[4])
+            
+            v1 = Vector((a, 0.,.0))
+            v2 = Vector((0., b, 0.))
+            v3 = Vector((c*math.cos(beta), 0., c*math.sin(beta)))
+        
+            strc.axes = [[v1, v2, v3]]
+            strc.axes_unit = "bohr"
+        else:
+            msg = "ibrav = {} has not been implemented yet, sorry."
+            raise Exception(msg.format(ibrav))
+        
+        strc.nframes = 1
         return strc
     
     @classmethod
@@ -1276,7 +1422,7 @@ class MB_Structure():
                     unit_vectors = []
                     for i in range(3):
                         line = fin.readline()
-                        coords = list(map(float, line.split()[3:6]))
+                        coords = [float(f) for f in line.split()[3:6]]
                         unit_vectors.append(Vector(coords) * alat)
                     strc.axes.append(unit_vectors)
                 elif "Cartesian axes" in line:
@@ -1292,7 +1438,7 @@ class MB_Structure():
                 line = next(fin)
                 line = line.strip()
                 split_line = line.split()
-                coords = list(map(float, split_line[-4:-1]))
+                coords = [float(f) for f in split_line[-4:-1]]
                 location = cell_matrix * Vector(coords)
 
                 element = split_line[1]
@@ -1320,7 +1466,7 @@ class MB_Structure():
                     unit_vectors = []
                     for i in range(3):
                         line = fin.readline()
-                        coords = list(map(float, line.split()))
+                        coords = [float(f) for f in line.split()]
                         unit_vectors.append(Vector(coords) * alat)
                     strc.axes.append(unit_vectors)
                 
@@ -1347,7 +1493,7 @@ class MB_Structure():
                         line = next(fin)
                         line = line.strip()
                         split_line = line.split()
-                        coords = list(map(float, split_line[1:4]))
+                        coords = [float(f) for f in split_line[1:4]]
                         location = cell_matrix * Vector(coords)
 
                         element = split_line[0]

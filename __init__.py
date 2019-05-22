@@ -212,6 +212,11 @@ class MB_PT_display(MolBlendPanel, Panel):
         layout.prop(context.scene.mb.globals, "show_bond_lengths")
         layout.prop(context.scene.mb.globals, "show_atom_names")
         layout.prop(context.scene.mb.globals, "show_atom_indeces")
+        layout.prop(context.scene.mb.globals, "show_custom_prop")
+        row = layout.row()
+        row.active = context.scene.mb.globals.show_custom_prop
+        row.prop(context.scene.mb.globals, "custom_prop_string")
+        
         layout.separator()
         layout.label("Font sizes and colors")
         split = layout.split(0.6)
@@ -222,10 +227,13 @@ class MB_PT_display(MolBlendPanel, Panel):
                     text="Atom name")
         col.prop(context.scene.mb.globals, "atom_index_font_size",
                     text="Atom index")
+        col.prop(context.scene.mb.globals, "custom_prop_font_size",
+                    text="Custom prop")
         col = split.column()
         col.prop(context.scene.mb.globals, "bond_length_color", text="")
         col.prop(context.scene.mb.globals, "atom_name_color", text="")
         col.prop(context.scene.mb.globals, "atom_index_color", text="")
+        col.prop(context.scene.mb.globals, "custom_prop_color", text="")
         
 
 class MB_PT_molecule_properties(MolBlendPropsPanel, Panel):
@@ -442,6 +450,7 @@ logger.debug("git commit: {}, {}".format(git_commit_id[:6], git_date))
 @persistent
 def load_handler(dummy):
     global git_commit_id, git_timestamp, git_date
+    bpy.app.driver_namespace['Vector'] = Vector
     for scn in bpy.data.scenes:
         if scn.mb.is_initialized:
             gc = bpy.context.scene.mb.info.git_commits
@@ -459,7 +468,14 @@ def load_handler(dummy):
                     logger.warning("last: this version didn't save commit id")
                 logger.warning("current: {}, {}".format(git_commit_id[:6],
                                                         git_date))
-
+            # modal operators don't survive opening and closing, and I can't 
+            # start them here.
+            sg = scn.mb.globals
+            sg.show_labels_in_v3d = False
+            sg.show_bond_lengths = False
+            sg.show_atom_names = False
+            sg.show_atom_indeces = False
+            sg.show_custom_prop = False
 
 @persistent
 def save_handler(dummy):
@@ -540,7 +556,6 @@ def register():
     
     add_handler(bpy.app.handlers.load_post, load_handler)
     add_handler(bpy.app.handlers.save_pre, save_handler)
-    bpy.app.driver_namespace['Vector'] = Vector
 
 def unregister():
     bpy.utils.unregister_module(__name__)
