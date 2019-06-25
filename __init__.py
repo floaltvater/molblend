@@ -234,7 +234,20 @@ class MB_PT_display(MolBlendPanel, Panel):
         col.prop(context.scene.mb.globals, "atom_name_color", text="")
         col.prop(context.scene.mb.globals, "atom_index_color", text="")
         col.prop(context.scene.mb.globals, "custom_prop_color", text="")
+
+class MB_PT_export(MolBlendPanel, Panel):
+    bl_label = "Export"
+    
+    @classmethod
+    def poll(cls, context):
+        return context.scene.mb.is_initialized
+    
+    def draw(self, context):
         
+        layout = self.layout
+        layout.operator("mb.export_molecules")
+        
+
 
 class MB_PT_molecule_properties(MolBlendPropsPanel, Panel):
     bl_label = "Molecule properties"

@@ -70,7 +70,7 @@ import_file_format = [
 export_file_format = [
     #("xyz", "xyz", "xyz format"),
     #("pdb", "pdb", "pbd format with <99999 entries"),
-    ("POSCAR", "POSCAR", "VASP input"),
+    #("POSCAR", "POSCAR", "VASP input"),
     #("ascii", "phonopy ascii", "phonopy ascii format"),
     #("cube", "Gaussian cube", "Gaussian cube file"),
     #("abinit", "ABINIT", "abinit output"),
@@ -329,7 +329,7 @@ class MB_Modes(list):
                     
                     for i in range(number_atoms):
                         split_line = fin.readline().strip().split()
-                        disp = [float(f) for f in split_line[:]]
+                        disp = [float(f) for f in split_line[1:]]
                         if len(disp) == 3:
                             real = disp
                             imag = (0., 0., 0.)
@@ -595,20 +595,20 @@ class MB_Structure():
                                " be implemented. Shouldn't have happened.")
         
         if structure.nframes == 0:
-            fmt = "no frames read. Could be a software bug in {}"
-            msg = fmt.format(read_funcs[fmt].__name__)
+            fmt_msg = "no frames read. Could be a software bug in {}"
+            msg = fmt_msg.format(read_funcs[fmt].__name__)
             raise IOError(msg)
         if not structure.all_atoms:
-            fmt = "no atoms read. Could be a software bug in {}"
-            msg = fmt.format(read_funcs[fmt].__name__)
+            fmt_msg = "no atoms read. Could be a software bug in {}"
+            msg = fmt_msg.format(read_funcs[fmt].__name__)
             raise IOError(msg)
         if structure.axes and not len(structure.axes) == structure.nframes:
             raise IOError(("Number of unit vectors ({}) and frames ({})"
                             " does not match").format(len(structure.axes), 
                                                       structure.nframes))
         if not structure.atom_unit:
-            fmt = "{} function did not define atom unit"
-            msg = fmt.format(read_funcs[fmt].__name__)
+            fmt_msg = "{} function did not define atom unit"
+            msg = fmt_msg.format(read_funcs[fmt].__name__)
             raise RuntimeError(msg)
         
         # now convert all numbers
@@ -1037,7 +1037,9 @@ class MB_Structure():
     @classmethod
     def _read_abinit_output_file(cls, filepath_abi):
         '''
-        read abinit output file
+        read abinit output file.
+        This currently only reads "standard" output files where natom comes
+        before xcart, and at least one DATASET is present.
         '''
         
         strc = cls()
@@ -1100,6 +1102,7 @@ class MB_Structure():
                         msg = "ERROR: natom should be defined before typat"
                         logger.error(msg)
                         logger.error(e)
+                        raise
                 elif ("xcart" in line
                       and re.search("xcart +( [ .0-9E+-]+){3} *", line)):
                     try:
@@ -1110,10 +1113,11 @@ class MB_Structure():
                         while len(xcart) < natom:
                             xcart.append(Vector([float(f) 
                                                   for f in next(fin).split()]))
-                    except NameError:
+                    except NameError as e:
                         msg = "ERROR: natom should be defined before xcart"
                         logger.error(msg)
                         logger.error(e)
+                        raise
                 elif "znucl" in line and re.search("znucl +( [.0-9]+)+", line):
                     znucl = [int(i.split('.')[0]) for i in line.split()[1:]]
                     znucl_str = [""] * len(znucl)
@@ -1132,6 +1136,21 @@ class MB_Structure():
                                              "coords": [location],
                                              "id": i}
                     break
+            else:
+                # only a DATASET will break the for loop. If it was not broken
+                # still check if xcart was present.
+                try:
+                    for i, (el, location) in enumerate(zip(elements, xcart)):
+                        atom_name = "{}{}".format(el.capitalize(), i)
+                        strc.all_atoms[i] = {"element": el,
+                                             "name": atom_name,
+                                             "coords": [location],
+                                             "id": i}
+                    strc.nframes += 1
+                except NameError as e:
+                    logger.error("No xcart in file {}".format(filepath_abi))
+                    raise
+                
             if ionmov > 0:
                 for line in fin:
                     if "Iteration" in line:
@@ -1182,6 +1201,7 @@ class MB_Structure():
                         strc.nframes += 1
                     elif "== DATASET" in line:
                         break
+
         if strc.nframes > 1 and len(strc.axes) == 1:
             strc.axes = [strc.axes[0] for i in range(strc.nframes)]
         return strc
@@ -1593,15 +1613,20 @@ class MB_Structure():
         # create a dict and dump it to json
         dct = {}
         if self.axes:
-            dct["lattice"]["matrix"] = self.axes[0]
+            dct["lattice"] = {"matrix": [[x,y,z] for x, y, z in self.axes[0]]}
         sites = []
-        for atom in self.all_atoms:
+        for n, atom in sorted(self.all_atoms.items()):
+            minv = Matrix(self.axes[0]).transposed().inverted()
             sites.append(dict(
-                species=[{"element": atom["element"]}],
+                species=[{"element": atom["element"], "occu": 1}],
                 label=atom["name"],
-                xyz=atom["coords"][0],
+                xyz=list(atom["coords"][0]),
+                abc=list(minv * atom["coords"][0])
                 ))
-        dct["sites"] = sites
+        # for some reason the sites are written in inverse order to the file
+        dct["sites"] = sites[::-1]
         
-        with open(filepath, "r") as fout:
-            json.dump(dct, fout)
+        #if os.path.exists(filepath):
+            #raise IOError("{} exists".format(filepath))
+        with open(filepath, "w") as fout:
+            json.dump(dct, fout, indent=2, sort_keys=True)

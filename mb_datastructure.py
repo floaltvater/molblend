@@ -525,8 +525,11 @@ class mb_molecule(PropertyGroup):
             else:
                 return [ob.location.copy() for ob in (uc.a, uc.b, uc.c)]
         else:
-            return None
-    
+            try:
+                lattice = self["imported_unit_cells"]
+            except KeyError:
+                lattice = None
+            return lattice
     
 class mb_object(PropertyGroup):
     index = IntProperty(name="Index")

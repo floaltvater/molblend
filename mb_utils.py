@@ -997,6 +997,8 @@ def calculate_displacement_t0(qvec, sc, evec):
 
 
 def update_mode_action(atom_ob, mol, nmode=None):
+    # TODO: hardcoded period of mode vibration in frames. Set as adjustable.
+    #       also defined again in calculate_displacement_t0 (!)
     T = 20
     action = atom_ob.animation_data.action
     t = (mol.mode_arrows_phase%2.)/2. * T

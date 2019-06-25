@@ -661,11 +661,6 @@ class MB_OT_draw_unit_cell(Operator):
     def execute(self, context):
         mol = context.object.mb.get_molecule()
         lattice = mol.get_lattice_parameters(all_keyframes=True)
-        if lattice is None:
-            try:
-                lattice = mol["imported_unit_cells"]
-            except KeyError:
-                lattice = None
         if not lattice:
             lattice = [[Vector((5,0,0)),
                         Vector((0,5,0)),
@@ -1178,9 +1173,13 @@ class MD_OT_import_molecules(bpy.types.Operator):
 
 class MD_OT_export_molecules(bpy.types.Operator):
     bl_idname = "mb.export_molecules"
-    bl_label = "Export structures"
+    bl_label = "Export"
 #    bl_options = {'REGISTER'}
-
+    
+    # TODO
+    # Can I have the molecule drop down list populated with objects?
+    # How do I deal with existing files?
+    
     __doc__ = ""
 
     filepath = StringProperty(
@@ -1189,7 +1188,7 @@ class MD_OT_export_molecules(bpy.types.Operator):
     
     file_format = EnumProperty(
         name="File format", description="Choose file format of structure file",
-        items=export_file_format, default='POSCAR')
+        items=export_file_format, default='json')
     
     use_selection = BoolProperty(
         name="Selection only",
@@ -1211,19 +1210,19 @@ class MD_OT_export_molecules(bpy.types.Operator):
     # For file formats that need unit cell information etc (POSCAR, json)
     def get_molecules(self, context):
         lst = []
-        objects = context.selected_objects if self.use_selection else context.objects
+        objects = context.selected_objects if self.use_selection else context.scene.objects
         for ob in objects:
             if ob.mb.type == 'PARENT':
                 mol = ob.mb.molecule
                 lst.append((ob.name, ob.name, ob.name))
         return lst
-    active_molecule_ob = EnumProperty(
+    active_molecule_name = EnumProperty(
         items=get_molecules,
         description="Select molecule for lattice parameters")
     
     def invoke(self, context, event):
         
-        self.active_molecule_ob = context.object.mb.parent
+        self.active_molecule_ob = context.object.mb.parent.name
         
         wm = context.window_manager
         wm.fileselect_add(self)
@@ -1235,7 +1234,12 @@ class MD_OT_export_molecules(bpy.types.Operator):
         kwargs = {}
         
         if self.file_format in ("POSCAR", "json"):
-            kwargs.update(dict(molecule=self.active_molecule_ob))
+            mol = context.scene.objects.get(self.active_molecule_name).mb.molecule
+            if not mol:
+                fmt= "Molecule '{}' not found. This should not have happened"
+                msg = fmt.format(self.active_molecule_name)
+                raise RuntimeError(msg)
+            kwargs.update(dict(molecule=mol))
             
         if self.length_unit == 'OTHER':
             scale_distances = self.length_unit_other
@@ -1255,15 +1259,21 @@ class MD_OT_export_molecules(bpy.types.Operator):
         return {'FINISHED'}
 
     def draw(self, context):
-
+        
+        layout = self.layout
         layout.separator()
         layout.prop(self, "use_selection", text="Selection only")
         layout.prop(self, "file_format", text="File format")
         
         layout.separator()
         layout.label("File format specific")
-        if self.file_format in ("POSCAR",):
-            layout.prop(self, active_molecule, text="Molecule")
+        if self.file_format in ("POSCAR", "json"):
+            layout.label("Use unit cell of")
+            layout.prop(self, "active_molecule_name", text="Molecule")
+        else:
+            row = layout.row()
+            row.active = False
+            row.label("N/A")
         ## unit choice only available to some file formats
         #layout.label("Units")
         #layout.prop(self, "auto_unit", text="Automatic units")
