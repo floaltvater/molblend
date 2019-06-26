@@ -26,6 +26,7 @@ import bpy
 import bmesh
 import blf
 import bgl
+import numpy as np
 from bpy.types import Operator
 from bpy.props import (StringProperty,
                        BoolProperty,
@@ -91,6 +92,7 @@ class enums():
         ('1.0', "Angstrom", "Angstrom"),
         ('0.529177249', "Bohr", "Bohr"),
         ('0.01', "pm", "Picometer"),
+        ('10.', "nm", "Nanometer"),
         ('OTHER', "Other", "Custom Unit"),
         ]
     file_types = [
@@ -978,6 +980,10 @@ def set_bond_drivers(context, bond, molecule):
 
 
 def calculate_displacement_t0(qvec, sc, evec):
+    
+    logger.error("I think the q!=0 displacements are wrong")
+    raise Exception("I think the q!=0 displacements are wrong")
+    
     qR = qvec[0]*sc[0] + qvec[1]*sc[1] + qvec[2]*sc[2]
     T = 20
     Re = evec[0]
@@ -1013,7 +1019,9 @@ def update_mode_action(atom_ob, mol, nmode=None):
             t_max = (0,0,0)
         else:
             disp = mol['mode']['displacements']
-            evec = disp[atom_ob.mb.index%len(disp)]
+            if mol.mode_normalize:
+                norm = np.sqrt(np.sum(np.power(disp, 2)))
+            evec = disp[atom_ob.mb.index%len(disp)] / norm
             realvec, t_max = calculate_displacement_t0(qvec, sc, evec)
     
         for dim in range(3):
@@ -1064,6 +1072,18 @@ def create_mode_action(context, atom_ob, molecule):
                 fcu.keyframe_points[p].easing = "AUTO"
         fcu.update()
 
+def driver_script_mode_arrow(self, frame, arrow_scale):
+    fcus = self.parent.animation_data.action.fcurves
+    end = Vector([fcu.evaluate(frame+1) for fcu in fcus])
+    start = Vector([fcu.evaluate(frame-1) for fcu in fcus])
+    return (end - start).length * arrow_scale
+
+def driver_script_mode_arrow_rot(self, frame, dim):
+    fcus = self.parent.animation_data.action.fcurves
+    end = Vector([fcu.evaluate(frame+1) for fcu in fcus])
+    start = Vector([fcu.evaluate(frame-1) for fcu in fcus])
+    
+    return Vector((0,1,0)).rotation_difference(end - start)[dim]
 
 def create_mode_arrow(context, atom_ob, mol, type='3D'):
     
@@ -1117,11 +1137,12 @@ def create_mode_arrow(context, atom_ob, mol, type='3D'):
         targ.id = atom_ob
         targ.data_path = "mb.parent.mb.molecule.mode_arrows_scale"
         
-        expr = ("(Vector([fcu.evaluate(frame+1) for fcu in {fcus}])"
-                "-Vector([fcu.evaluate(frame-1) for fcu in {fcus}])).length"
-                "* arrow_scale")
-        expr = expr.format(fcus="self.parent.animation_data.action.fcurves")
-        drv.expression = expr
+        #expr = ("(Vector([fcu.evaluate(frame+1) for fcu in {fcus}])"
+                #"-Vector([fcu.evaluate(frame-1) for fcu in {fcus}])).length"
+                #"* arrow_scale")
+        #expr = expr.format(fcus="self.parent.animation_data.action.fcurves")
+        #drv.expression = expr
+        drv.expression = "driver_script_mode_arrow(self, frame, arrow_scale)"
         
     fc_list = arrow_ob.driver_add('rotation_quaternion', -1) # add new driver
     for dim, fcurve in enumerate(fc_list):
@@ -1130,13 +1151,14 @@ def create_mode_arrow(context, atom_ob, mol, type='3D'):
         drv.show_debug_info = True
         drv.use_self = True
         
-        expr = ("Vector((0,1,0)).rotation_difference("
-                "(Vector([fcu.evaluate(frame+1) for fcu in {fcus}])"
-                "-Vector([fcu.evaluate(frame-1) for fcu in {fcus}])))"
-                "[{dim}]")
-        expr = expr.format(fcus="self.parent.animation_data.action.fcurves",
-                           dim=dim)
-        drv.expression = expr
+        #expr = ("Vector((0,1,0)).rotation_difference("
+                #"(Vector([fcu.evaluate(frame+1) for fcu in {fcus}])"
+                #"-Vector([fcu.evaluate(frame-1) for fcu in {fcus}])))"
+                #"[{dim}]")
+        #expr = expr.format(fcus="self.parent.animation_data.action.fcurves",
+                           #dim=dim)
+        #drv.expression = expr
+        drv.expression = "driver_script_mode_arrow_rot(self, frame, {})".format(dim)
     return arrow_ob
 
 

@@ -329,7 +329,14 @@ class MB_Modes(list):
                     
                     for i in range(number_atoms):
                         split_line = fin.readline().strip().split()
-                        disp = [float(f) for f in split_line[1:]]
+                        try:
+                            disp = [float(f) for f in split_line[:]]
+                        except ValueError:
+                            if split_line[0].isalpha():
+                                msg = ("This is probably a coordinate file, "
+                                       "not a mode file")
+                                logger.error(msg)
+                            raise
                         if len(disp) == 3:
                             real = disp
                             imag = (0., 0., 0.)
@@ -391,7 +398,7 @@ class MB_Modes(list):
     @classmethod
     def _read_anaddb_out(cls, filepath):
         # read mode file, modes need to be in same order as atoms in input file
-        
+        logger.warning("I'm pretty sure that q!=0 mode displacements are not correct yet.")
         all_qpts = cls()
         with open(filepath, 'r') as fin:
             q_count = 0
@@ -470,7 +477,7 @@ class MB_Structure():
         TODO for now, this only checks in the unit of Angstroms!
         TODO use numpy, probably faster
         '''
-        
+        bond_count = 0
         for index1, atom1 in self.all_atoms.items():
             for index2, atom2 in self.all_atoms.items():
                 if (index1 < index2 and not
@@ -489,13 +496,19 @@ class MB_Structure():
                     # (plus some extra just to make sure)
                     max_dist = cov1 + cov2 + tol
                     if distance < max_dist:
+                        bond_count += 1
                         try:
                             self.bonds[index1].add(index2)
                         except KeyError:
                             self.bonds[index1] = set((index2,))
         if not self.bonds:
             logger.warning("guess_bonds: No bonds found.")
-    
+        
+        if bond_count > 5*len(self.all_atoms):
+            msg = "Too many bonds found. Check coordinate units."
+            logger.error(msg)
+            raise Exception(msg)
+        
     def create_supercell(self, supercell):
         if self.axes:
             max_atom_index = max(self.all_atoms.keys()) + 1
@@ -625,7 +638,11 @@ class MB_Structure():
                 msg = msg.format(structure.axes_unit, read_funcs[fmt].__name__)
                 raise KeyError(msg)
             for i in range(len(structure.axes)):
-                structure.axes[i] = fac * Matrix(structure.axes[i])
+                try:
+                    structure.axes[i] = fac * Matrix(structure.axes[i])
+                except TypeError as e:
+                    logger.error("structure.axes[i]:\n" + repr(structure.axes[i]))
+                    raise
             structure.origin = Vector(structure.origin) * fac
         
         if structure.atom_unit == "crystal":
@@ -941,13 +958,18 @@ class MB_Structure():
             line = next(fin).strip()
             box = [float(f) for f in line.split()]
             cell = [[0.,0.,0.] for i in range(3)]
+            print(cell)
             for i in range(3):
                 cell[i][i] = box[i]
             if len(box) > 3:
-                cell[0][1:] = box[3], box[4]
-                cell[1][0], cell[1][2] = box[5], box[6]
-                cell[2][:1] = box[7], box[8]
+                cell[0][1] = box[3]
+                cell[0][2] = box[4]
+                cell[1][0] = box[5]
+                cell[1][2] = box[6]
+                cell[2][0] = box[7]
+                cell[2][1] = box[8]
             strc.axes = [cell]
+            print(strc.axes)
         return strc
             
     @classmethod

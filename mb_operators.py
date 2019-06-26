@@ -82,6 +82,8 @@ class MB_OT_initialize(Operator):
         
         logger.info('Initialize MolBlend')
         bpy.app.driver_namespace['Vector'] = Vector
+        bpy.app.driver_namespace['driver_script_mode_arrow'] = mb_utils.driver_script_mode_arrow
+        bpy.app.driver_namespace['driver_script_mode_arrow_rot'] = mb_utils.driver_script_mode_arrow_rot
         wm = context.window_manager
         
         # initialize elements
@@ -888,9 +890,11 @@ class MD_OT_import_modes(bpy.types.Operator):
     
     @classmethod
     def poll(cls, context):
-        return context.object and context.object.mb.get_molecule()
+        return False
+#        return context.object and context.object.mb.get_molecule()
     
     def invoke(self, context, event):
+        return {'CANCELED'}
         molecule = context.object.mb.get_molecule()
         for atom in molecule.objects.atoms:
             if atom.animation_data and atom.animation_data.action:
@@ -902,6 +906,7 @@ class MD_OT_import_modes(bpy.types.Operator):
         return {'RUNNING_MODAL'}
     
     def execute(self, context):
+        return {'CANCELED'}
         ret = mb_import_export.import_modes(
             context,
             self.report,
@@ -1307,7 +1312,7 @@ class MB_OT_lattice_displace(bpy.types.Operator):
     """Draw a line with the mouse"""
     bl_idname = "mb.lattice_displace"
     bl_label = "Lattice displace"
-    bl_description = "Displace selected objects by lattice parameters"
+    bl_description = "Displace selected objects by lattice parameters of active object"
     bl_options = {'REGISTER', 'UNDO'}
 
     
@@ -1325,22 +1330,27 @@ class MB_OT_lattice_displace(bpy.types.Operator):
         return self.execute(context)
     
     def execute(self, context):
-        # first check if molecule parent is selected. Don't move its atoms
-        exclude = []
+        # get unit cell only from active object, move ALL objects with it
+        mol = context.object.mb.get_molecule()
+        uc = mol.get_lattice_parameters()
+        #print("uc: {}".format(uc))
+        disp = Vector((0,0,0))
+        for dim in range(3):
+            disp += uc[dim] * self.n_abc[dim]
         for ob in context.selected_objects:
-            if ob.mb.type == "PARENT":
-                exclude.extend(ob.mb.molecule.objects.atoms)
-        for ob in context.selected_objects:
-            if (not ob.mb.get_molecule() 
-                    or ob.mb.type in ("BOND", "UC")
-                    or ob in exclude):
-                continue
-            mol = ob.mb.get_molecule()
-            uc = mol.get_lattice_parameters()
-            disp = Vector((0,0,0))
-            for dim in range(3):
-                disp += uc[dim] * self.n_abc[dim]
-            ob.location += disp
+            if ob.mb.get_molecule() and not ob.mb.type in ("BOND",):
+                # recurse through all parents. If one gets moved as well, do
+                # not move (grand)child
+                child = ob
+                parent_selected = False
+                while child.parent:
+                    if child.parent in context.selected_objects:
+                        parent_selected = True
+                        break
+                    child = child.parent
+                
+                if not parent_selected:
+                    ob.location += disp
         
         return {'FINISHED'}
     

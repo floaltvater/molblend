@@ -265,6 +265,11 @@ class mb_molecule(PropertyGroup):
         default=1.0,
         update=mb_utils.update_active_mode
         )
+    mode_normalize = BoolProperty(
+        name="Normalize", description="Normalize mode",
+        default=True,
+        update=mb_utils.update_active_mode
+        )
     mode_arrows_scale = FloatProperty(
         name="Arrow Scale", description="Scale of mode arrows",
         default=25.0, min=-1000.0, max=1000.0, 
@@ -310,6 +315,7 @@ class mb_molecule(PropertyGroup):
             layout.label("Frequency: {}".format(self['mode']["freq"]))
             #layout.prop(self['qpts'][self.active_nqpt]['modes'][self.active_mode], 
                         #"symmetry", text="Symmetry")
+            layout.prop(self, "mode_normalize")
             layout.prop(self, "mode_scale", slider=False)
             # The play/pause etc buttons are copy/pasted from space_time.py
             row = layout.row(align=True)

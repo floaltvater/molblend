@@ -331,21 +331,21 @@ class MB_PT_molecule_unit_cell(MolBlendPropsPanel, Panel):
         mol.draw_unit_cell_props(layout)
 
 
-class MB_PT_vibration_properties(MolBlendPropsPanel, Panel):
-    bl_label = "Vibrations"
-    bl_options = {'DEFAULT_CLOSED'}
-    
-    @classmethod
-    def poll(cls, context):
-        active_ob = context.object or context.scene.mb.modal_last_active
-        return (context.scene.mb.is_initialized
-                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
-    
-    def draw(self, context):
-        layout = self.layout
-        active_ob = context.object or context.scene.mb.modal_last_active
-        mol = active_ob.mb.get_molecule()
-        mol.draw_vibrations(layout)
+#class MB_PT_vibration_properties(MolBlendPropsPanel, Panel):
+#    bl_label = "Vibrations"
+#    bl_options = {'DEFAULT_CLOSED'}
+#    
+#    @classmethod
+#    def poll(cls, context):
+#        active_ob = context.object or context.scene.mb.modal_last_active
+#        return (context.scene.mb.is_initialized
+#                and hasattr(active_ob, 'mb') and active_ob.mb.get_molecule())
+#    
+#    def draw(self, context):
+#        layout = self.layout
+#        active_ob = context.object or context.scene.mb.modal_last_active
+#        mol = active_ob.mb.get_molecule()
+#        mol.draw_vibrations(layout)
 
 
 class MB_PT_view(MolBlendPanel, Panel):
