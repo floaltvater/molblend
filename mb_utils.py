@@ -106,6 +106,12 @@ class enums():
         ]
 
 
+def init_driver_namespace():
+    bpy.app.driver_namespace['Vector'] = Vector
+    bpy.app.driver_namespace['driver_script_mode_arrow'] = driver_script_mode_arrow
+    bpy.app.driver_namespace['driver_script_mode_arrow_rot'] = driver_script_mode_arrow_rot
+
+
 #--- Update functions --------------------------------------------------------#
 
 def update_all_meshes(self, context):
@@ -118,7 +124,7 @@ def update_active_mode(self, context):
     if len(self.qvecs) == 0:
         if context.screen.is_animation_playing:
             bpy.ops.screen.animation_play()
-            context.scene.frame_current = 1
+            #context.scene.frame_current = 1
         return
     
     if self.active_mode == 0:
@@ -150,7 +156,7 @@ def update_active_mode(self, context):
         # stop animation
         if context.screen.is_animation_playing:
             bpy.ops.screen.animation_play()
-        context.scene.frame_current = 1
+        #context.scene.frame_current = 1
     else:
         # start animation
         if not context.screen.is_animation_playing:
@@ -284,6 +290,7 @@ def update_show_labels(self, context):
         context.scene.mb.globals.show_labels_in_v3d = False
     # else: the modal operator is already turned on
 
+
 def update_radius_type(self, context):
     for atom in self.objects.atoms:
         set_atom_drivers(context, atom, self)
@@ -296,6 +303,11 @@ def update_draw_style(self, context):
     hide = (self.draw_style == 'BALLS')
     for bond in self.objects.bonds:
         bond.hide = hide
+    # change atom radius according to draw draw_style
+    if self.draw_style == 'BALLS' and not self.radius_type == 'vdw':
+        self.radius_type = 'vdw'
+    elif self.draw_style == 'BAS' and not self.radius_type == 'covalent':
+        self.radius_type = 'covalent'
 
 
 #--- General functions -------------------------------------------------------#
@@ -304,8 +316,8 @@ def rgetattr(obj, attr, *args):
         return getattr(obj, attr, *args)
     return functools.reduce(_getattr, [obj] + attr.split('.'))
 
+
 def callback_draw_labels_in_v3d(self, context):
-    
         rv3d = context.space_data.region_3d
         width = context.region.width
         height = context.region.height
@@ -1141,7 +1153,8 @@ def create_mode_arrow(context, atom_ob, mol, type='3D'):
             arrow_ob.material_slots[0].material = material
             context.scene.objects.link(arrow_ob)
             atom_ob.mb.mode_arrow = arrow_ob
-            mol.add_object(arrow_ob, parent_to_mol=False, type='MODE_ARROW')
+            mol.add_object(arrow_ob, type='MODE_ARROW')
+            #mol.add_object(arrow_ob, parent_to_mol=False, type='MODE_ARROW')
         
         arrow_ob.hide = not mol.show_mode_arrows
         arrow_ob.hide_render = not mol.show_mode_arrows

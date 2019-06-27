@@ -81,11 +81,8 @@ class MB_OT_initialize(Operator):
             return {'CANCELLED'}
         
         logger.info('Initialize MolBlend')
-        bpy.app.driver_namespace['Vector'] = Vector
-        bpy.app.driver_namespace['driver_script_mode_arrow'] = mb_utils.driver_script_mode_arrow
-        bpy.app.driver_namespace['driver_script_mode_arrow_rot'] = mb_utils.driver_script_mode_arrow_rot
-        wm = context.window_manager
         
+        mb_utils.init_driver_namespace()
         # initialize elements
         mb_utils.initialize_elements(context)
         # initialize atom scales

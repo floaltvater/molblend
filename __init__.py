@@ -44,9 +44,11 @@ if "bpy" in locals():
     import importlib
     importlib.reload(mb_datastructure)
     importlib.reload(mb_operators)
+    importlib.reload(mb_utils)
 else:
     from molblend import mb_datastructure
     from molblend import mb_operators
+    from molblend import mb_utils
 
 import logging
 import os
@@ -463,7 +465,9 @@ logger.debug("git commit: {}, {}".format(git_commit_id[:6], git_date))
 @persistent
 def load_handler(dummy):
     global git_commit_id, git_timestamp, git_date
-    bpy.app.driver_namespace['Vector'] = Vector
+    
+    mb_utils.init_driver_namespace()
+    
     for scn in bpy.data.scenes:
         if scn.mb.is_initialized:
             gc = bpy.context.scene.mb.info.git_commits
