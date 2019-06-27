@@ -904,7 +904,7 @@ def calculate_displacement_t0(qvec, sc, evec):
         # t_max == time of maximum (positive) displacement
         tmax = T*(qR - math.atan2(Im[dim], Re[dim])/(2*math.pi))
         t0s.append(tmax)
-        arg = 2*math.pi*(qR-tmax/T)
+        arg = -2*math.pi*(qR-tmax/T)
         cos_max = math.cos(arg)
         sin_max = math.sin(arg)
         vec.append(Re[dim]*cos_max - Im[dim]*sin_max)
