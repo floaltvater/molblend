@@ -593,15 +593,14 @@ class MB_OT_draw_mode_arrows(Operator):
     
     def execute(self, context):
         mol = context.object.mb.get_molecule()
-        flag = True
+        flag = False
         for ob in mol.objects.atoms:
-            obs = mb_utils.create_mode_arrow(context, ob, mol, type='3D')
-            if obs:
-                for ob in obs:
-                    ob.select = True
-                context.scene.objects.active = obs[0]
+            ob = mb_utils.create_mode_arrow(context, ob, mol, type='3D')
+            if ob:
+                ob.select = True
+                context.scene.objects.active = ob
             else:
-                flag = False
+                flag = True
         if flag:
             return {'CANCELLED'}
         else:
@@ -642,9 +641,13 @@ class MB_OT_toggle_mode_arrows(Operator):
     
     def execute(self, context):
         mol = context.object.mb.get_molecule()
-        for ob in mol.objects.mode_arrows.objects:
-            ob.hide = not self.show
-            ob.hide_render = not self.show
+        for atom_ob in mol.objects.atoms:
+            arrow_ob = atom_ob.mb.mode_arrow
+            if (not arrow_ob or not arrow_ob.name in context.scene.objects) and self.show:
+                mb_utils.create_mode_arrow(context, atom_ob, mol, type='3D')
+            elif arrow_ob:
+                arrow_ob.hide = not self.show
+                arrow_ob.hide_render = not self.show
         
         return {'FINISHED'}
 

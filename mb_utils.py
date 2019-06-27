@@ -1088,13 +1088,15 @@ def create_mode_action(context, atom_ob, molecule):
         fcu.update()
 
 def driver_script_mode_arrow(self, frame, arrow_scale):
-    fcus = self.parent.animation_data.action.fcurves
+    parent = self.constraints.get("mb.loc", None).target
+    fcus = parent.animation_data.action.fcurves
     end = Vector([fcu.evaluate(frame+1) for fcu in fcus])
     start = Vector([fcu.evaluate(frame-1) for fcu in fcus])
     return (end - start).length * arrow_scale
 
 def driver_script_mode_arrow_rot(self, frame, dim):
-    fcus = self.parent.animation_data.action.fcurves
+    parent = self.constraints.get("mb.loc", None).target
+    fcus = parent.animation_data.action.fcurves
     end = Vector([fcu.evaluate(frame+1) for fcu in fcus])
     start = Vector([fcu.evaluate(frame-1) for fcu in fcus])
     
@@ -1120,12 +1122,22 @@ def create_mode_arrow(context, atom_ob, mol, type='3D'):
     if type == '3D':
         mesh_name = "mode_arrow_{}".format(mol.name)
         arrow_ob = atom_ob.mb.mode_arrow
+        if arrow_ob and arrow_ob.name not in context.scene.objects:
+            bpy.data.objects.remove(arrow_ob)
+            arrow_ob = None
         if not arrow_ob:
             me = get_arrow_data(type='MESH', name=mesh_name,
                                 radius = 0.05, ring_y = 0.75, ring_scale = 2)
             ob_name = "mode_vec_{}".format(get_atom_id(mol.name, atom_ob.mb.index))
             arrow_ob = bpy.data.objects.new(ob_name, me)
-            arrow_ob.parent = atom_ob
+            #arrow_ob.parent = atom_ob
+            # need to use constraint. Otherwise arrow is scaled by atom size
+            c = arrow_ob.constraints.new('COPY_LOCATION')
+            c.name = "mb.loc"
+            c.target = atom_ob
+            c.target_space = 'LOCAL'
+            c.owner_space = 'WORLD'
+            
             arrow_ob.material_slots[0].material = material
             context.scene.objects.link(arrow_ob)
             atom_ob.mb.mode_arrow = arrow_ob
