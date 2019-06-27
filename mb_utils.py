@@ -153,7 +153,7 @@ def update_active_mode(self, context):
     else:
         # start animation
         if not context.screen.is_animation_playing:
-            context.scene.frame_end = 20
+            #context.scene.frame_end = 20
             bpy.ops.screen.animation_play()
     
 
@@ -1028,18 +1028,17 @@ def update_mode_action(atom_ob, mol, nmode=None):
             realvec, t_max = calculate_displacement_t0(qvec, sc, evec, T)
     
         for dim in range(3):
-            # t0 == start time of animation, needs to be a negative number,
-            # so that the animation is well underway at frame 0
-            t0 = (t_max[dim] - T4)
-            # set t0 within one period T before frame 0
-            t0 = t0 - T*(t0//T) - T
+            # since I'm using cyclic modifier, t0 is arbitrary
+            # this sets it as small and positive as possible
+            # The offset of T4 puts the equilibrium for q=0 to frame 1
+            t0 = t_max[dim]
+            t0 = t0 - T*(t0//T)
             fcu = action.fcurves[dim]
             fcu.color_mode = "AUTO_RGB"
             vec = realvec[dim]
             #
-            for p in range(11):
-                # The total offset of -2*T4 puts the equilibrium for q=0 to frame 1
-                frame = 1 + t0 + T4*p - T4
+            for p in range(5):
+                frame = 1 + t0 + T4*p
                 disp = pow(-1, p//2)*vec * mol.mode_scale
                 coords = disp if p%2 else 0.
                 fcu.keyframe_points[p].co = (frame, coords)
@@ -1067,11 +1066,13 @@ def create_mode_action(context, atom_ob, molecule):
     for dim in range(3):
         fcu = action.fcurves.new(data_path="delta_location", index=dim)
         fcu.group = ag
-        fcu.keyframe_points.add(11)
+        fcu.keyframe_points.add(5)
+        # repeat action indefinitely
+        mod = fcu.modifiers.new("CYCLES")
         # We need two revolutions so that one full period is within 20 frames
         # The offset of -T4 puts the equilibrium for q=0 to frame 1
-        for p in range(11):
-            fcu.keyframe_points[p].co = 1.0 + T4*p - T4, 0.
+        for p in range(5):
+            fcu.keyframe_points[p].co = 1.0 + T4*p, 0.
             fcu.keyframe_points[p].interpolation = 'SINE'
             if p == 0:
                 fcu.keyframe_points[p].easing = "EASE_IN_OUT"
