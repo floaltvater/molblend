@@ -92,7 +92,7 @@ class MB_QMode():
     def __init__(self, iqpt, qvec):
         self.iqpt = iqpt # starts at 1
         self.qvec = qvec
-        self.qvecs_format = ""
+        self.file_format = ""
         self.modes = []
     
     def lines_iter(self, fmt='9.6f'):
@@ -105,7 +105,8 @@ class MB_QMode():
         
         nevecs = len(self.modes[0].evecs)
         
-        qpt_fmt =      '{{{{"qvec": [{}], "iqpt": {{iq}},\n'.format(qvec_fmt)
+        first_line = '{{"file_format": "{}",\n'
+        qpt_fmt =      ' "qvec": [{}], "iqpt": {{iq}},\n'.format(qvec_fmt)
         mode_line =    ' "modes": [\n'
         freq_fmt  =    ' {{"freq": "{}", "imode": {},\n'
         disp_line =    '  "displacements": \n'
@@ -116,6 +117,7 @@ class MB_QMode():
         last_disp_line='  }\n'
         last_qpt_line= ']}\n'
         
+        yield first_line.format(self.file_format)
         yield qpt_fmt.format(self.qvec, iq=self.iqpt)
         yield mode_line
         for nm, mode in enumerate(self.modes):
@@ -208,7 +210,10 @@ class MB_Modes(list):
             msg += " not implemented yet."
             logger.error(msg)
         
-        return read_modes_funcs[file_format](modefilepath)
+        modes = read_modes_funcs[file_format](modefilepath)
+        for qm in modes:
+            qm.file_format = file_format
+        return modes
     
     @classmethod
     def _read_vasp_outcar(cls, modefilepath):
@@ -264,7 +269,6 @@ class MB_Modes(list):
                         q_count += 1
                         qmode = MB_QMode(q_count, qvec)
                         all_qpts.append(qmode)
-                    #qmode.qvecs_format = "QE"
                     qmode.modes.append(MB_Mode(freq=freq))
                     
                     for disp in all_disps:
@@ -369,7 +373,6 @@ class MB_Modes(list):
                     q_count += 1
                     q = [c*1. for c in (map(float, line.split()[-3:]))]
                     qmode = MB_QMode(q_count, q)
-                    qmode.qvecs_format = "QE"
                     
                     line = next(fin) # stars
                     
@@ -407,7 +410,6 @@ class MB_Modes(list):
                     q_count += 1
                     q = [c*1. for c in [float(f) for f in line.split()[-3:]]]
                     qmode = MB_QMode(q_count, q)
-                    qmode.qvecs_format = "anaddb"
                     #msg = "Reading q-point {}: {:7.4f} {:7.4f} {:7.4f}"
                     #logger.debug(msg.format(q_count, *q))
                     while not "Phonon frequencies in cm-1" in line:

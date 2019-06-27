@@ -288,7 +288,7 @@ def import_modes(context,
                     return False
         
         
-        if qpts[0].qvecs_format == "QE":
+        if qpts[0].file_format == "QE_DYNMAT":
             # The cartesian unit cell is not written in the QE mode output, so
             # we need to convert the q-vectors to crystal units here
             uc = Matrix(lattice[0])*1.889725989

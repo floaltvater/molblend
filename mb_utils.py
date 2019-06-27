@@ -136,6 +136,7 @@ def update_active_mode(self, context):
                 self.active_mode = 0
                 return
         self['mode'] = qpt['modes'][self.active_mode-1]
+        self['mode']['file_format'] = qpt['file_format']
     
     if self.active_mode > 0 and self.active_mode > len(qpt['modes']):
         self.active_mode = len(qpt['modes']) - 1
@@ -979,11 +980,14 @@ def set_bond_drivers(context, bond, molecule):
                             molecule.name)
 
 
-def calculate_displacement_t0(qvec, sc, evec, T):
+def calculate_displacement_t0(qvec, sc, evec, T, ff):
     """
     Calculate the maximum displacement and the time when this happens
     """
     qR = qvec[0]*sc[0] + qvec[1]*sc[1] + qvec[2]*sc[2]
+    # different convention
+    if ff in ('ANADDB',):
+        qR *= -1.
     Re = evec[0]
     Im = evec[1]
     
@@ -1018,6 +1022,7 @@ def update_mode_action(atom_ob, mol, nmode=None):
             t_max = (0,0,0)
         else:
             disp = mol['mode']['displacements']
+            ff = mol['mode']['file_format']
             if mol.mode_normalize:
                 norm = np.sqrt(np.sum(np.power(disp, 2)))
             else:
@@ -1025,7 +1030,7 @@ def update_mode_action(atom_ob, mol, nmode=None):
             #print(type(norm))
             evec = disp[atom_ob.mb.index%len(disp)] / norm
             #print(type(evec))
-            realvec, t_max = calculate_displacement_t0(qvec, sc, evec, T)
+            realvec, t_max = calculate_displacement_t0(qvec, sc, evec, T, ff)
     
         for dim in range(3):
             # since I'm using cyclic modifier, t0 is arbitrary
