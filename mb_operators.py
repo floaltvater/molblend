@@ -890,11 +890,10 @@ class MD_OT_import_modes(bpy.types.Operator):
     
     @classmethod
     def poll(cls, context):
-        return False
-#        return context.object and context.object.mb.get_molecule()
+        #return False
+       return context.object and context.object.mb.get_molecule()
     
     def invoke(self, context, event):
-        return {'CANCELED'}
         molecule = context.object.mb.get_molecule()
         for atom in molecule.objects.atoms:
             if atom.animation_data and atom.animation_data.action:
@@ -906,7 +905,6 @@ class MD_OT_import_modes(bpy.types.Operator):
         return {'RUNNING_MODAL'}
     
     def execute(self, context):
-        return {'CANCELED'}
         ret = mb_import_export.import_modes(
             context,
             self.report,

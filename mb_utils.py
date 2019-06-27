@@ -979,13 +979,11 @@ def set_bond_drivers(context, bond, molecule):
                             molecule.name)
 
 
-def calculate_displacement_t0(qvec, sc, evec):
-    
-    logger.error("I think the q!=0 displacements are wrong")
-    raise Exception("I think the q!=0 displacements are wrong")
-    
+def calculate_displacement_t0(qvec, sc, evec, T):
+    """
+    Calculate the maximum displacement and the time when this happens
+    """
     qR = qvec[0]*sc[0] + qvec[1]*sc[1] + qvec[2]*sc[2]
-    T = 20
     Re = evec[0]
     Im = evec[1]
     
@@ -993,9 +991,10 @@ def calculate_displacement_t0(qvec, sc, evec):
     t0s = []
     for dim in range(3):
         # t_max == time of maximum (positive) displacement
+        # setting derivative of C*e^[-2pi(qR-t/T)] equal to zero, solving for t
         tmax = T*(qR - math.atan2(Im[dim], Re[dim])/(2*math.pi))
         t0s.append(tmax)
-        arg = 2*math.pi*(qR-tmax/T)
+        arg = -2*math.pi*(qR-tmax/T)
         cos_max = math.cos(arg)
         sin_max = math.sin(arg)
         vec.append(Re[dim]*cos_max - Im[dim]*sin_max)
@@ -1003,11 +1002,11 @@ def calculate_displacement_t0(qvec, sc, evec):
 
 
 def update_mode_action(atom_ob, mol, nmode=None):
-    # TODO: hardcoded period of mode vibration in frames. Set as adjustable.
-    #       also defined again in calculate_displacement_t0 (!)
-    T = 20
+
+    T = mol.mode_period
+    T4 = T/4.
     action = atom_ob.animation_data.action
-    t = (mol.mode_arrows_phase%2.)/2. * T
+    #t = (mol.mode_arrows_phase%2.)/2. * T
     if action:
         iq = mol.active_nqpt
         qvec = mol.qvecs[iq].qvec
@@ -1021,18 +1020,26 @@ def update_mode_action(atom_ob, mol, nmode=None):
             disp = mol['mode']['displacements']
             if mol.mode_normalize:
                 norm = np.sqrt(np.sum(np.power(disp, 2)))
+            else:
+                norm = np.array(1.0)
+            #print(type(norm))
             evec = disp[atom_ob.mb.index%len(disp)] / norm
-            realvec, t_max = calculate_displacement_t0(qvec, sc, evec)
+            #print(type(evec))
+            realvec, t_max = calculate_displacement_t0(qvec, sc, evec, T)
     
         for dim in range(3):
             # t0 == start time of animation, needs to be a negative number,
             # so that the animation is well underway at frame 0
-            t0 = (t_max[dim] - T/4)
+            t0 = (t_max[dim] - T4)
+            # set t0 within one period T before frame 0
             t0 = t0 - T*(t0//T) - T
             fcu = action.fcurves[dim]
+            fcu.color_mode = "AUTO_RGB"
             vec = realvec[dim]
+            #
             for p in range(11):
-                frame = 1 + t0 + 5*p - 5
+                # The total offset of -2*T4 puts the equilibrium for q=0 to frame 1
+                frame = 1 + t0 + T4*p - T4
                 disp = pow(-1, p//2)*vec * mol.mode_scale
                 coords = disp if p%2 else 0.
                 fcu.keyframe_points[p].co = (frame, coords)
@@ -1055,14 +1062,16 @@ def create_mode_action(context, atom_ob, molecule):
     # make new group
     atom_ob.update_tag(refresh={'OBJECT'})
     ag = action.groups.new("Delta_location")
+    T = molecule.mode_period
+    T4 = T/4.
     for dim in range(3):
         fcu = action.fcurves.new(data_path="delta_location", index=dim)
         fcu.group = ag
         fcu.keyframe_points.add(11)
         # We need two revolutions so that one full period is within 20 frames
-        # The offset of -5 puts the equilibrium for q=0 to frame 1
+        # The offset of -T4 puts the equilibrium for q=0 to frame 1
         for p in range(11):
-            fcu.keyframe_points[p].co = 1.0 + 5*p - 5, 0.
+            fcu.keyframe_points[p].co = 1.0 + T4*p - T4, 0.
             fcu.keyframe_points[p].interpolation = 'SINE'
             if p == 0:
                 fcu.keyframe_points[p].easing = "EASE_IN_OUT"

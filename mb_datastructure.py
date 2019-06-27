@@ -270,6 +270,11 @@ class mb_molecule(PropertyGroup):
         default=True,
         update=mb_utils.update_active_mode
         )
+    mode_period = FloatProperty(
+        name="Mode period", description="Length of the period of the vibrations in frames",
+        default=20.,
+        update=mb_utils.update_active_mode
+        )
     mode_arrows_scale = FloatProperty(
         name="Arrow Scale", description="Scale of mode arrows",
         default=25.0, min=-1000.0, max=1000.0, 
@@ -317,6 +322,7 @@ class mb_molecule(PropertyGroup):
                         #"symmetry", text="Symmetry")
             layout.prop(self, "mode_normalize")
             layout.prop(self, "mode_scale", slider=False)
+            layout.prop(self, "mode_period", slider=False)
             # The play/pause etc buttons are copy/pasted from space_time.py
             row = layout.row(align=True)
             row.operator("screen.frame_jump", text="", icon='REW').end = False
